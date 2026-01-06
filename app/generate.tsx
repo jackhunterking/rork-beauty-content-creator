@@ -55,14 +55,6 @@ export default function GenerateScreen() {
     }
   }, [router]);
 
-  const getImageAspectRatio = useCallback((media: { width: number; height: number } | null) => {
-    if (!media || !media.width || !media.height) return 4 / 3;
-    return media.width / media.height;
-  }, []);
-
-  const beforeAspectRatio = getImageAspectRatio(currentProject.beforeMedia);
-  const afterAspectRatio = getImageAspectRatio(currentProject.afterMedia);
-
   const handleGenerate = useCallback(() => {
     if (!canAfford) return;
     setShowConfirmModal(true);
@@ -133,8 +125,8 @@ export default function GenerateScreen() {
                 onPress={() => handleImagePress('before')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.imageLabel}>Before</Text>
-                <View style={[styles.imageContainer, { aspectRatio: beforeAspectRatio > 1 ? 1 : beforeAspectRatio }]}>
+                <Text style={styles.imageLabel}>BEFORE</Text>
+                <View style={styles.imageContainer}>
                   <Image
                     source={{ uri: currentProject.beforeMedia?.uri }}
                     style={styles.mediaImage}
@@ -147,8 +139,8 @@ export default function GenerateScreen() {
                 onPress={() => handleImagePress('after')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.imageLabel}>After</Text>
-                <View style={[styles.imageContainer, { aspectRatio: afterAspectRatio > 1 ? 1 : afterAspectRatio }]}>
+                <Text style={styles.imageLabel}>AFTER</Text>
+                <View style={styles.imageContainer}>
                   <Image
                     source={{ uri: currentProject.afterMedia?.uri }}
                     style={styles.mediaImage}
@@ -280,13 +272,14 @@ export default function GenerateScreen() {
                 <TouchableOpacity 
                   style={styles.fullscreenCloseButton} 
                   onPress={() => setViewingImage(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <X size={24} color={Colors.light.surface} />
+                  <X size={22} color={Colors.light.surface} />
                 </TouchableOpacity>
                 <Text style={styles.fullscreenTitle}>
                   {viewingImage?.type === 'before' ? 'Before' : 'After'}
                 </Text>
-                <View style={{ width: 40 }} />
+                <View style={styles.headerSpacer} />
               </View>
               <View style={styles.fullscreenImageContainer}>
                 <Image
@@ -349,29 +342,28 @@ const styles = StyleSheet.create({
   },
   mediaSection: {
     paddingTop: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
   imagesRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   imageCard: {
     flex: 1,
   },
   imageLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
     color: Colors.light.textSecondary,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginBottom: 6,
+    letterSpacing: 0.8,
   },
   imageContainer: {
     width: '100%',
+    aspectRatio: 3 / 4,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-    maxHeight: 200,
   },
   mediaImage: {
     width: '100%',
@@ -587,7 +579,7 @@ const styles = StyleSheet.create({
   },
   fullscreenModal: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
+    backgroundColor: 'rgba(0,0,0,0.97)',
   },
   fullscreenSafeArea: {
     flex: 1,
@@ -598,14 +590,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.97)',
   },
   fullscreenCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerSpacer: {
+    width: 36,
   },
   fullscreenTitle: {
     fontSize: 17,
@@ -616,7 +613,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
   },
   fullscreenImage: {
     width: '100%',
