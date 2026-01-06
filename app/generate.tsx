@@ -1,14 +1,13 @@
-import { StyleSheet, View, Text, TouchableOpacity, Modal, ActivityIndicator, ScrollView, Switch, Dimensions } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, Modal, ActivityIndicator, ScrollView, Switch } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Coins, Sparkles, Sun, Droplets, Sparkle, Contrast, Eye, RefreshCw, X } from "lucide-react-native";
-import React, { useState, useCallback, useRef } from "react";
+import { ChevronLeft, Coins, Sparkles, Sun, Droplets, Sparkle, Contrast, RefreshCw, X } from "lucide-react-native";
+import React, { useState, useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CAROUSEL_WIDTH = SCREEN_WIDTH - 40;
+
 
 type EnhancementOption = {
   id: string;
@@ -30,8 +29,6 @@ export default function GenerateScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedEnhancements, setSelectedEnhancements] = useState<string[]>([]);
   const [viewingImage, setViewingImage] = useState<{ uri: string; type: 'before' | 'after' } | null>(null);
-  const [activeSlide, setActiveSlide] = useState(0);
-  const carouselRef = useRef<ScrollView>(null);
 
   const creditCost = getCreditCost();
   const canAfford = credits >= creditCost;
@@ -43,7 +40,7 @@ export default function GenerateScreen() {
     );
   }, []);
 
-  const handleViewImage = useCallback((type: 'before' | 'after') => {
+  const handleImagePress = useCallback((type: 'before' | 'after') => {
     const media = type === 'before' ? currentProject.beforeMedia : currentProject.afterMedia;
     if (media) {
       setViewingImage({ uri: media.uri, type });
@@ -65,14 +62,6 @@ export default function GenerateScreen() {
 
   const beforeAspectRatio = getImageAspectRatio(currentProject.beforeMedia);
   const afterAspectRatio = getImageAspectRatio(currentProject.afterMedia);
-
-  const handleScroll = useCallback((event: any) => {
-    const contentOffsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(contentOffsetX / CAROUSEL_WIDTH);
-    setActiveSlide(index);
-  }, []);
-
-  const currentType = activeSlide === 0 ? 'before' : 'after';
 
   const handleGenerate = useCallback(() => {
     if (!canAfford) return;
@@ -138,75 +127,35 @@ export default function GenerateScreen() {
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.mediaSection}>
-            <View style={styles.carouselHeader}>
-              <View style={styles.tabIndicators}>
-                <TouchableOpacity 
-                  style={[styles.tabButton, activeSlide === 0 && styles.tabButtonActive]}
-                  onPress={() => carouselRef.current?.scrollTo({ x: 0, animated: true })}
-                >
-                  <Text style={[styles.tabText, activeSlide === 0 && styles.tabTextActive]}>Before</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.tabButton, activeSlide === 1 && styles.tabButtonActive]}
-                  onPress={() => carouselRef.current?.scrollTo({ x: CAROUSEL_WIDTH, animated: true })}
-                >
-                  <Text style={[styles.tabText, activeSlide === 1 && styles.tabTextActive]}>After</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.carouselContainer}>
-              <ScrollView
-                ref={carouselRef}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                style={styles.carousel}
-                contentContainerStyle={styles.carouselContent}
-              >
-                <View style={[styles.carouselSlide, { width: CAROUSEL_WIDTH }]}>
-                  <View style={[styles.imageContainer, { aspectRatio: beforeAspectRatio }]}>
-                    <Image
-                      source={{ uri: currentProject.beforeMedia?.uri }}
-                      style={styles.mediaImage}
-                      contentFit="contain"
-                    />
-                  </View>
-                </View>
-                <View style={[styles.carouselSlide, { width: CAROUSEL_WIDTH }]}>
-                  <View style={[styles.imageContainer, { aspectRatio: afterAspectRatio }]}>
-                    <Image
-                      source={{ uri: currentProject.afterMedia?.uri }}
-                      style={styles.mediaImage}
-                      contentFit="contain"
-                    />
-                  </View>
-                </View>
-              </ScrollView>
-            </View>
-
-            <View style={styles.carouselActions}>
+            <View style={styles.imagesRow}>
               <TouchableOpacity 
-                style={styles.carouselActionButton} 
-                onPress={() => handleViewImage(currentType)}
+                style={styles.imageCard}
+                onPress={() => handleImagePress('before')}
+                activeOpacity={0.8}
               >
-                <Eye size={18} color={Colors.light.text} />
-                <Text style={styles.carouselActionText}>View Full</Text>
+                <Text style={styles.imageLabel}>Before</Text>
+                <View style={[styles.imageContainer, { aspectRatio: beforeAspectRatio > 1 ? 1 : beforeAspectRatio }]}>
+                  <Image
+                    source={{ uri: currentProject.beforeMedia?.uri }}
+                    style={styles.mediaImage}
+                    contentFit="cover"
+                  />
+                </View>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.carouselActionButton} 
-                onPress={() => handleRetake(currentType)}
+                style={styles.imageCard}
+                onPress={() => handleImagePress('after')}
+                activeOpacity={0.8}
               >
-                <RefreshCw size={18} color={Colors.light.text} />
-                <Text style={styles.carouselActionText}>Retake</Text>
+                <Text style={styles.imageLabel}>After</Text>
+                <View style={[styles.imageContainer, { aspectRatio: afterAspectRatio > 1 ? 1 : afterAspectRatio }]}>
+                  <Image
+                    source={{ uri: currentProject.afterMedia?.uri }}
+                    style={styles.mediaImage}
+                    contentFit="cover"
+                  />
+                </View>
               </TouchableOpacity>
-            </View>
-
-            <View style={styles.pageIndicator}>
-              <View style={[styles.dot, activeSlide === 0 && styles.dotActive]} />
-              <View style={[styles.dot, activeSlide === 1 && styles.dotActive]} />
             </View>
           </View>
 
@@ -400,96 +349,29 @@ const styles = StyleSheet.create({
   },
   mediaSection: {
     paddingTop: 8,
+    paddingHorizontal: 16,
   },
-  carouselHeader: {
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  tabIndicators: {
+  imagesRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.light.surfaceSecondary,
-    borderRadius: 12,
-    padding: 4,
+    gap: 12,
   },
-  tabButton: {
+  imageCard: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
   },
-  tabButtonActive: {
-    backgroundColor: Colors.light.surface,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: Colors.light.textSecondary,
-  },
-  tabTextActive: {
-    color: Colors.light.text,
+  imageLabel: {
+    fontSize: 13,
     fontWeight: '600' as const,
-  },
-  carouselContainer: {
-    paddingHorizontal: 20,
-  },
-  carousel: {
-    flexGrow: 0,
-  },
-  carouselContent: {
-    alignItems: 'center',
-  },
-  carouselSlide: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: Colors.light.textSecondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   imageContainer: {
     width: '100%',
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-    maxHeight: 260,
-  },
-  carouselActions: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 16,
-    paddingHorizontal: 20,
-    marginTop: 14,
-  },
-  carouselActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    backgroundColor: Colors.light.surfaceSecondary,
-    borderRadius: 12,
-  },
-  carouselActionText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: Colors.light.text,
-  },
-  pageIndicator: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.light.border,
-  },
-  dotActive: {
-    backgroundColor: Colors.light.text,
-    width: 18,
+    maxHeight: 200,
   },
   mediaImage: {
     width: '100%',
