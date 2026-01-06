@@ -2,7 +2,7 @@ import { StyleSheet, View, Text, TouchableOpacity, Modal, ActivityIndicator, Scr
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Coins, Sparkles, Sun, Droplets, Sparkle, Contrast, RefreshCw, X } from "lucide-react-native";
+import { ChevronLeft, Coins, Sparkles, Wand2, RefreshCw, X, Lock } from "lucide-react-native";
 import React, { useState, useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
@@ -12,14 +12,12 @@ import { useApp } from "@/contexts/AppContext";
 type EnhancementOption = {
   id: string;
   label: string;
-  icon: typeof Sun;
+  icon: typeof Wand2;
+  comingSoon?: boolean;
 };
 
 const enhancementOptions: EnhancementOption[] = [
-  { id: 'lighting', label: 'Brighten Image', icon: Sun },
-  { id: 'clarity', label: 'Make it Sharper', icon: Sparkle },
-  { id: 'color', label: 'Fix Colors', icon: Droplets },
-  { id: 'contrast', label: 'Add Depth', icon: Contrast },
+  { id: 'skin', label: 'Improve Skin', icon: Wand2, comingSoon: true },
 ];
 
 export default function GenerateScreen() {
@@ -160,26 +158,36 @@ export default function GenerateScreen() {
                 return (
                   <View
                     key={option.id}
-                    style={styles.optionRow}
+                    style={[styles.optionRow, option.comingSoon && styles.optionRowDisabled]}
                   >
                     <View style={styles.optionLeft}>
-                      <View style={styles.optionIconCircle}>
+                      <View style={[styles.optionIconCircle, option.comingSoon && styles.optionIconCircleDisabled]}>
                         <IconComponent 
                           size={18} 
-                          color={Colors.light.accent} 
+                          color={option.comingSoon ? Colors.light.textTertiary : Colors.light.accent} 
                         />
                       </View>
-                      <Text style={styles.optionLabel}>
+                      <Text style={[styles.optionLabel, option.comingSoon && styles.optionLabelDisabled]}>
                         {option.label}
                       </Text>
+                      <View style={styles.aiBadge}>
+                        <Text style={styles.aiBadgeText}>AI</Text>
+                      </View>
                     </View>
-                    <Switch
-                      value={isSelected}
-                      onValueChange={() => toggleEnhancement(option.id)}
-                      trackColor={{ false: Colors.light.border, true: Colors.light.text }}
-                      thumbColor={isSelected ? Colors.light.accent : Colors.light.surface}
-                      ios_backgroundColor={Colors.light.border}
-                    />
+                    {option.comingSoon ? (
+                      <View style={styles.comingSoonBadge}>
+                        <Lock size={12} color={Colors.light.textTertiary} />
+                        <Text style={styles.comingSoonText}>Coming Soon</Text>
+                      </View>
+                    ) : (
+                      <Switch
+                        value={isSelected}
+                        onValueChange={() => toggleEnhancement(option.id)}
+                        trackColor={{ false: Colors.light.border, true: Colors.light.text }}
+                        thumbColor={isSelected ? Colors.light.accent : Colors.light.surface}
+                        ios_backgroundColor={Colors.light.border}
+                      />
+                    )}
                   </View>
                 );
               })}
@@ -410,7 +418,42 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500' as const,
     color: Colors.light.text,
-    flex: 1,
+  },
+  optionLabelDisabled: {
+    color: Colors.light.textTertiary,
+  },
+  optionRowDisabled: {
+    opacity: 0.8,
+  },
+  optionIconCircleDisabled: {
+    backgroundColor: Colors.light.border,
+  },
+  aiBadge: {
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.light.surface,
+    letterSpacing: 0.5,
+  },
+  comingSoonBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.light.surfaceSecondary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  comingSoonText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.light.textTertiary,
   },
   bottomSection: {
     paddingHorizontal: 20,
