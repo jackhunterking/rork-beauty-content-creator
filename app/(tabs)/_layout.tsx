@@ -36,7 +36,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          title: "Library",
+          title: "Work",
           tabBarIcon: ({ color }) => <FolderOpen color={color} size={22} />,
         }}
       />

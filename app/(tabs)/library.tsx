@@ -21,19 +21,19 @@ const filters: { type: FilterType; label: string; icon: React.ReactNode }[] = [
   { type: 'carousel', label: 'Carousels', icon: <Layers size={14} color={Colors.light.text} /> },
 ];
 
-export default function LibraryScreen() {
+export default function WorkScreen() {
   const router = useRouter();
-  const { library, deleteFromLibrary } = useApp();
+  const { work, deleteFromWork } = useApp();
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
 
-  const filteredLibrary = useMemo(() => {
-    if (activeFilter === 'all') return library;
-    return library.filter(item => item.type === activeFilter);
-  }, [library, activeFilter]);
+  const filteredWork = useMemo(() => {
+    if (activeFilter === 'all') return work;
+    return work.filter(item => item.type === activeFilter);
+  }, [work, activeFilter]);
 
   const handleShare = useCallback(async (e: any, assetId: string) => {
     e.stopPropagation();
-    const asset = library.find(a => a.id === assetId);
+    const asset = work.find(a => a.id === assetId);
     if (!asset) return;
     
     if (Platform.OS === 'web') {
@@ -49,7 +49,7 @@ export default function LibraryScreen() {
     } catch (error) {
       console.log('Share error:', error);
     }
-  }, [library]);
+  }, [work]);
 
   const handleDelete = useCallback((e: any, assetId: string) => {
     e.stopPropagation();
@@ -58,10 +58,10 @@ export default function LibraryScreen() {
       'Are you sure you want to delete this item?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => deleteFromLibrary(assetId) },
+        { text: 'Delete', style: 'destructive', onPress: () => deleteFromWork(assetId) },
       ]
     );
-  }, [deleteFromLibrary]);
+  }, [deleteFromWork]);
 
   const handleItemPress = useCallback((assetId: string) => {
     router.push({ pathname: '/library/viewer' as const, params: { id: assetId } });
@@ -70,7 +70,7 @@ export default function LibraryScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Library</Text>
+        <Text style={styles.title}>Work</Text>
       </View>
 
       <View style={styles.filterRow}>
@@ -95,7 +95,7 @@ export default function LibraryScreen() {
         ))}
       </View>
 
-      {filteredLibrary.length === 0 ? (
+      {filteredWork.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
             <FolderOpen size={48} color={Colors.light.textTertiary} />
@@ -112,7 +112,7 @@ export default function LibraryScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.grid}>
-            {filteredLibrary.map((item) => (
+            {filteredWork.map((item) => (
               <Pressable
                 key={item.id}
                 style={styles.itemTile}

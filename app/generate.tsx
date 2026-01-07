@@ -22,7 +22,7 @@ const enhancementOptions: EnhancementOption[] = [
 
 export default function GenerateScreen() {
   const router = useRouter();
-  const { currentProject, credits, getCreditCost, spendCredits, saveToLibrary, deleteDraft } = useApp();
+  const { currentProject, credits, getCreditCost, spendCredits, saveToWork, deleteDraft } = useApp();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedEnhancements, setSelectedEnhancements] = useState<string[]>([]);
@@ -83,7 +83,7 @@ export default function GenerateScreen() {
       creditCost,
     };
 
-    saveToLibrary(newAsset);
+    saveToWork(newAsset);
     
     // Auto-delete the draft after successful generation
     if (currentProject.draftId) {
@@ -100,7 +100,7 @@ export default function GenerateScreen() {
       pathname: '/result',
       params: { assetId: newAsset.id }
     });
-  }, [creditCost, currentProject, spendCredits, saveToLibrary, deleteDraft, router]);
+  }, [creditCost, currentProject, spendCredits, saveToWork, deleteDraft, router]);
 
   if (isGenerating) {
     return (

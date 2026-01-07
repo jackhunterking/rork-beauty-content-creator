@@ -7,7 +7,7 @@ import { fetchTemplates, toggleTemplateFavourite } from '@/services/templateServ
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
 
 const STORAGE_KEYS = {
-  LIBRARY: 'beauty_library',
+  WORK: 'beauty_work',
   CREDITS: 'beauty_credits',
   BRAND_KIT: 'beauty_brand_kit',
 };
@@ -16,7 +16,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [library, setLibrary] = useState<SavedAsset[]>([]);
+  const [work, setWork] = useState<SavedAsset[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [credits, setCredits] = useState<number>(50);
   const [brandKit, setBrandKit] = useState<BrandKit>({
@@ -46,10 +46,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
-  const libraryQuery = useQuery({
-    queryKey: ['library'],
+  const workQuery = useQuery({
+    queryKey: ['work'],
     queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.LIBRARY);
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.WORK);
       return stored ? (JSON.parse(stored) as SavedAsset[]) : [];
     },
   });
@@ -85,8 +85,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [templatesQuery.data]);
 
   useEffect(() => {
-    if (libraryQuery.data) setLibrary(libraryQuery.data);
-  }, [libraryQuery.data]);
+    if (workQuery.data) setWork(workQuery.data);
+  }, [workQuery.data]);
 
   useEffect(() => {
     if (creditsQuery.data !== undefined) setCredits(creditsQuery.data);
@@ -119,27 +119,27 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  const saveToLibraryMutation = useMutation({
+  const saveToWorkMutation = useMutation({
     mutationFn: async (asset: SavedAsset) => {
-      const updated = [asset, ...library];
-      await AsyncStorage.setItem(STORAGE_KEYS.LIBRARY, JSON.stringify(updated));
+      const updated = [asset, ...work];
+      await AsyncStorage.setItem(STORAGE_KEYS.WORK, JSON.stringify(updated));
       return updated;
     },
     onSuccess: (data) => {
-      setLibrary(data);
-      queryClient.invalidateQueries({ queryKey: ['library'] });
+      setWork(data);
+      queryClient.invalidateQueries({ queryKey: ['work'] });
     },
   });
 
-  const deleteFromLibraryMutation = useMutation({
+  const deleteFromWorkMutation = useMutation({
     mutationFn: async (assetId: string) => {
-      const updated = library.filter(a => a.id !== assetId);
-      await AsyncStorage.setItem(STORAGE_KEYS.LIBRARY, JSON.stringify(updated));
+      const updated = work.filter(a => a.id !== assetId);
+      await AsyncStorage.setItem(STORAGE_KEYS.WORK, JSON.stringify(updated));
       return updated;
     },
     onSuccess: (data) => {
-      setLibrary(data);
-      queryClient.invalidateQueries({ queryKey: ['library'] });
+      setWork(data);
+      queryClient.invalidateQueries({ queryKey: ['work'] });
     },
   });
 
@@ -275,18 +275,18 @@ export const [AppProvider, useApp] = createContextHook(() => {
     favouriteTemplates,
     
     // Other state
-    library,
+    work,
     drafts,
     credits,
     brandKit,
     currentProject,
-    isLoading: templatesQuery.isLoading || libraryQuery.isLoading,
+    isLoading: templatesQuery.isLoading || workQuery.isLoading,
     isDraftsLoading: draftsQuery.isLoading,
     
     // Actions
     toggleFavourite: (id: string) => toggleFavouriteMutation.mutate(id),
-    saveToLibrary: (asset: SavedAsset) => saveToLibraryMutation.mutate(asset),
-    deleteFromLibrary: (id: string) => deleteFromLibraryMutation.mutate(id),
+    saveToWork: (asset: SavedAsset) => saveToWorkMutation.mutate(asset),
+    deleteFromWork: (id: string) => deleteFromWorkMutation.mutate(id),
     spendCredits: (amount: number) => spendCreditsMutation.mutate(amount),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,

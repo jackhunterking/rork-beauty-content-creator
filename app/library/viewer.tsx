@@ -11,16 +11,16 @@ import { useApp } from "@/contexts/AppContext";
 
 const { width } = Dimensions.get('window');
 
-export default function LibraryViewerScreen() {
+export default function WorkViewerScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { library, deleteFromLibrary } = useApp();
+  const { work, deleteFromWork } = useApp();
   const [currentSlide, setCurrentSlide] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const asset = useMemo(() => 
-    library.find(a => a.id === id),
-    [library, id]
+    work.find(a => a.id === id),
+    [work, id]
   );
 
   const handleShare = useCallback(async () => {
@@ -54,14 +54,14 @@ export default function LibraryViewerScreen() {
           style: 'destructive', 
           onPress: () => {
             if (id) {
-              deleteFromLibrary(id);
+              deleteFromWork(id);
               router.back();
             }
           }
         },
       ]
     );
-  }, [id, deleteFromLibrary, router]);
+  }, [id, deleteFromWork, router]);
 
   const handleScroll = useCallback((event: any) => {
     const slideIndex = Math.round(event.nativeEvent.contentOffset.x / width);

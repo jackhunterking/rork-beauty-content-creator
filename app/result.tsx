@@ -14,14 +14,14 @@ const { width } = Dimensions.get('window');
 export default function ResultScreen() {
   const router = useRouter();
   const { assetId } = useLocalSearchParams<{ assetId: string }>();
-  const { library, resetProject } = useApp();
+  const { work, resetProject } = useApp();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [saved, setSaved] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const asset = useMemo(() => 
-    library.find(a => a.id === assetId),
-    [library, assetId]
+    work.find(a => a.id === assetId),
+    [work, assetId]
   );
 
   const handleShare = useCallback(async () => {
