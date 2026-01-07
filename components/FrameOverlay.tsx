@@ -2,18 +2,23 @@ import React, { useMemo } from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { Image } from 'expo-image';
 import { ImageSlot } from '@/types';
-import { calculateFrameDimensions } from '@/utils/frameCalculator';
+import { calculateFrameForAvailableArea, AvailableArea } from '@/utils/frameCalculator';
 
 interface FrameOverlayProps {
   slot: ImageSlot;
   label?: string;
   showCorners?: boolean;
   previewUri?: string; // When provided, display the captured image inside the frame
+  availableArea: AvailableArea; // The area where the frame can be placed (between UI elements)
 }
 
 /**
  * FrameOverlay displays a visual guide over the camera preview
  * that matches the aspect ratio of the target image slot.
+ * 
+ * The frame is sized to fill the maximum available area while maintaining
+ * the slot's aspect ratio. The available area is the space between the
+ * top bar and bottom controls, ensuring no UI overlap.
  * 
  * Uses absolute positioning for precise mask regions:
  * - Top mask: covers from screen top to frame top
@@ -25,11 +30,13 @@ interface FrameOverlayProps {
  * When previewUri is provided, it displays the captured image inside
  * the frame area, ensuring visual consistency between capture and preview.
  */
-export function FrameOverlay({ slot, label, showCorners = true, previewUri }: FrameOverlayProps) {
-  // Calculate frame dimensions and position using the centralized calculator
+export function FrameOverlay({ slot, label, showCorners = true, previewUri, availableArea }: FrameOverlayProps) {
+  // Calculate frame dimensions and position using the available area
+  // This ensures the frame is sized to fill maximum space while maintaining
+  // the slot's aspect ratio and staying within the UI-free area
   const frame = useMemo(() => {
-    return calculateFrameDimensions(slot);
-  }, [slot]);
+    return calculateFrameForAvailableArea(slot, availableArea);
+  }, [slot, availableArea]);
 
   const cornerSize = Math.min(frame.width, frame.height) * 0.08;
   const cornerThickness = 3;

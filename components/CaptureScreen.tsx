@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Dimensions } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
@@ -9,6 +9,15 @@ import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { processImageForDimensions } from "@/utils/imageProcessing";
 import { ImageSlot } from "@/types";
+import { AvailableArea } from "@/utils/frameCalculator";
+
+// UI element height constants
+// These values must match the actual rendered heights of the UI components
+const TOP_BAR_HEIGHT = 60; // Back button + title + padding
+const BOTTOM_CONTROLS_HEIGHT = 140; // Capture button area + padding
+const FRAME_VERTICAL_PADDING = 16; // Extra breathing room above/below frame
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface CapturedMedia {
   uri: string;
@@ -31,6 +40,26 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
   const isCapturingRef = useRef(false);
+  
+  // Get safe area insets for proper positioning
+  const insets = useSafeAreaInsets();
+  
+  // Calculate the available area for the frame
+  // This is the space between the top bar and bottom controls
+  const availableArea: AvailableArea = useMemo(() => {
+    // Top of available area: safe area top + top bar height + padding
+    const top = insets.top + TOP_BAR_HEIGHT + FRAME_VERTICAL_PADDING;
+    // Bottom of available area: screen height - safe area bottom - bottom controls - padding
+    const bottom = SCREEN_HEIGHT - insets.bottom - BOTTOM_CONTROLS_HEIGHT - FRAME_VERTICAL_PADDING;
+    
+    return {
+      top,
+      bottom,
+      screenWidth: SCREEN_WIDTH,
+      screenHeight: SCREEN_HEIGHT,
+      horizontalPadding: 16, // Small horizontal padding for aesthetics
+    };
+  }, [insets.top, insets.bottom]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -192,6 +221,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
             slot={slot} 
             label={`${title}: ${slot.width}x${slot.height}`}
             previewUri={previewUri || undefined}
+            availableArea={availableArea}
           />
         </View>
       )}

@@ -161,6 +161,13 @@ function RootLayoutNav() {
         }} 
       />
       <Stack.Screen 
+        name="capture/[slotId]" 
+        options={{ 
+          headerShown: false,
+          presentation: 'card',
+        }} 
+      />
+      <Stack.Screen 
         name="generate" 
         options={{ 
           headerShown: false,

@@ -34,6 +34,23 @@ export interface FrameCalculation {
 }
 
 /**
+ * Defines the available area where the frame can be placed
+ * This accounts for UI elements like top bar and bottom controls
+ */
+export interface AvailableArea {
+  // Distance from screen top to where frame area starts (safe area + top bar)
+  top: number;
+  // Distance from screen top to where frame area ends (screen height - safe area - bottom controls)
+  bottom: number;
+  // Screen width (for horizontal positioning)
+  screenWidth: number;
+  // Screen height (for mask calculations)
+  screenHeight: number;
+  // Optional horizontal padding
+  horizontalPadding?: number;
+}
+
+/**
  * Default constraints for the camera frame overlay
  */
 export const DEFAULT_FRAME_CONSTRAINTS: FrameConstraints = {
@@ -120,6 +137,65 @@ export function calculateFrameDimensions(
     screenHeight,
     isConstrained,
     constraintType,
+  };
+}
+
+/**
+ * Calculate frame dimensions and position that fills the maximum available area
+ * while maintaining the slot's aspect ratio. The frame is centered within the
+ * available area between the top bar and bottom controls.
+ * 
+ * This is the preferred function for camera capture screens where the frame
+ * must not overlap with UI elements.
+ * 
+ * @param slot - The image slot with target dimensions (defines aspect ratio)
+ * @param availableArea - The area where the frame can be placed
+ * @returns Calculated frame dimensions and position
+ */
+export function calculateFrameForAvailableArea(
+  slot: ImageSlot,
+  availableArea: AvailableArea
+): FrameCalculation {
+  const aspectRatio = slot.width / slot.height;
+  const horizontalPadding = availableArea.horizontalPadding ?? 0;
+  
+  // Calculate available dimensions
+  const availableWidth = availableArea.screenWidth - (horizontalPadding * 2);
+  const availableHeight = availableArea.bottom - availableArea.top;
+  
+  let frameWidth: number;
+  let frameHeight: number;
+  
+  // Determine which dimension is the constraint
+  if (availableWidth / availableHeight > aspectRatio) {
+    // Height is the limiting factor - frame will be narrower than available width
+    frameHeight = availableHeight;
+    frameWidth = frameHeight * aspectRatio;
+  } else {
+    // Width is the limiting factor - frame will be shorter than available height
+    frameWidth = availableWidth;
+    frameHeight = frameWidth / aspectRatio;
+  }
+  
+  // Round dimensions
+  const finalWidth = Math.round(frameWidth);
+  const finalHeight = Math.round(frameHeight);
+  
+  // Center frame within the available area
+  // Vertical: center between availableArea.top and availableArea.bottom
+  const frameTop = Math.round(availableArea.top + (availableHeight - finalHeight) / 2);
+  // Horizontal: center on screen
+  const frameLeft = Math.round((availableArea.screenWidth - finalWidth) / 2);
+  
+  return {
+    width: finalWidth,
+    height: finalHeight,
+    top: frameTop,
+    left: frameLeft,
+    screenWidth: availableArea.screenWidth,
+    screenHeight: availableArea.screenHeight,
+    isConstrained: false,
+    constraintType: 'none',
   };
 }
 
