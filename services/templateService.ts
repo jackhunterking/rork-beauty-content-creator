@@ -7,12 +7,14 @@ const DEFAULT_AFTER_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?te
 
 /**
  * Convert database row (snake_case) to Template type (camelCase)
+ * Exported for use by real-time subscription hooks
  */
-function mapRowToTemplate(row: TemplateRow): Template {
+export function mapRowToTemplate(row: TemplateRow): Template {
   return {
     id: row.id,
     name: row.name,
-    thumbnail: row.thumbnail,
+    // Use templated_preview_url if available, otherwise fall back to thumbnail
+    thumbnail: row.templated_preview_url || row.thumbnail,
     canvasWidth: row.canvas_width,
     canvasHeight: row.canvas_height,
     backgroundUrl: row.background_url || undefined,
@@ -34,6 +36,10 @@ function mapRowToTemplate(row: TemplateRow): Template {
     isFavourite: row.is_favourite,
     isActive: row.is_active,
     createdAt: row.created_at,
+    // Templated.io integration fields
+    templatedId: row.templated_id || undefined,
+    templatedPreviewUrl: row.templated_preview_url || undefined,
+    layersJson: row.layers_json || undefined,
   };
 }
 

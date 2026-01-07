@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft } from '@/types';
-import { fetchTemplates, toggleTemplateFavourite } from '@/services/templateService';
+import { toggleTemplateFavourite } from '@/services/templateService';
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
+import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 
 const STORAGE_KEYS = {
   WORK: 'beauty_work',
@@ -15,6 +16,15 @@ const STORAGE_KEYS = {
 export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   
+  // Use real-time templates hook instead of React Query
+  const { 
+    templates: realtimeTemplates, 
+    isLoading: isTemplatesLoading, 
+    error: templatesError,
+    refetch: refetchTemplates 
+  } = useRealtimeTemplates();
+  
+  // Local state for optimistic updates
   const [templates, setTemplates] = useState<Template[]>([]);
   const [work, setWork] = useState<SavedAsset[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -39,12 +49,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     draftId: null,
   });
 
-  // Fetch templates from Supabase
-  const templatesQuery = useQuery({
-    queryKey: ['templates'],
-    queryFn: fetchTemplates,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
+  // Sync real-time templates to local state
+  useEffect(() => {
+    setTemplates(realtimeTemplates);
+  }, [realtimeTemplates]);
 
   const workQuery = useQuery({
     queryKey: ['work'],
@@ -81,10 +89,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   });
 
   useEffect(() => {
-    if (templatesQuery.data) setTemplates(templatesQuery.data);
-  }, [templatesQuery.data]);
-
-  useEffect(() => {
     if (workQuery.data) setWork(workQuery.data);
   }, [workQuery.data]);
 
@@ -100,24 +104,26 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (draftsQuery.data) setDrafts(draftsQuery.data);
   }, [draftsQuery.data]);
 
-  // Toggle favourite - updates both Supabase and local state
-  const toggleFavouriteMutation = useMutation({
-    mutationFn: async (templateId: string) => {
-      const template = templates.find(t => t.id === templateId);
-      if (!template) throw new Error('Template not found');
-      
-      const newFavouriteState = !template.isFavourite;
+  // Toggle favourite with optimistic update
+  const toggleFavourite = useCallback(async (templateId: string) => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+    
+    const newFavouriteState = !template.isFavourite;
+    
+    // Optimistic update - immediately update UI
+    setTemplates(prev => optimisticUpdateTemplate(prev, templateId, { isFavourite: newFavouriteState }));
+    
+    try {
+      // Sync with database
       await toggleTemplateFavourite(templateId, newFavouriteState);
-      
-      return templates.map(t => 
-        t.id === templateId ? { ...t, isFavourite: newFavouriteState } : t
-      );
-    },
-    onSuccess: (data) => {
-      setTemplates(data);
-      queryClient.invalidateQueries({ queryKey: ['templates'] });
-    },
-  });
+      // Real-time subscription will handle the actual update
+    } catch (error) {
+      console.error('Error toggling favourite:', error);
+      // Revert on error
+      setTemplates(prev => optimisticUpdateTemplate(prev, templateId, { isFavourite: !newFavouriteState }));
+    }
+  }, [templates]);
 
   const saveToWorkMutation = useMutation({
     mutationFn: async (asset: SavedAsset) => {
@@ -201,9 +207,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
+  // Filter templates by favourite status
   const favouriteTemplates = useMemo(() => 
     templates.filter(t => t.isFavourite), 
     [templates]
+  );
+
+  // Filter templates by selected content type
+  const filteredTemplates = useMemo(() => 
+    templates.filter(t => t.supports.includes(currentProject.contentType)),
+    [templates, currentProject.contentType]
   );
 
   const setContentType = useCallback((type: ContentType) => {
@@ -270,9 +283,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [currentProject.contentType]);
 
   return {
-    // Templates (renamed from themes)
+    // Templates (with real-time updates)
     templates,
+    filteredTemplates,
     favouriteTemplates,
+    templatesError,
+    refetchTemplates,
     
     // Other state
     work,
@@ -280,11 +296,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     credits,
     brandKit,
     currentProject,
-    isLoading: templatesQuery.isLoading || workQuery.isLoading,
+    isLoading: isTemplatesLoading || workQuery.isLoading,
     isDraftsLoading: draftsQuery.isLoading,
     
     // Actions
-    toggleFavourite: (id: string) => toggleFavouriteMutation.mutate(id),
+    toggleFavourite,
     saveToWork: (asset: SavedAsset) => saveToWorkMutation.mutate(asset),
     deleteFromWork: (id: string) => deleteFromWorkMutation.mutate(id),
     spendCredits: (amount: number) => spendCreditsMutation.mutate(amount),

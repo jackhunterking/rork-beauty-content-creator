@@ -45,6 +45,27 @@ export interface Template {
   isActive: boolean;
   
   createdAt: string;
+  
+  // Templated.io integration fields
+  templatedId?: string;
+  templatedPreviewUrl?: string;
+  layersJson?: TemplatedLayer[];
+}
+
+// Templated.io layer structure
+export interface TemplatedLayer {
+  layer: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  image_url?: string;
+  text?: string;
+  color?: string;
+  fill?: string;
+  // Other properties can be added as needed
+  [key: string]: unknown;
 }
 
 // Database row type (snake_case from Supabase)
@@ -72,6 +93,10 @@ export interface TemplateRow {
   is_active: boolean;
   is_favourite: boolean;
   created_at: string;
+  // Templated.io integration fields
+  templated_id: string | null;
+  templated_preview_url: string | null;
+  layers_json: TemplatedLayer[] | null;
 }
 
 // Draft for save-for-later functionality

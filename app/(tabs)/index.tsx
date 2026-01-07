@@ -22,7 +22,7 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
 
 export default function CreateScreen() {
   const router = useRouter();
-  const { templates, currentProject, setContentType, selectTemplate, toggleFavourite, isLoading, drafts } = useApp();
+  const { filteredTemplates, currentProject, setContentType, selectTemplate, toggleFavourite, isLoading, drafts } = useApp();
 
   const draftCount = drafts.length;
 
@@ -106,7 +106,7 @@ export default function CreateScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.grid}>
-            {templates.map((template) => (
+            {filteredTemplates.map((template) => (
               <Pressable
                 key={template.id}
                 style={styles.templateTile}
