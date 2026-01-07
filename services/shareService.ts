@@ -1,39 +1,16 @@
 import * as Sharing from 'expo-sharing';
-import { File, Directory, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Clipboard from 'expo-clipboard';
+import { Platform } from 'react-native';
 
-/**
- * Share Service
- * 
- * Handles sharing images to social media and other apps.
- * Uses the native share sheet for cross-platform support.
- * 
- * Features:
- * - Share images via native share sheet
- * - Copy image to clipboard
- * - Share to specific apps (when available)
- * - Generate shareable text with images
- */
-
-// ============================================
-// Check Availability
-// ============================================
-
-/**
- * Check if sharing is available on this device
- */
 export async function isSharingAvailable(): Promise<boolean> {
   return Sharing.isAvailableAsync();
 }
 
-// ============================================
-// Share Functions
-// ============================================
-
 export interface ShareOptions {
   mimeType?: string;
   dialogTitle?: string;
-  UTI?: string;  // iOS Uniform Type Identifier
+  UTI?: string;
 }
 
 export interface ShareResult {
@@ -42,19 +19,11 @@ export interface ShareResult {
   error?: string;
 }
 
-/**
- * Share a local image file using the native share sheet
- * 
- * @param localPath - Path to local file (file:// URI)
- * @param options - Optional sharing options
- * @returns ShareResult
- */
 export async function shareImage(
   localPath: string,
   options: ShareOptions = {}
 ): Promise<ShareResult> {
   try {
-    // Check if sharing is available
     const isAvailable = await isSharingAvailable();
     if (!isAvailable) {
       return {
@@ -63,26 +32,25 @@ export async function shareImage(
       };
     }
     
-    // Verify file exists
-    const file = new File(localPath);
-    if (!file.exists) {
-      return {
-        success: false,
-        error: 'File not found',
-      };
+    if (Platform.OS !== 'web') {
+      const fileInfo = await FileSystem.getInfoAsync(localPath);
+      if (!fileInfo.exists) {
+        return {
+          success: false,
+          error: 'File not found',
+        };
+      }
     }
     
-    // Share the file
     await Sharing.shareAsync(localPath, {
       mimeType: options.mimeType || 'image/jpeg',
       dialogTitle: options.dialogTitle || 'Share your creation',
       UTI: options.UTI || 'public.jpeg',
     });
     
-    // expo-sharing doesn't return result info
     return {
       success: true,
-      action: 'unknown',  // We don't know if user actually shared or dismissed
+      action: 'unknown',
     };
     
   } catch (error) {
@@ -94,45 +62,29 @@ export async function shareImage(
   }
 }
 
-/**
- * Download a remote image and share it
- * 
- * @param remoteUrl - URL of image to share
- * @param filename - Optional filename
- * @param options - Optional sharing options
- * @returns ShareResult
- */
 export async function downloadAndShare(
   remoteUrl: string,
   filename?: string,
   options: ShareOptions = {}
 ): Promise<ShareResult> {
+  if (Platform.OS === 'web') {
+    return { success: false, error: 'Not supported on web' };
+  }
+  
   try {
-    // Generate local path
     const name = filename || `share_${Date.now()}`;
-    const destination = new Directory(Paths.cache);
+    const localPath = `${FileSystem.cacheDirectory}${name}.jpg`;
     
-    // Ensure cache directory exists
-    if (!destination.exists) {
-      destination.create({ intermediates: true });
-    }
+    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
     
-    // Download the file
-    const downloadedFile = await File.downloadFileAsync(remoteUrl, destination);
-    
-    if (!downloadedFile.exists) {
+    if (downloadResult.status !== 200) {
       return {
         success: false,
         error: 'Download failed',
       };
     }
     
-    // Rename to our desired filename
-    const finalFile = new File(Paths.cache, `${name}.jpg`);
-    downloadedFile.move(finalFile);
-    
-    // Share the downloaded file
-    return shareImage(finalFile.uri, options);
+    return shareImage(downloadResult.uri, options);
     
   } catch (error) {
     console.error('Download and share failed:', error);
@@ -143,11 +95,6 @@ export async function downloadAndShare(
   }
 }
 
-/**
- * Share multiple images
- * Note: On iOS, only single file sharing is supported by expo-sharing
- * On Android, we can potentially share multiple, but for consistency we share one
- */
 export async function shareImages(
   localPaths: string[],
   options: ShareOptions = {}
@@ -159,18 +106,9 @@ export async function shareImages(
     };
   }
   
-  // For now, share just the first image
-  // Future: Could create a collage or zip for multiple images
   return shareImage(localPaths[0], options);
 }
 
-// ============================================
-// Clipboard Functions
-// ============================================
-
-/**
- * Copy text to clipboard
- */
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     await Clipboard.setStringAsync(text);
@@ -181,14 +119,8 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
-/**
- * Copy image to clipboard (if supported)
- * Note: Image clipboard is limited on mobile platforms
- */
 export async function copyImageToClipboard(localPath: string): Promise<boolean> {
   try {
-    // expo-clipboard has setImageAsync but it's web-only
-    // For mobile, we can only copy the path as text
     await Clipboard.setStringAsync(localPath);
     return true;
   } catch (error) {
@@ -197,13 +129,6 @@ export async function copyImageToClipboard(localPath: string): Promise<boolean> 
   }
 }
 
-// ============================================
-// Social Media Helpers
-// ============================================
-
-/**
- * Generate Instagram-friendly caption
- */
 export function generateInstagramCaption(hashtags: string[] = []): string {
   const defaultHashtags = [
     '#beforeandafter',
@@ -217,20 +142,13 @@ export function generateInstagramCaption(hashtags: string[] = []): string {
   return allHashtags.join(' ');
 }
 
-/**
- * Generate Twitter/X-friendly text
- */
 export function generateTwitterText(caption?: string): string {
   return caption || 'Check out my transformation! ✨ #BeforeAndAfter';
 }
 
-/**
- * Prepare image for specific social platforms
- * Some platforms have specific requirements
- */
 export interface SocialPlatformInfo {
   name: string;
-  maxFileSize: number;  // in bytes
+  maxFileSize: number;
   supportedFormats: string[];
   aspectRatioRange: { min: number; max: number };
   notes: string;
@@ -239,37 +157,34 @@ export interface SocialPlatformInfo {
 export const SOCIAL_PLATFORMS: Record<string, SocialPlatformInfo> = {
   instagram: {
     name: 'Instagram',
-    maxFileSize: 30 * 1024 * 1024, // 30MB
+    maxFileSize: 30 * 1024 * 1024,
     supportedFormats: ['jpeg', 'png'],
-    aspectRatioRange: { min: 0.8, max: 1.91 }, // 4:5 to 1.91:1
+    aspectRatioRange: { min: 0.8, max: 1.91 },
     notes: 'Square (1:1) works best for feed posts',
   },
   tiktok: {
     name: 'TikTok',
-    maxFileSize: 287 * 1024 * 1024, // 287MB
+    maxFileSize: 287 * 1024 * 1024,
     supportedFormats: ['mp4', 'jpeg', 'png'],
-    aspectRatioRange: { min: 0.5625, max: 0.5625 }, // 9:16
+    aspectRatioRange: { min: 0.5625, max: 0.5625 },
     notes: 'Vertical format preferred',
   },
   facebook: {
     name: 'Facebook',
-    maxFileSize: 25 * 1024 * 1024, // 25MB
+    maxFileSize: 25 * 1024 * 1024,
     supportedFormats: ['jpeg', 'png', 'gif'],
     aspectRatioRange: { min: 0.5, max: 2 },
     notes: 'Square or horizontal works well',
   },
   twitter: {
     name: 'X (Twitter)',
-    maxFileSize: 5 * 1024 * 1024, // 5MB for images
+    maxFileSize: 5 * 1024 * 1024,
     supportedFormats: ['jpeg', 'png', 'gif', 'webp'],
     aspectRatioRange: { min: 0.5, max: 2 },
     notes: 'Horizontal 16:9 or square recommended',
   },
 };
 
-/**
- * Check if file meets platform requirements
- */
 export async function checkPlatformRequirements(
   localPath: string,
   platform: keyof typeof SOCIAL_PLATFORMS
@@ -277,22 +192,24 @@ export async function checkPlatformRequirements(
   const platformInfo = SOCIAL_PLATFORMS[platform];
   const issues: string[] = [];
   
+  if (Platform.OS === 'web') {
+    return { valid: true, issues: [] };
+  }
+  
   try {
-    const file = new File(localPath);
+    const fileInfo = await FileSystem.getInfoAsync(localPath);
     
-    if (!file.exists) {
+    if (!fileInfo.exists) {
       return { valid: false, issues: ['File not found'] };
     }
     
-    // Check file size
-    const fileSize = file.size ?? 0;
+    const fileSize = fileInfo.size ?? 0;
     if (fileSize > platformInfo.maxFileSize) {
       const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
       const maxMB = (platformInfo.maxFileSize / (1024 * 1024)).toFixed(0);
       issues.push(`File size (${sizeMB}MB) exceeds ${platformInfo.name} limit (${maxMB}MB)`);
     }
     
-    // Check format
     const extension = localPath.split('.').pop()?.toLowerCase() || '';
     if (!platformInfo.supportedFormats.includes(extension)) {
       issues.push(`${extension.toUpperCase()} format may not be optimal for ${platformInfo.name}`);
@@ -305,39 +222,31 @@ export async function checkPlatformRequirements(
   }
 }
 
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Prepare a file with a nice filename for sharing
- */
 export async function prepareForSharing(
   localPath: string,
   filename: string = 'beauty_creation'
 ): Promise<string> {
+  if (Platform.OS === 'web') {
+    return localPath;
+  }
   const extension = localPath.split('.').pop() || 'jpg';
-  const sourceFile = new File(localPath);
-  const destFile = new File(Paths.cache, `${filename}_${Date.now()}.${extension}`);
-  
-  sourceFile.copy(destFile);
-  
-  return destFile.uri;
+  const destPath = `${FileSystem.cacheDirectory}${filename}_${Date.now()}.${extension}`;
+  await FileSystem.copyAsync({ from: localPath, to: destPath });
+  return destPath;
 }
 
-/**
- * Clean up temporary share files
- */
 export async function cleanupShareFiles(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  
   try {
-    const cacheDir = new Directory(Paths.cache);
-    if (!cacheDir.exists) return;
+    const cacheDir = FileSystem.cacheDirectory;
+    if (!cacheDir) return;
     
-    const items = cacheDir.list();
+    const items = await FileSystem.readDirectoryAsync(cacheDir);
     
     for (const item of items) {
-      if (item instanceof File && (item.name.startsWith('share_') || item.name.startsWith('beauty_creation_'))) {
-        item.delete();
+      if (item.startsWith('share_') || item.startsWith('beauty_creation_')) {
+        await FileSystem.deleteAsync(`${cacheDir}${item}`, { idempotent: true });
       }
     }
   } catch (error) {

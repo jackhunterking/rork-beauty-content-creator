@@ -1,143 +1,123 @@
-import { File, Directory, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 
-// Base directories for local storage
-const DOCUMENTS_DIR = Paths.document;
-const DRAFTS_DIR = new Directory(DOCUMENTS_DIR, 'drafts');
-const RENDER_CACHE_DIR = new Directory(DOCUMENTS_DIR, 'render-cache');
+const DOCUMENTS_DIR = FileSystem.documentDirectory || '';
+const DRAFTS_DIR = `${DOCUMENTS_DIR}drafts/`;
+const RENDER_CACHE_DIR = `${DOCUMENTS_DIR}render-cache/`;
 
-/**
- * Local Storage Service
- * 
- * Manages all local file system operations for:
- * - Draft storage (user's captured images)
- * - Render cache (Templated.io rendered outputs)
- * - Directory structure management
- */
-
-// ============================================
-// Directory Management
-// ============================================
-
-/**
- * Initialize the local storage directories
- * Should be called when app starts
- */
 export async function initializeLocalStorage(): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
   await ensureDirectoryExists(DRAFTS_DIR);
   await ensureDirectoryExists(RENDER_CACHE_DIR);
 }
 
-/**
- * Ensure a directory exists, create if it doesn't
- */
-export async function ensureDirectoryExists(dir: Directory | string): Promise<void> {
-  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
-  if (!directory.exists) {
-    directory.create({ intermediates: true });
+export async function ensureDirectoryExists(dirPath: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
+  try {
+    const info = await FileSystem.getInfoAsync(dirPath);
+    if (!info.exists) {
+      await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
+    }
+  } catch (error) {
+    console.error('Error ensuring directory exists:', error);
   }
 }
 
-/**
- * Get the draft directory path for a specific draft
- */
-export function getDraftDirectory(draftId: string): Directory {
-  return new Directory(DRAFTS_DIR, draftId);
+export function getDraftDirectory(draftId: string): string {
+  return `${DRAFTS_DIR}${draftId}/`;
 }
 
-/**
- * Get the slots directory within a draft
- */
-export function getDraftSlotsDirectory(draftId: string): Directory {
-  return new Directory(getDraftDirectory(draftId), 'slots');
+export function getDraftSlotsDirectory(draftId: string): string {
+  return `${getDraftDirectory(draftId)}slots/`;
 }
 
-/**
- * Get the renders directory within a draft (for cached renders)
- */
-export function getDraftRendersDirectory(draftId: string): Directory {
-  return new Directory(getDraftDirectory(draftId), 'renders');
+export function getDraftRendersDirectory(draftId: string): string {
+  return `${getDraftDirectory(draftId)}renders/`;
 }
 
-/**
- * Create the full directory structure for a new draft
- */
 export async function createDraftDirectories(draftId: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
   await ensureDirectoryExists(getDraftDirectory(draftId));
   await ensureDirectoryExists(getDraftSlotsDirectory(draftId));
   await ensureDirectoryExists(getDraftRendersDirectory(draftId));
 }
 
-// ============================================
-// File Operations
-// ============================================
-
-/**
- * Copy a file to a destination path
- */
 export async function copyFile(sourceUri: string, destPath: string): Promise<string> {
-  // Ensure destination directory exists
+  if (Platform.OS === 'web') {
+    return sourceUri;
+  }
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
-  
-  const sourceFile = new File(sourceUri);
-  const destFile = new File(destPath);
-  sourceFile.copy(destFile);
-  
+  await FileSystem.copyAsync({ from: sourceUri, to: destPath });
   return destPath;
 }
 
-/**
- * Move a file to a destination path
- */
 export async function moveFile(sourceUri: string, destPath: string): Promise<string> {
+  if (Platform.OS === 'web') {
+    return sourceUri;
+  }
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
-  
-  const sourceFile = new File(sourceUri);
-  const destFile = new File(destPath);
-  sourceFile.move(destFile);
-  
+  await FileSystem.moveAsync({ from: sourceUri, to: destPath });
   return destPath;
 }
 
-/**
- * Delete a file if it exists
- */
 export async function deleteFile(filePath: string): Promise<void> {
-  const file = new File(filePath);
-  if (file.exists) {
-    file.delete();
+  if (Platform.OS === 'web') {
+    return;
   }
-}
-
-/**
- * Delete a directory and all its contents
- */
-export async function deleteDirectory(dir: Directory | string): Promise<void> {
-  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
-  if (directory.exists) {
-    directory.delete();
-  }
-}
-
-/**
- * Check if a file exists
- */
-export async function fileExists(filePath: string): Promise<boolean> {
-  const file = new File(filePath);
-  return file.exists;
-}
-
-/**
- * Read a JSON file
- */
-export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    const file = new File(filePath);
-    if (!file.exists) {
+    const info = await FileSystem.getInfoAsync(filePath);
+    if (info.exists) {
+      await FileSystem.deleteAsync(filePath, { idempotent: true });
+    }
+  } catch (error) {
+    console.error('Error deleting file:', error);
+  }
+}
+
+export async function deleteDirectory(dirPath: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
+  try {
+    const info = await FileSystem.getInfoAsync(dirPath);
+    if (info.exists) {
+      await FileSystem.deleteAsync(dirPath, { idempotent: true });
+    }
+  } catch (error) {
+    console.error('Error deleting directory:', error);
+  }
+}
+
+export async function fileExists(filePath: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return false;
+  }
+  try {
+    const info = await FileSystem.getInfoAsync(filePath);
+    return info.exists;
+  } catch {
+    return false;
+  }
+}
+
+export async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+  try {
+    const info = await FileSystem.getInfoAsync(filePath);
+    if (!info.exists) {
       return null;
     }
-    const content = await file.text();
+    const content = await FileSystem.readAsStringAsync(filePath);
     return JSON.parse(content) as T;
   } catch (error) {
     console.error('Error reading JSON file:', error);
@@ -145,61 +125,49 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   }
 }
 
-/**
- * Write a JSON file
- */
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
   const dirPath = filePath.substring(0, filePath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(dirPath);
-  const file = new File(filePath);
-  file.write(JSON.stringify(data, null, 2));
+  await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data, null, 2));
 }
 
-/**
- * List files in a directory
- */
-export async function listDirectory(dir: Directory | string): Promise<string[]> {
-  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
-  if (!directory.exists) {
+export async function listDirectory(dirPath: string): Promise<string[]> {
+  if (Platform.OS === 'web') {
     return [];
   }
-  return directory.list().map(item => item.name);
+  try {
+    const info = await FileSystem.getInfoAsync(dirPath);
+    if (!info.exists) {
+      return [];
+    }
+    return await FileSystem.readDirectoryAsync(dirPath);
+  } catch {
+    return [];
+  }
 }
 
-// ============================================
-// Cache Key Generation
-// ============================================
-
-/**
- * Simple hash function (no external dependencies)
- */
 function simpleHash(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
-/**
- * Generate a hash from a string (for cache keys)
- */
 export async function generateHash(input: string): Promise<string> {
   return simpleHash(input).substring(0, 12);
 }
 
-/**
- * Generate a cache key for a rendered image
- * Based on template ID, slot images, and theme
- */
 export async function generateRenderCacheKey(
   templateId: string,
   slotImageUris: Record<string, string>,
   themeId: string = 'default'
 ): Promise<string> {
-  // Sort slot entries for consistent hashing
   const sortedSlots = Object.entries(slotImageUris)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([slotId, uri]) => `${slotId}:${uri}`)
@@ -211,39 +179,27 @@ export async function generateRenderCacheKey(
   return `${templateId}_${hash}_${themeId}`;
 }
 
-// ============================================
-// Draft Slot Image Management
-// ============================================
-
-/**
- * Save a slot image to the draft's slots directory
- * Returns the local file path
- */
 export async function saveDraftSlotImage(
   draftId: string,
   slotId: string,
   sourceUri: string
 ): Promise<string> {
+  if (Platform.OS === 'web') {
+    return sourceUri;
+  }
   const slotsDir = getDraftSlotsDirectory(draftId);
   await ensureDirectoryExists(slotsDir);
   
-  const destFile = new File(slotsDir, `${slotId}.jpg`);
-  await copyFile(sourceUri, destFile.uri);
+  const destPath = `${slotsDir}${slotId}.jpg`;
+  await copyFile(sourceUri, destPath);
   
-  return destFile.uri;
+  return destPath;
 }
 
-/**
- * Get the path to a slot image in a draft
- */
 export function getDraftSlotImagePath(draftId: string, slotId: string): string {
-  const slotsDir = getDraftSlotsDirectory(draftId);
-  return new File(slotsDir, `${slotId}.jpg`).uri;
+  return `${getDraftSlotsDirectory(draftId)}${slotId}.jpg`;
 }
 
-/**
- * Check if a slot image exists in a draft
- */
 export async function draftSlotImageExists(
   draftId: string,
   slotId: string
@@ -252,33 +208,22 @@ export async function draftSlotImageExists(
   return fileExists(path);
 }
 
-// ============================================
-// Render Cache Management
-// ============================================
-
-/**
- * Get the path for a cached render
- */
 export function getCachedRenderPath(draftId: string, themeId: string = 'default'): string {
-  const rendersDir = getDraftRendersDirectory(draftId);
-  return new File(rendersDir, `${themeId}.jpg`).uri;
+  return `${getDraftRendersDirectory(draftId)}${themeId}.jpg`;
 }
 
-/**
- * Get the global render cache path (for non-draft renders)
- */
 export function getGlobalCachePath(cacheKey: string): string {
-  return new File(RENDER_CACHE_DIR, `${cacheKey}.jpg`).uri;
+  return `${RENDER_CACHE_DIR}${cacheKey}.jpg`;
 }
 
-/**
- * Save a rendered image to the draft's render cache
- */
 export async function saveDraftRender(
   draftId: string,
   sourceUri: string,
   themeId: string = 'default'
 ): Promise<string> {
+  if (Platform.OS === 'web') {
+    return sourceUri;
+  }
   const rendersDir = getDraftRendersDirectory(draftId);
   await ensureDirectoryExists(rendersDir);
   
@@ -288,9 +233,6 @@ export async function saveDraftRender(
   return destPath;
 }
 
-/**
- * Check if a cached render exists for a draft and theme
- */
 export async function draftRenderExists(
   draftId: string,
   themeId: string = 'default'
@@ -299,78 +241,67 @@ export async function draftRenderExists(
   return fileExists(path);
 }
 
-/**
- * Delete all cached renders for a draft
- * Call this when slot images change
- */
 export async function invalidateDraftRenderCache(draftId: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    return;
+  }
   const rendersDir = getDraftRendersDirectory(draftId);
   await deleteDirectory(rendersDir);
   await ensureDirectoryExists(rendersDir);
 }
 
-// ============================================
-// Storage Cleanup
-// ============================================
-
-/**
- * Get total storage used by drafts (in bytes)
- */
 export async function getDraftsStorageSize(): Promise<number> {
   return getDirectorySize(DRAFTS_DIR);
 }
 
-/**
- * Get total storage used by render cache (in bytes)
- */
 export async function getRenderCacheSize(): Promise<number> {
   return getDirectorySize(RENDER_CACHE_DIR);
 }
 
-/**
- * Calculate the size of a directory recursively
- */
-async function getDirectorySize(dir: Directory): Promise<number> {
-  let totalSize = 0;
-  
-  if (!dir.exists) {
+async function getDirectorySize(dirPath: string): Promise<number> {
+  if (Platform.OS === 'web') {
     return 0;
   }
+  let totalSize = 0;
   
-  const items = dir.list();
-  
-  for (const item of items) {
-    if (item instanceof Directory) {
-      totalSize += await getDirectorySize(item);
-    } else if (item instanceof File) {
-      totalSize += item.size ?? 0;
+  try {
+    const info = await FileSystem.getInfoAsync(dirPath);
+    if (!info.exists) {
+      return 0;
     }
+    
+    const items = await FileSystem.readDirectoryAsync(dirPath);
+    
+    for (const item of items) {
+      const itemPath = `${dirPath}${item}`;
+      const itemInfo = await FileSystem.getInfoAsync(itemPath);
+      
+      if (itemInfo.exists) {
+        if (itemInfo.isDirectory) {
+          totalSize += await getDirectorySize(`${itemPath}/`);
+        } else {
+          totalSize += itemInfo.size ?? 0;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error calculating directory size:', error);
   }
   
   return totalSize;
 }
 
-/**
- * Clear all render cache (keeps drafts)
- */
 export async function clearRenderCache(): Promise<void> {
   await deleteDirectory(RENDER_CACHE_DIR);
   await ensureDirectoryExists(RENDER_CACHE_DIR);
 }
 
-/**
- * Clear all local storage (drafts and cache)
- * Use with caution!
- */
 export async function clearAllLocalStorage(): Promise<void> {
   await deleteDirectory(DRAFTS_DIR);
   await deleteDirectory(RENDER_CACHE_DIR);
   await initializeLocalStorage();
 }
 
-/**
- * Format bytes to human readable string
- */
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   
@@ -381,9 +312,8 @@ export function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Export directory constants for external use
 export const STORAGE_PATHS = {
-  DOCUMENTS: DOCUMENTS_DIR.uri,
-  DRAFTS: DRAFTS_DIR.uri,
-  RENDER_CACHE: RENDER_CACHE_DIR.uri,
+  DOCUMENTS: DOCUMENTS_DIR,
+  DRAFTS: DRAFTS_DIR,
+  RENDER_CACHE: RENDER_CACHE_DIR,
 };
