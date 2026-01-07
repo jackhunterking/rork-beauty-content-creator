@@ -1,4 +1,4 @@
-import { File, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
 /**
@@ -84,8 +84,8 @@ export async function saveToGallery(
     }
     
     // Verify file exists
-    const file = new File(localPath);
-    if (!file.exists) {
+    const fileInfo = await FileSystem.getInfoAsync(localPath);
+    if (!fileInfo.exists) {
       return {
         success: false,
         error: 'File not found at the specified path',
@@ -151,14 +151,15 @@ export async function downloadAndSaveToGallery(
     }
     
     // Generate local path for download
+    const cacheDir = FileSystem.cacheDirectory || '';
     const extension = getFileExtension(remoteUrl);
     const name = filename || `beauty_${Date.now()}`;
-    const localPath = `${Paths.cache}/${name}.${extension}`;
+    const localPath = `${cacheDir}${name}.${extension}`;
     
     // Download the file
-    const downloadedFile = await File.downloadFileAsync(remoteUrl, new File(localPath));
+    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
     
-    if (!downloadedFile.exists) {
+    if (downloadResult.status !== 200) {
       return {
         success: false,
         error: 'Download failed',
@@ -186,9 +187,14 @@ export async function copyWithFilename(
   filename: string,
   extension: string = 'jpg'
 ): Promise<string> {
-  const destPath = `${Paths.cache}/${filename}.${extension}`;
-  const sourceFile = new File(sourcePath);
-  await sourceFile.copy(new File(destPath));
+  const cacheDir = FileSystem.cacheDirectory || '';
+  const destPath = `${cacheDir}${filename}.${extension}`;
+  
+  await FileSystem.copyAsync({
+    from: sourcePath,
+    to: destPath,
+  });
+  
   return destPath;
 }
 
@@ -228,24 +234,24 @@ export function generateDownloadFilename(prefix: string = 'beauty'): string {
  * Get the path where downloaded files will be saved
  */
 export function getDownloadDirectory(): string {
-  return Paths.cache.uri;
+  return FileSystem.cacheDirectory || '';
 }
 
 /**
  * Check if a file exists at the given path
  */
 export async function fileExists(path: string): Promise<boolean> {
-  const file = new File(path);
-  return file.exists;
+  const fileInfo = await FileSystem.getInfoAsync(path);
+  return fileInfo.exists;
 }
 
 /**
  * Get the size of a file in bytes
  */
 export async function getFileSize(path: string): Promise<number | null> {
-  const file = new File(path);
-  if (file.exists) {
-    return file.size ?? null;
+  const fileInfo = await FileSystem.getInfoAsync(path, { size: true });
+  if (fileInfo.exists) {
+    return (fileInfo as any).size || null;
   }
   return null;
 }
@@ -307,4 +313,3 @@ export async function getAlbumAssets(
     return [];
   }
 }
-

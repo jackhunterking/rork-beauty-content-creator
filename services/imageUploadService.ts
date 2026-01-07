@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 
 const BUCKET_NAME = 'render-images';
@@ -17,8 +17,9 @@ export async function uploadToStorage(
   filename: string
 ): Promise<string> {
   // Read file as base64
-  const file = new File(localUri);
-  const base64Data = await file.base64();
+  const base64Data = await FileSystem.readAsStringAsync(localUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 
   // Generate unique filename with timestamp
   const timestamp = Date.now();
@@ -142,4 +143,3 @@ export async function cleanupOldImages(): Promise<number> {
 
   return filenames.length;
 }
-

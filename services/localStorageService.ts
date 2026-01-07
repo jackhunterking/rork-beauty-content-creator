@@ -1,10 +1,9 @@
-import { File, Directory, Paths } from 'expo-file-system';
-import * as Crypto from 'expo-crypto';
+import * as FileSystem from 'expo-file-system';
 
 // Base directories for local storage
-const DOCUMENTS_DIR = Paths.document;
-const DRAFTS_DIR = `${DOCUMENTS_DIR}/drafts/`;
-const RENDER_CACHE_DIR = `${DOCUMENTS_DIR}/render-cache/`;
+const DOCUMENTS_DIR = FileSystem.documentDirectory || '';
+const DRAFTS_DIR = `${DOCUMENTS_DIR}drafts/`;
+const RENDER_CACHE_DIR = `${DOCUMENTS_DIR}render-cache/`;
 
 /**
  * Local Storage Service
@@ -32,9 +31,9 @@ export async function initializeLocalStorage(): Promise<void> {
  * Ensure a directory exists, create if it doesn't
  */
 export async function ensureDirectoryExists(dirPath: string): Promise<void> {
-  const dir = new Directory(dirPath);
-  if (!dir.exists) {
-    dir.create();
+  const info = await FileSystem.getInfoAsync(dirPath);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
   }
 }
 
@@ -80,8 +79,10 @@ export async function copyFile(sourceUri: string, destPath: string): Promise<str
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
   
-  const sourceFile = new File(sourceUri);
-  await sourceFile.copy(new File(destPath));
+  await FileSystem.copyAsync({
+    from: sourceUri,
+    to: destPath,
+  });
   
   return destPath;
 }
@@ -93,8 +94,10 @@ export async function moveFile(sourceUri: string, destPath: string): Promise<str
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
   
-  const sourceFile = new File(sourceUri);
-  await sourceFile.move(new Directory(destDir));
+  await FileSystem.moveAsync({
+    from: sourceUri,
+    to: destPath,
+  });
   
   return destPath;
 }
@@ -103,9 +106,9 @@ export async function moveFile(sourceUri: string, destPath: string): Promise<str
  * Delete a file if it exists
  */
 export async function deleteFile(filePath: string): Promise<void> {
-  const file = new File(filePath);
-  if (file.exists) {
-    file.delete();
+  const info = await FileSystem.getInfoAsync(filePath);
+  if (info.exists) {
+    await FileSystem.deleteAsync(filePath, { idempotent: true });
   }
 }
 
@@ -113,9 +116,9 @@ export async function deleteFile(filePath: string): Promise<void> {
  * Delete a directory and all its contents
  */
 export async function deleteDirectory(dirPath: string): Promise<void> {
-  const dir = new Directory(dirPath);
-  if (dir.exists) {
-    dir.delete();
+  const info = await FileSystem.getInfoAsync(dirPath);
+  if (info.exists) {
+    await FileSystem.deleteAsync(dirPath, { idempotent: true });
   }
 }
 
@@ -123,8 +126,8 @@ export async function deleteDirectory(dirPath: string): Promise<void> {
  * Check if a file exists
  */
 export async function fileExists(filePath: string): Promise<boolean> {
-  const file = new File(filePath);
-  return file.exists;
+  const info = await FileSystem.getInfoAsync(filePath);
+  return info.exists;
 }
 
 /**
@@ -132,11 +135,11 @@ export async function fileExists(filePath: string): Promise<boolean> {
  */
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    const file = new File(filePath);
-    if (!file.exists) {
+    const info = await FileSystem.getInfoAsync(filePath);
+    if (!info.exists) {
       return null;
     }
-    const content = await file.text();
+    const content = await FileSystem.readAsStringAsync(filePath);
     return JSON.parse(content) as T;
   } catch (error) {
     console.error('Error reading JSON file:', error);
@@ -150,19 +153,18 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   const dirPath = filePath.substring(0, filePath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(dirPath);
-  const file = new File(filePath);
-  file.write(JSON.stringify(data, null, 2));
+  await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data, null, 2));
 }
 
 /**
  * List files in a directory
  */
 export async function listDirectory(dirPath: string): Promise<string[]> {
-  const dir = new Directory(dirPath);
-  if (!dir.exists) {
+  const info = await FileSystem.getInfoAsync(dirPath);
+  if (!info.exists) {
     return [];
   }
-  return dir.list().map(item => item.name);
+  return FileSystem.readDirectoryAsync(dirPath);
 }
 
 // ============================================
@@ -170,14 +172,23 @@ export async function listDirectory(dirPath: string): Promise<string[]> {
 // ============================================
 
 /**
+ * Simple hash function (no external dependencies)
+ */
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+/**
  * Generate a hash from a string (for cache keys)
  */
 export async function generateHash(input: string): Promise<string> {
-  const digest = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.MD5,
-    input
-  );
-  return digest.substring(0, 12); // Use first 12 chars for brevity
+  return simpleHash(input).substring(0, 12);
 }
 
 /**
@@ -321,18 +332,23 @@ export async function getRenderCacheSize(): Promise<number> {
 async function getDirectorySize(dirPath: string): Promise<number> {
   let totalSize = 0;
   
-  const dir = new Directory(dirPath);
-  if (!dir.exists) {
+  const info = await FileSystem.getInfoAsync(dirPath);
+  if (!info.exists) {
     return 0;
   }
   
-  const items = dir.list();
+  const files = await FileSystem.readDirectoryAsync(dirPath);
   
-  for (const item of items) {
-    if (item instanceof Directory) {
-      totalSize += await getDirectorySize(item.uri);
-    } else if (item instanceof File) {
-      totalSize += item.size ?? 0;
+  for (const file of files) {
+    const filePath = `${dirPath}${file}`;
+    const fileInfo = await FileSystem.getInfoAsync(filePath);
+    
+    if (fileInfo.exists) {
+      if (fileInfo.isDirectory) {
+        totalSize += await getDirectorySize(`${filePath}/`);
+      } else if ('size' in fileInfo) {
+        totalSize += fileInfo.size || 0;
+      }
     }
   }
   
@@ -376,4 +392,3 @@ export const STORAGE_PATHS = {
   DRAFTS: DRAFTS_DIR,
   RENDER_CACHE: RENDER_CACHE_DIR,
 };
-

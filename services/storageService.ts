@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { File, Directory, Paths } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 
 const BUCKET_NAME = 'draft-images';
@@ -18,8 +18,9 @@ export async function uploadDraftImage(
 ): Promise<string> {
   try {
     // Read the file as base64
-    const file = new File(localUri);
-    const base64 = await file.base64();
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
 
     // Determine file extension from URI or default to jpg
     const extension = localUri.split('.').pop()?.toLowerCase() || 'jpg';
@@ -137,13 +138,14 @@ export async function downloadDraftImage(url: string): Promise<string> {
   try {
     // Create a unique filename based on the URL
     const filename = url.split('/').pop() || 'image.jpg';
-    const cacheDir = new Directory(Paths.cache);
+    const cacheDir = FileSystem.cacheDirectory || '';
     const localFilename = `draft_${Date.now()}_${filename}`;
+    const localPath = `${cacheDir}${localFilename}`;
 
     // Download the file
-    const downloadedFile = await File.downloadFileAsync(url, new File(cacheDir, localFilename), { idempotent: true });
+    const downloadResult = await FileSystem.downloadAsync(url, localPath);
 
-    return downloadedFile.uri;
+    return downloadResult.uri;
   } catch (error) {
     console.error('Failed to download draft image:', error);
     throw error;
@@ -156,4 +158,3 @@ export async function downloadDraftImage(url: string): Promise<string> {
 export function isSupabaseStorageUrl(url: string): boolean {
   return url.includes('supabase') && url.includes('storage');
 }
-
