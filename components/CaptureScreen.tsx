@@ -164,12 +164,15 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   // Main capture UI - single unified structure
   return (
     <View style={styles.container}>
-      {/* Background Layer - Camera always visible (FrameOverlay will black out around preview) */}
-      <CameraView 
-        ref={cameraRef} 
-        style={StyleSheet.absoluteFillObject} 
-        facing="back"
-      />
+      {/* Background Layer - Camera only renders when not in preview mode */}
+      {/* This saves battery/processing and ensures no camera feed leaks through */}
+      {!previewUri && (
+        <CameraView 
+          ref={cameraRef} 
+          style={StyleSheet.absoluteFillObject} 
+          facing="back"
+        />
+      )}
 
       {/* Frame Overlay - handles both camera guide and preview display */}
       {/* When previewUri is set, the captured image displays inside the frame */}

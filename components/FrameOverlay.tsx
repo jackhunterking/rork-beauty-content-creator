@@ -31,8 +31,8 @@ export function FrameOverlay({ slot, label, showCorners = true, previewUri }: Fr
   const cornerSize = Math.min(frameCalculation.width, frameCalculation.height) * 0.08;
   const cornerThickness = 3;
 
-  // Use fully opaque black when showing preview to completely hide camera
-  const overlayOpacity = previewUri ? 1.0 : 0.5;
+  // Always fully black outside frame - frame acts as a window
+  const overlayOpacity = 1.0;
 
   return (
     <View style={styles.container} pointerEvents="none">
