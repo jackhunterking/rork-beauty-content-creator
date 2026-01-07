@@ -159,9 +159,13 @@ export function calculateFrameForAvailableArea(
   const aspectRatio = slot.width / slot.height;
   const horizontalPadding = availableArea.horizontalPadding ?? 0;
   
-  // Calculate available dimensions
+  // Minimum vertical margin to ensure frame doesn't touch top/bottom edges
+  const MIN_VERTICAL_MARGIN = 40;
+  
+  // Calculate available dimensions with margins
   const availableWidth = availableArea.screenWidth - (horizontalPadding * 2);
-  const availableHeight = availableArea.bottom - availableArea.top;
+  const totalAvailableHeight = availableArea.bottom - availableArea.top;
+  const availableHeight = totalAvailableHeight - (MIN_VERTICAL_MARGIN * 2);
   
   let frameWidth: number;
   let frameHeight: number;
@@ -181,9 +185,9 @@ export function calculateFrameForAvailableArea(
   const finalWidth = Math.round(frameWidth);
   const finalHeight = Math.round(frameHeight);
   
-  // Center frame within the available area
-  // Vertical: center between availableArea.top and availableArea.bottom
-  const frameTop = Math.round(availableArea.top + (availableHeight - finalHeight) / 2);
+  // Center frame within the available area (accounting for margins)
+  // Vertical: center between availableArea.top + margin and availableArea.bottom - margin
+  const frameTop = Math.round(availableArea.top + MIN_VERTICAL_MARGIN + (availableHeight - finalHeight) / 2);
   // Horizontal: center on screen
   const frameLeft = Math.round((availableArea.screenWidth - finalWidth) / 2);
   
