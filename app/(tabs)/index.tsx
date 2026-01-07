@@ -355,6 +355,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
+    // Glass UI border effect
+    borderWidth: 1,
+    borderColor: Colors.light.glassEdge,
+    // Subtle shadow for glass depth
+    shadowColor: Colors.light.glassShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   templateThumbnail: {
     width: '100%',

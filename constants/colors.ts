@@ -17,5 +17,8 @@ export default {
     tint: '#C9A87C',
     tabIconDefault: '#9C948C',
     tabIconSelected: '#C9A87C',
+    // Glass UI effects
+    glassEdge: 'rgba(255, 255, 255, 0.5)',
+    glassShadow: 'rgba(0, 0, 0, 0.04)',
   },
 };

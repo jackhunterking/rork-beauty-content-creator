@@ -128,11 +128,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-    // Shadow for depth
+    // Glass UI border effect
+    borderWidth: 1,
+    borderColor: Colors.light.glassEdge,
+    // Shadow for depth with glass effect
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
     elevation: 8,
   },
   previewImage: {
