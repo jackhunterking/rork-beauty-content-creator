@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Draft, DraftRow } from '@/types';
+import { uploadDraftImage, deleteDraftImages } from './storageService';
 
 /**
  * Convert database row (snake_case) to Draft type (camelCase)
@@ -8,8 +9,8 @@ function mapRowToDraft(row: DraftRow): Draft {
   return {
     id: row.id,
     templateId: row.template_id,
-    beforeImageUri: row.before_image_uri,
-    afterImageUri: row.after_image_uri,
+    beforeImageUrl: row.before_image_url,
+    afterImageUrl: row.after_image_url,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -77,19 +78,19 @@ export async function fetchDraftByTemplateId(templateId: string): Promise<Draft 
 }
 
 /**
- * Create a new draft
+ * Create a new draft (without images initially)
  */
 export async function createDraft(
   templateId: string,
-  beforeImageUri: string | null = null,
-  afterImageUri: string | null = null
+  beforeImageUrl: string | null = null,
+  afterImageUrl: string | null = null
 ): Promise<Draft> {
   const { data, error } = await supabase
     .from('drafts')
     .insert({
       template_id: templateId,
-      before_image_uri: beforeImageUri,
-      after_image_uri: afterImageUri,
+      before_image_url: beforeImageUrl,
+      after_image_url: afterImageUrl,
     })
     .select()
     .single();
@@ -108,19 +109,19 @@ export async function createDraft(
 export async function updateDraft(
   id: string,
   updates: {
-    beforeImageUri?: string | null;
-    afterImageUri?: string | null;
+    beforeImageUrl?: string | null;
+    afterImageUrl?: string | null;
   }
 ): Promise<Draft> {
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
 
-  if (updates.beforeImageUri !== undefined) {
-    updateData.before_image_uri = updates.beforeImageUri;
+  if (updates.beforeImageUrl !== undefined) {
+    updateData.before_image_url = updates.beforeImageUrl;
   }
-  if (updates.afterImageUri !== undefined) {
-    updateData.after_image_uri = updates.afterImageUri;
+  if (updates.afterImageUrl !== undefined) {
+    updateData.after_image_url = updates.afterImageUrl;
   }
 
   const { data, error } = await supabase
@@ -139,36 +140,106 @@ export async function updateDraft(
 }
 
 /**
- * Save or update a draft (upsert behavior)
- * If a draft exists for the template, update it; otherwise create new
+ * Save a draft with images - uploads images to Supabase Storage
+ * @param templateId - The template ID
+ * @param beforeImageUri - Local URI of the before image (or null)
+ * @param afterImageUri - Local URI of the after image (or null)
+ * @param existingDraftId - Optional existing draft ID to update
  */
-export async function saveDraft(
+export async function saveDraftWithImages(
   templateId: string,
   beforeImageUri: string | null,
-  afterImageUri: string | null
+  afterImageUri: string | null,
+  existingDraftId?: string
 ): Promise<Draft> {
-  // Check if draft exists for this template
-  const existingDraft = await fetchDraftByTemplateId(templateId);
+  try {
+    let draft: Draft;
 
-  if (existingDraft) {
-    return updateDraft(existingDraft.id, { beforeImageUri, afterImageUri });
-  } else {
-    return createDraft(templateId, beforeImageUri, afterImageUri);
-  }
-}
+    // Create or get existing draft
+    if (existingDraftId) {
+      const existingDraft = await fetchDraftById(existingDraftId);
+      if (!existingDraft) {
+        throw new Error('Draft not found');
+      }
+      draft = existingDraft;
+    } else {
+      // Check if there's an existing draft for this template
+      const existingDraft = await fetchDraftByTemplateId(templateId);
+      if (existingDraft) {
+        draft = existingDraft;
+      } else {
+        // Create a new draft first to get the ID
+        draft = await createDraft(templateId);
+      }
+    }
 
-/**
- * Delete a draft
- */
-export async function deleteDraft(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('drafts')
-    .delete()
-    .eq('id', id);
+    // Upload images if they are local URIs (not already Supabase URLs)
+    let beforeImageUrl = draft.beforeImageUrl;
+    let afterImageUrl = draft.afterImageUrl;
 
-  if (error) {
-    console.error('Error deleting draft:', error);
+    // Upload before image if it's a new local file
+    if (beforeImageUri && !beforeImageUri.includes('supabase')) {
+      beforeImageUrl = await uploadDraftImage(draft.id, beforeImageUri, 'before');
+    } else if (beforeImageUri === null) {
+      beforeImageUrl = null;
+    }
+
+    // Upload after image if it's a new local file
+    if (afterImageUri && !afterImageUri.includes('supabase')) {
+      afterImageUrl = await uploadDraftImage(draft.id, afterImageUri, 'after');
+    } else if (afterImageUri === null) {
+      afterImageUrl = null;
+    }
+
+    // Update the draft with the new URLs
+    const updatedDraft = await updateDraft(draft.id, {
+      beforeImageUrl,
+      afterImageUrl,
+    });
+
+    return updatedDraft;
+  } catch (error) {
+    console.error('Failed to save draft with images:', error);
     throw error;
   }
 }
 
+/**
+ * Delete a draft and its associated images
+ */
+export async function deleteDraft(id: string): Promise<void> {
+  try {
+    // First delete images from storage
+    await deleteDraftImages(id);
+
+    // Then delete the draft record
+    const { error } = await supabase
+      .from('drafts')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting draft:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Failed to delete draft:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get draft count
+ */
+export async function getDraftCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('drafts')
+    .select('*', { count: 'exact', head: true });
+
+  if (error) {
+    console.error('Error getting draft count:', error);
+    return 0;
+  }
+
+  return count || 0;
+}

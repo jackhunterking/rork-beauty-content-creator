@@ -78,8 +78,8 @@ export interface TemplateRow {
 export interface Draft {
   id: string;
   templateId: string;
-  beforeImageUri: string | null;
-  afterImageUri: string | null;
+  beforeImageUrl: string | null;  // Supabase Storage URL
+  afterImageUrl: string | null;   // Supabase Storage URL
   createdAt: string;
   updatedAt: string;
 }
@@ -88,8 +88,8 @@ export interface Draft {
 export interface DraftRow {
   id: string;
   template_id: string;
-  before_image_uri: string | null;
-  after_image_uri: string | null;
+  before_image_url: string | null;
+  after_image_url: string | null;
   created_at: string;
   updated_at: string;
 }

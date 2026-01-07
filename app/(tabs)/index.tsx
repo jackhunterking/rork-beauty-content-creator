@@ -2,7 +2,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Press
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, FileEdit } from "lucide-react-native";
 import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
@@ -22,7 +22,13 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
 
 export default function CreateScreen() {
   const router = useRouter();
-  const { templates, currentProject, setContentType, selectTemplate, toggleFavourite, isLoading } = useApp();
+  const { templates, currentProject, setContentType, selectTemplate, toggleFavourite, isLoading, drafts } = useApp();
+
+  const draftCount = drafts.length;
+
+  const handleDraftsPress = useCallback(() => {
+    router.push('/drafts');
+  }, [router]);
 
   const handleContentTypeSelect = useCallback((type: ContentType) => {
     if (type === 'video' || type === 'carousel') return;
@@ -43,6 +49,19 @@ export default function CreateScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Create</Text>
+        <TouchableOpacity 
+          style={styles.draftsButton} 
+          onPress={handleDraftsPress}
+          activeOpacity={0.7}
+        >
+          <FileEdit size={20} color={Colors.light.text} />
+          <Text style={styles.draftsButtonText}>Drafts</Text>
+          {draftCount > 0 && (
+            <View style={styles.draftsBadge}>
+              <Text style={styles.draftsBadgeText}>{draftCount > 9 ? '9+' : draftCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
 
       <View style={styles.typeSelector}>
@@ -137,6 +156,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.background,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: GRID_PADDING,
     paddingTop: 8,
     paddingBottom: 16,
@@ -146,6 +168,34 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.light.text,
     letterSpacing: -0.5,
+  },
+  draftsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: 20,
+  },
+  draftsButtonText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.light.text,
+  },
+  draftsBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: Colors.light.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  draftsBadgeText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.light.surface,
   },
   typeSelector: {
     flexDirection: 'row',

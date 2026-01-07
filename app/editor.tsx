@@ -19,15 +19,15 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForSlot } from '@/utils/imageProcessing';
-import { saveDraft } from '@/services/draftService';
 
 type SlotType = 'before' | 'after';
 
 export default function EditorScreen() {
   const router = useRouter();
-  const { currentProject, setBeforeMedia, setAfterMedia } = useApp();
+  const { currentProject, setBeforeMedia, setAfterMedia, saveDraft, isSavingDraft } = useApp();
   const template = currentProject.template;
 
+  // Initialize from currentProject (supports both fresh start and draft restoration)
   const [beforeUri, setBeforeUri] = useState<string | null>(
     currentProject.beforeMedia?.uri || null
   );
@@ -35,8 +35,13 @@ export default function EditorScreen() {
     currentProject.afterMedia?.uri || null
   );
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [activeSlot, setActiveSlot] = useState<SlotType | null>(null);
+
+  // Sync state when currentProject changes (e.g., when loading a draft)
+  useEffect(() => {
+    setBeforeUri(currentProject.beforeMedia?.uri || null);
+    setAfterUri(currentProject.afterMedia?.uri || null);
+  }, [currentProject.beforeMedia?.uri, currentProject.afterMedia?.uri]);
 
   // Redirect if no template selected
   useEffect(() => {
@@ -52,6 +57,7 @@ export default function EditorScreen() {
   }, [template, router]);
 
   const canGenerate = beforeUri && afterUri;
+  const isEditingDraft = !!currentProject.draftId;
 
   // Process image for the slot
   const processImage = useCallback(
@@ -171,17 +177,34 @@ export default function EditorScreen() {
     [takePhoto, chooseFromLibrary]
   );
 
-  // Save draft
+  // Save draft - uploads images to Supabase Storage
   const handleSaveDraft = useCallback(async () => {
     if (!template) return;
 
-    setIsSaving(true);
+    // Need at least one image to save
+    if (!beforeUri && !afterUri) {
+      Toast.show({
+        type: 'info',
+        text1: 'Nothing to save',
+        text2: 'Add at least one image first',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      return;
+    }
+
     try {
-      await saveDraft(template.id, beforeUri, afterUri);
+      await saveDraft({
+        templateId: template.id,
+        beforeImageUri: beforeUri,
+        afterImageUri: afterUri,
+        existingDraftId: currentProject.draftId || undefined,
+      });
+      
       Toast.show({
         type: 'success',
         text1: 'Draft saved',
-        text2: 'You can continue later',
+        text2: 'You can continue later from Drafts',
         position: 'top',
         visibilityTime: 2000,
       });
@@ -193,10 +216,8 @@ export default function EditorScreen() {
         text2: 'Please try again',
         position: 'top',
       });
-    } finally {
-      setIsSaving(false);
     }
-  }, [template, beforeUri, afterUri]);
+  }, [template, beforeUri, afterUri, saveDraft, currentProject.draftId]);
 
   // Navigate to generate screen
   const handleGenerate = useCallback(() => {
@@ -221,14 +242,14 @@ export default function EditorScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: 'Editor',
+          title: isEditingDraft ? 'Edit Draft' : 'Editor',
           headerRight: () => (
             <TouchableOpacity
-              style={[styles.headerSaveButton, isSaving && styles.saveButtonDisabled]}
+              style={[styles.headerSaveButton, isSavingDraft && styles.saveButtonDisabled]}
               onPress={handleSaveDraft}
-              disabled={isSaving}
+              disabled={isSavingDraft}
             >
-              {isSaving ? (
+              {isSavingDraft ? (
                 <ActivityIndicator size="small" color={Colors.light.accent} />
               ) : (
                 <Save size={22} color={Colors.light.accent} />
@@ -238,6 +259,14 @@ export default function EditorScreen() {
         }}
       />
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+        {/* Saving indicator */}
+        {isSavingDraft && (
+          <View style={styles.savingBanner}>
+            <ActivityIndicator size="small" color={Colors.light.surface} />
+            <Text style={styles.savingText}>Saving draft...</Text>
+          </View>
+        )}
+
         {/* Content */}
         <ScrollView
           style={styles.content}
@@ -304,6 +333,19 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     opacity: 0.6,
   },
+  savingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 8,
+  },
+  savingText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.light.surface,
+  },
   content: {
     flex: 1,
   },
@@ -343,4 +385,3 @@ const styles = StyleSheet.create({
     color: Colors.light.surface,
   },
 });
-

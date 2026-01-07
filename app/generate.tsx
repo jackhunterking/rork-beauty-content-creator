@@ -22,7 +22,7 @@ const enhancementOptions: EnhancementOption[] = [
 
 export default function GenerateScreen() {
   const router = useRouter();
-  const { currentProject, credits, getCreditCost, spendCredits, saveToLibrary } = useApp();
+  const { currentProject, credits, getCreditCost, spendCredits, saveToLibrary, deleteDraft } = useApp();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedEnhancements, setSelectedEnhancements] = useState<string[]>([]);
@@ -85,12 +85,22 @@ export default function GenerateScreen() {
 
     saveToLibrary(newAsset);
     
+    // Auto-delete the draft after successful generation
+    if (currentProject.draftId) {
+      try {
+        await deleteDraft(currentProject.draftId);
+      } catch (error) {
+        // Silent fail - draft cleanup is not critical
+        console.log('Failed to clean up draft:', error);
+      }
+    }
+    
     setIsGenerating(false);
     router.push({
       pathname: '/result',
       params: { assetId: newAsset.id }
     });
-  }, [creditCost, currentProject, spendCredits, saveToLibrary, router]);
+  }, [creditCost, currentProject, spendCredits, saveToLibrary, deleteDraft, router]);
 
   if (isGenerating) {
     return (
