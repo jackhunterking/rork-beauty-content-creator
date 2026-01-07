@@ -35,7 +35,6 @@ export default function EditorScreen() {
     currentProject.afterMedia?.uri || null
   );
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeSlot, setActiveSlot] = useState<SlotType | null>(null);
 
   // Sync state when currentProject changes (e.g., when loading a draft)
   useEffect(() => {
@@ -103,7 +102,6 @@ export default function EditorScreen() {
         });
       } finally {
         setIsProcessing(false);
-        setActiveSlot(null);
       }
     },
     [template, setBeforeMedia, setAfterMedia]
@@ -112,8 +110,6 @@ export default function EditorScreen() {
   // Take photo with camera
   const takePhoto = useCallback(
     async (slotType: SlotType) => {
-      setActiveSlot(slotType);
-
       // Navigate to camera screen with slot info
       router.push({
         pathname: slotType === 'before' ? '/capture/before' : '/capture/after',
@@ -125,8 +121,6 @@ export default function EditorScreen() {
   // Choose from library
   const chooseFromLibrary = useCallback(
     async (slotType: SlotType) => {
-      setActiveSlot(slotType);
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
@@ -136,8 +130,6 @@ export default function EditorScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         await processImage(asset.uri, asset.width, asset.height, slotType);
-      } else {
-        setActiveSlot(null);
       }
     },
     [processImage]
@@ -236,7 +228,7 @@ export default function EditorScreen() {
           style: 'cancel',
         },
         {
-          text: 'Save Draft',
+          text: 'Save',
           onPress: performSaveDraft,
         },
       ],
@@ -277,7 +269,10 @@ export default function EditorScreen() {
               {isSavingDraft ? (
                 <ActivityIndicator size="small" color={Colors.light.accent} />
               ) : (
-                <Save size={22} color={Colors.light.accent} />
+                <>
+                  <Save size={22} color={Colors.light.accent} />
+                  <Text style={styles.headerSaveText}>Save Draft</Text>
+                </>
               )}
             </TouchableOpacity>
           ),
@@ -353,7 +348,15 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
   headerSaveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     padding: 8,
+  },
+  headerSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.accent,
   },
   saveButtonDisabled: {
     opacity: 0.6,
