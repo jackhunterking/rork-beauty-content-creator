@@ -11,10 +11,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
-import { ChevronLeft, Save, Sparkles, Camera, Image as ImageIcon } from 'lucide-react-native';
+import { Save, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -219,26 +219,25 @@ export default function EditorScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ChevronLeft size={24} color={Colors.light.text} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Editor</Text>
-          <TouchableOpacity
-            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-            onPress={handleSaveDraft}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color={Colors.light.accent} />
-            ) : (
-              <Save size={20} color={Colors.light.accent} />
-            )}
-          </TouchableOpacity>
-        </View>
-
+      <Stack.Screen
+        options={{
+          title: 'Editor',
+          headerRight: () => (
+            <TouchableOpacity
+              style={[styles.headerSaveButton, isSaving && styles.saveButtonDisabled]}
+              onPress={handleSaveDraft}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color={Colors.light.accent} />
+              ) : (
+                <Save size={22} color={Colors.light.accent} />
+              )}
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         {/* Content */}
         <ScrollView
           style={styles.content}
@@ -258,39 +257,6 @@ export default function EditorScreen() {
             <Text style={styles.instructionText}>
               Tap on each slot to add your before and after photos
             </Text>
-          </View>
-
-          {/* Quick actions */}
-          <View style={styles.quickActions}>
-            <TouchableOpacity
-              style={[styles.quickActionButton, beforeUri && styles.quickActionButtonFilled]}
-              onPress={() => handleSlotPress('before')}
-            >
-              <Camera size={18} color={beforeUri ? Colors.light.surface : Colors.light.text} />
-              <Text
-                style={[
-                  styles.quickActionText,
-                  beforeUri && styles.quickActionTextFilled,
-                ]}
-              >
-                {beforeUri ? 'Replace Before' : 'Add Before'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.quickActionButton, afterUri && styles.quickActionButtonFilled]}
-              onPress={() => handleSlotPress('after')}
-            >
-              <ImageIcon size={18} color={afterUri ? Colors.light.surface : Colors.light.text} />
-              <Text
-                style={[
-                  styles.quickActionText,
-                  afterUri && styles.quickActionTextFilled,
-                ]}
-              >
-                {afterUri ? 'Replace After' : 'Add After'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
 
@@ -332,33 +298,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.light.textSecondary,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  saveButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  headerSaveButton: {
+    padding: 8,
   },
   saveButtonDisabled: {
     opacity: 0.6,
@@ -379,35 +320,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     textAlign: 'center',
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  quickActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  quickActionButtonFilled: {
-    backgroundColor: Colors.light.accent,
-    borderColor: Colors.light.accent,
-  },
-  quickActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  quickActionTextFilled: {
-    color: Colors.light.surface,
   },
   bottomSection: {
     paddingHorizontal: 20,
