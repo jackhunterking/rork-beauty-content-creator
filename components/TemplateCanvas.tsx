@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import { View, StyleSheet, Dimensions, Text } from 'react-native';
 import { Image } from 'expo-image';
 import { Template } from '@/types';
-import { SlotImage } from './SlotImage';
+import { TouchRegion } from './TouchRegion';
+import { extractInteractiveRegions, scaleRegionsToDisplay, getRegionByType } from '@/utils/layerParser';
 import Colors from '@/constants/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -17,11 +18,12 @@ interface TemplateCanvasProps {
 }
 
 /**
- * TemplateCanvas - Renders a scaled preview of the template with positioned slots
+ * TemplateCanvas - Renders template preview with interactive touch regions
  * 
- * - Scales the template canvas to fit the screen while maintaining aspect ratio
- * - Positions slot images using percentage-based coordinates
- * - Shows optional background image
+ * - Displays the templatedPreviewUrl (or thumbnail) as full background
+ * - Overlays TouchRegion components at positions from layers_json
+ * - Falls back to slot data if layers_json is not available
+ * - Scales everything proportionally to fit the screen
  */
 export function TemplateCanvas({
   template,
@@ -29,28 +31,44 @@ export function TemplateCanvas({
   afterUri,
   onSlotPress,
 }: TemplateCanvasProps) {
-  // Calculate scale to fit canvas on screen
-  const { canvasDisplayWidth, canvasDisplayHeight, scale } = useMemo(() => {
+  // Calculate display dimensions to fit canvas on screen
+  const { displayWidth, displayHeight } = useMemo(() => {
     const aspectRatio = template.canvasWidth / template.canvasHeight;
     
-    let displayWidth = MAX_CANVAS_WIDTH;
-    let displayHeight = displayWidth / aspectRatio;
+    let width = MAX_CANVAS_WIDTH;
+    let height = width / aspectRatio;
     
     // If too tall, constrain by height instead
     const maxHeight = SCREEN_WIDTH * 1.2; // Max height is 120% of screen width
-    if (displayHeight > maxHeight) {
-      displayHeight = maxHeight;
-      displayWidth = displayHeight * aspectRatio;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
     }
     
-    const scaleValue = displayWidth / template.canvasWidth;
-    
     return {
-      canvasDisplayWidth: displayWidth,
-      canvasDisplayHeight: displayHeight,
-      scale: scaleValue,
+      displayWidth: width,
+      displayHeight: height,
     };
   }, [template.canvasWidth, template.canvasHeight]);
+
+  // Extract and scale interactive regions
+  const scaledRegions = useMemo(() => {
+    const regions = extractInteractiveRegions(template);
+    return scaleRegionsToDisplay(
+      regions,
+      template.canvasWidth,
+      template.canvasHeight,
+      displayWidth,
+      displayHeight
+    );
+  }, [template, displayWidth, displayHeight]);
+
+  // Get individual regions
+  const beforeRegion = getRegionByType(scaledRegions, 'before');
+  const afterRegion = getRegionByType(scaledRegions, 'after');
+
+  // Use templatedPreviewUrl if available, fall back to thumbnail
+  const previewImageUrl = template.templatedPreviewUrl || template.thumbnail;
 
   return (
     <View style={styles.wrapper}>
@@ -58,39 +76,37 @@ export function TemplateCanvas({
         style={[
           styles.canvas,
           {
-            width: canvasDisplayWidth,
-            height: canvasDisplayHeight,
+            width: displayWidth,
+            height: displayHeight,
           },
         ]}
       >
-        {/* Background image (optional) */}
-        {template.backgroundUrl ? (
-          <Image
-            source={{ uri: template.backgroundUrl }}
-            style={styles.backgroundImage}
-            contentFit="cover"
+        {/* Preview image as background */}
+        <Image
+          source={{ uri: previewImageUrl }}
+          style={styles.previewImage}
+          contentFit="cover"
+          transition={200}
+        />
+
+        {/* Touch regions for before/after */}
+        {beforeRegion && (
+          <TouchRegion
+            region={beforeRegion}
+            capturedUri={beforeUri}
+            onPress={() => onSlotPress('before')}
+            showIndicator={!beforeUri}
           />
-        ) : (
-          <View style={styles.defaultBackground} />
         )}
 
-        {/* Before slot */}
-        <SlotImage
-          slot={template.beforeSlot}
-          capturedUri={beforeUri}
-          onPress={() => onSlotPress('before')}
-          label="Before"
-          canvasScale={scale}
-        />
-
-        {/* After slot */}
-        <SlotImage
-          slot={template.afterSlot}
-          capturedUri={afterUri}
-          onPress={() => onSlotPress('after')}
-          label="After"
-          canvasScale={scale}
-        />
+        {afterRegion && (
+          <TouchRegion
+            region={afterRegion}
+            capturedUri={afterUri}
+            onPress={() => onSlotPress('after')}
+            showIndicator={!afterUri}
+          />
+        )}
       </View>
 
       {/* Template info */}
@@ -119,12 +135,8 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  backgroundImage: {
+  previewImage: {
     ...StyleSheet.absoluteFillObject,
-  },
-  defaultBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1a1a1a',
   },
   infoContainer: {
     marginTop: 16,
@@ -143,4 +155,3 @@ const styles = StyleSheet.create({
 });
 
 export default TemplateCanvas;
-

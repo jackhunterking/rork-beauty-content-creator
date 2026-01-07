@@ -95,6 +95,45 @@ export async function resizeToSlot(
 }
 
 /**
+ * Process an image for specific target dimensions:
+ * 1. Crop to match the target aspect ratio (center crop)
+ * 2. Resize to exact target pixel dimensions
+ * 
+ * @param uri - Source image URI
+ * @param sourceWidth - Width of source image in pixels  
+ * @param sourceHeight - Height of source image in pixels
+ * @param targetWidth - Target width in pixels
+ * @param targetHeight - Target height in pixels
+ * @returns Processed image URI with exact target dimensions
+ */
+export async function processImageForDimensions(
+  uri: string,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number
+): Promise<{ uri: string; width: number; height: number }> {
+  const targetAspectRatio = targetWidth / targetHeight;
+  
+  // Step 1: Crop to target aspect ratio
+  const cropped = await cropToAspectRatio(
+    uri,
+    sourceWidth,
+    sourceHeight,
+    targetAspectRatio
+  );
+  
+  // Step 2: Resize to exact dimensions
+  const resized = await resizeToSlot(
+    cropped.uri,
+    targetWidth,
+    targetHeight
+  );
+  
+  return resized;
+}
+
+/**
  * Process an image for a template slot:
  * 1. Crop to match the slot's aspect ratio (center crop)
  * 2. Resize to exact slot pixel dimensions
@@ -111,24 +150,7 @@ export async function processImageForSlot(
   sourceHeight: number,
   slot: ImageSlot
 ): Promise<{ uri: string; width: number; height: number }> {
-  const targetAspectRatio = slot.width / slot.height;
-  
-  // Step 1: Crop to target aspect ratio
-  const cropped = await cropToAspectRatio(
-    uri,
-    sourceWidth,
-    sourceHeight,
-    targetAspectRatio
-  );
-  
-  // Step 2: Resize to exact slot dimensions
-  const resized = await resizeToSlot(
-    cropped.uri,
-    slot.width,
-    slot.height
-  );
-  
-  return resized;
+  return processImageForDimensions(uri, sourceWidth, sourceHeight, slot.width, slot.height);
 }
 
 /**

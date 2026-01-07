@@ -190,12 +190,6 @@ export default function CreateScreen() {
                     fill={template.isFavourite ? Colors.light.accent : 'transparent'}
                   />
                 </TouchableOpacity>
-                {/* Template name */}
-                <View style={styles.templateNameContainer}>
-                  <Text style={styles.templateName} numberOfLines={1}>
-                    {template.name}
-                  </Text>
-                </View>
               </Pressable>
             ))}
           </View>
@@ -379,19 +373,5 @@ const styles = StyleSheet.create({
   },
   favouriteButtonActive: {
     backgroundColor: Colors.light.surface,
-  },
-  templateNameContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  templateName: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
   },
 });

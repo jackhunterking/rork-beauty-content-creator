@@ -18,7 +18,8 @@ import { Save, Sparkles } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
-import { processImageForSlot } from '@/utils/imageProcessing';
+import { processImageForDimensions } from '@/utils/imageProcessing';
+import { extractInteractiveRegions, getRegionByType } from '@/utils/layerParser';
 
 type SlotType = 'before' | 'after';
 
@@ -58,16 +59,35 @@ export default function EditorScreen() {
   const canGenerate = beforeUri && afterUri;
   const isEditingDraft = !!currentProject.draftId;
 
-  // Process image for the slot
+  // Process image for the slot - uses layers_json dimensions when available
   const processImage = useCallback(
     async (uri: string, width: number, height: number, slotType: SlotType) => {
       if (!template) return;
 
-      const slot = slotType === 'before' ? template.beforeSlot : template.afterSlot;
+      // Extract regions from layers_json (falls back to slot data automatically)
+      const regions = extractInteractiveRegions(template);
+      const region = getRegionByType(regions, slotType);
+      
+      if (!region) {
+        Toast.show({
+          type: 'error',
+          text1: 'Template error',
+          text2: 'Could not find slot dimensions',
+          position: 'top',
+        });
+        return;
+      }
+
       setIsProcessing(true);
 
       try {
-        const processed = await processImageForSlot(uri, width, height, slot);
+        const processed = await processImageForDimensions(
+          uri, 
+          width, 
+          height, 
+          region.width, 
+          region.height
+        );
 
         if (slotType === 'before') {
           setBeforeUri(processed.uri);

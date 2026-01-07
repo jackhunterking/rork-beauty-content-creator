@@ -7,7 +7,7 @@ import Toast from 'react-native-toast-message';
 import { ImagePlus, ChevronLeft } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
-import { processImageForSlot } from "@/utils/imageProcessing";
+import { processImageForDimensions } from "@/utils/imageProcessing";
 import { ImageSlot } from "@/types";
 
 interface CapturedMedia {
@@ -44,7 +44,13 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     
     setIsProcessing(true);
     try {
-      const processed = await processImageForSlot(uri, width, height, slot);
+      const processed = await processImageForDimensions(
+        uri, 
+        width, 
+        height, 
+        slot.width, 
+        slot.height
+      );
       
       if (isMountedRef.current) {
         setPreviewUri(processed.uri);
