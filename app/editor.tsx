@@ -177,21 +177,9 @@ export default function EditorScreen() {
     [takePhoto, chooseFromLibrary]
   );
 
-  // Save draft - uploads images to Supabase Storage
-  const handleSaveDraft = useCallback(async () => {
+  // Actually perform the save operation
+  const performSaveDraft = useCallback(async () => {
     if (!template) return;
-
-    // Need at least one image to save
-    if (!beforeUri && !afterUri) {
-      Toast.show({
-        type: 'info',
-        text1: 'Nothing to save',
-        text2: 'Add at least one image first',
-        position: 'top',
-        visibilityTime: 2000,
-      });
-      return;
-    }
 
     try {
       await saveDraft({
@@ -208,6 +196,9 @@ export default function EditorScreen() {
         position: 'top',
         visibilityTime: 2000,
       });
+      
+      // Navigate back to drafts screen
+      router.push('/drafts');
     } catch (error) {
       console.error('Failed to save draft:', error);
       Toast.show({
@@ -217,7 +208,41 @@ export default function EditorScreen() {
         position: 'top',
       });
     }
-  }, [template, beforeUri, afterUri, saveDraft, currentProject.draftId]);
+  }, [template, beforeUri, afterUri, saveDraft, currentProject.draftId, router]);
+
+  // Save draft - shows confirmation dialog first
+  const handleSaveDraft = useCallback(() => {
+    if (!template) return;
+
+    // Need at least one image to save
+    if (!beforeUri && !afterUri) {
+      Toast.show({
+        type: 'info',
+        text1: 'Nothing to save',
+        text2: 'Add at least one image first',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      return;
+    }
+
+    // Show native confirmation dialog
+    Alert.alert(
+      'Save Draft',
+      'Would you like to save this as a draft? You can continue editing it later.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Save Draft',
+          onPress: performSaveDraft,
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [template, beforeUri, afterUri, performSaveDraft]);
 
   // Navigate to generate screen
   const handleGenerate = useCallback(() => {
