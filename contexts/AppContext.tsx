@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft } from '@/types';
+import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
@@ -33,6 +33,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     applyLogoAutomatically: false,
     addDisclaimer: false,
   });
+  
+  // Selected format filter ('all' shows all templates)
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>('all');
 
   // Current project now stores the full template object instead of just themeId
   const [currentProject, setCurrentProject] = useState<{
@@ -213,14 +216,22 @@ export const [AppProvider, useApp] = createContextHook(() => {
     [templates]
   );
 
-  // Filter templates by selected content type
+  // Filter templates by selected content type AND format
   const filteredTemplates = useMemo(() => 
-    templates.filter(t => t.supports.includes(currentProject.contentType)),
-    [templates, currentProject.contentType]
+    templates.filter(t => {
+      const matchesContentType = t.supports.includes(currentProject.contentType);
+      const matchesFormat = selectedFormat === 'all' || t.format === selectedFormat;
+      return matchesContentType && matchesFormat;
+    }),
+    [templates, currentProject.contentType, selectedFormat]
   );
 
   const setContentType = useCallback((type: ContentType) => {
     setCurrentProject(prev => ({ ...prev, contentType: type }));
+  }, []);
+
+  const setFormat = useCallback((format: TemplateFormat | 'all') => {
+    setSelectedFormat(format);
   }, []);
 
   // Select template - stores the full template object with slot specs
@@ -296,6 +307,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     credits,
     brandKit,
     currentProject,
+    selectedFormat,
     isLoading: isTemplatesLoading || workQuery.isLoading,
     isDraftsLoading: draftsQuery.isLoading,
     
@@ -306,6 +318,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     spendCredits: (amount: number) => spendCreditsMutation.mutate(amount),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,
+    setFormat,
     selectTemplate,
     selectTemplateById,
     setBeforeMedia,

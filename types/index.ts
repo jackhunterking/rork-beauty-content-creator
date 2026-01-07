@@ -1,4 +1,5 @@
 export type ContentType = 'single' | 'carousel' | 'video';
+export type TemplateFormat = 'square' | 'vertical';
 
 // Legacy Theme interface - kept for backwards compatibility
 export interface Theme {
@@ -43,6 +44,9 @@ export interface Template {
   supports: ContentType[];
   isFavourite: boolean;
   isActive: boolean;
+  
+  // Template format (aspect ratio category)
+  format: TemplateFormat;
   
   createdAt: string;
   
@@ -92,6 +96,7 @@ export interface TemplateRow {
   supports: ContentType[];
   is_active: boolean;
   is_favourite: boolean;
+  format: string;
   created_at: string;
   // Templated.io integration fields
   templated_id: string | null;

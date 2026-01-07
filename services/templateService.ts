@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { Template, TemplateRow } from '@/types';
+import { Template, TemplateRow, TemplateFormat } from '@/types';
 
 // Default placeholder image for slots without custom placeholders
 const DEFAULT_BEFORE_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?text=%2B%0ABefore';
@@ -35,6 +35,7 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     supports: row.supports,
     isFavourite: row.is_favourite,
     isActive: row.is_active,
+    format: (row.format || 'square') as TemplateFormat,
     createdAt: row.created_at,
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
