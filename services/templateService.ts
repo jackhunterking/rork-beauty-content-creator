@@ -43,6 +43,8 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     templatedPreviewUrl: row.templated_preview_url || undefined,
     // Frame preview URL - template with slot layers hidden for clean editor background
     framePreviewUrl: row.frame_preview_url || undefined,
+    // Overlay preview URL - template with ONLY overlay layers visible (labels, arrows on top)
+    overlayPreviewUrl: row.overlay_preview_url || undefined,
     // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
   };

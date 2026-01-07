@@ -275,25 +275,20 @@ export default function DraftsScreen() {
                         </View>
                       )}
                       {isTemplateAvailable && (
-                        <>
-                          <Text style={styles.templateName} numberOfLines={1}>
-                            {template.name}
+                        <View style={styles.statusRow}>
+                          <View
+                            style={[
+                              styles.statusDot,
+                              { backgroundColor: statusColor },
+                            ]}
+                          />
+                          <Text style={[styles.statusText, { color: statusColor }]}>
+                            {status}
                           </Text>
-                          <View style={styles.statusRow}>
-                            <View
-                              style={[
-                                styles.statusDot,
-                                { backgroundColor: statusColor },
-                              ]}
-                            />
-                            <Text style={[styles.statusText, { color: statusColor }]}>
-                              {status}
-                            </Text>
-                            <Text style={styles.dateText}>
-                              • {formatDate(draft.updatedAt)}
-                            </Text>
-                          </View>
-                        </>
+                          <Text style={styles.dateText}>
+                            • {formatDate(draft.updatedAt)}
+                          </Text>
+                        </View>
                       )}
                     </View>
 
@@ -460,12 +455,6 @@ const styles = StyleSheet.create({
   cardInfo: {
     flex: 1,
     marginRight: 12,
-  },
-  templateName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 4,
   },
   statusRow: {
     flexDirection: 'row',

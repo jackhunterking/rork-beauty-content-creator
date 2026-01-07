@@ -130,6 +130,18 @@ export function TemplateCanvas({
                 />
               );
             })}
+
+            {/* Overlay layer - rendered ON TOP of slots */}
+            {/* Contains labels, arrows, decorative elements that appear over user photos */}
+            {template.overlayPreviewUrl && (
+              <Image
+                source={{ uri: template.overlayPreviewUrl }}
+                style={styles.overlayImage}
+                contentFit="cover"
+                transition={200}
+                pointerEvents="none"
+              />
+            )}
           </>
         )}
 
@@ -142,9 +154,8 @@ export function TemplateCanvas({
         )}
       </View>
 
-      {/* Template info */}
+      {/* Template info - dimensions only */}
       <View style={styles.infoContainer}>
-        <Text style={styles.templateName}>{template.name}</Text>
         <Text style={styles.templateDimensions}>
           {template.canvasWidth} × {template.canvasHeight}
         </Text>
@@ -174,6 +185,10 @@ const styles = StyleSheet.create({
   previewImage: {
     ...StyleSheet.absoluteFillObject,
   },
+  overlayImage: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10, // Ensure overlay appears on top of slot regions
+  },
   composingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
@@ -189,12 +204,6 @@ const styles = StyleSheet.create({
   infoContainer: {
     marginTop: 16,
     alignItems: 'center',
-  },
-  templateName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: 4,
   },
   templateDimensions: {
     fontSize: 13,

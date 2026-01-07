@@ -2,22 +2,89 @@
 
 ## Sync Template Workflow (Lean Architecture)
 
-This workflow syncs templates from Templated.io to Supabase with a **single API call**. You provide the metadata, and the workflow fetches only the layer positions.
+This workflow syncs templates from Templated.io to Supabase. It automatically generates:
+- **Frame Preview**: Background elements only (slots hidden)
+- **Overlay Preview**: Labels, arrows, decorations that appear ON TOP of user photos
 
 ### Architecture
 
 ```
-Webhook → Validate → Templated (List Layers) → Transform → Supabase → Respond
-                ↓                                    ↓
-         [Validation Error]                   [Layer Error]
+Webhook → Validate → Templated (List Layers) → Transform → If Valid
+                ↓                                            ↓
+         [Validation Error]                           [Layer Error]
+                                                           ↓
+                                              ┌────────────┴────────────┐
+                                              ↓                         ↓
+                                    Render Frame Preview    Render Overlay Preview
+                                              ↓                         ↓
+                                              └────────────┬────────────┘
+                                                           ↓
+                                                    Merge Previews
+                                                           ↓
+                                                   Supabase Upsert
+                                                           ↓
+                                                    Respond Success
 ```
 
-### Why This is Better
+---
 
-| Approach | API Calls | Complexity |
-|----------|-----------|------------|
-| Previous (2 calls) | Get Template + List Layers | More nodes, slower |
-| **Lean (1 call)** | List Layers only | Simpler, faster |
+## Layer Naming Convention
+
+The workflow uses **naming conventions** to identify different layer types:
+
+### Slot Layers (User Photos)
+Layers where users add their photos. Name must contain `slot`.
+
+| Layer Name | Purpose |
+|------------|---------|
+| `slot-before` | Where the "before" photo goes |
+| `slot-after` | Where the "after" photo goes |
+| `slot-hero` | Single hero image slot |
+| `slot-1`, `slot-2` | Numbered slots |
+
+### Overlay Layers (ON TOP of Photos)
+Layers that appear ON TOP of user photos. Name must contain `overlay`.
+
+| Layer Name | Purpose |
+|------------|---------|
+| `overlay-before-text` | "Before" label text |
+| `overlay-after-text` | "After" label text |
+| `overlay-arrow-left` | Arrow icon pointing left |
+| `overlay-arrow-right` | Arrow icon pointing right |
+| `overlay-divider` | Decorative divider line |
+| `overlay-badge` | Badge or stamp decoration |
+
+### Background Layers
+Everything else becomes part of the frame/background. These render BEHIND user photos.
+
+| Layer Name | Purpose |
+|------------|---------|
+| `background` | Main background |
+| `background-shape` | Decorative background shapes |
+| `frame-border` | Border around the template |
+
+---
+
+## What Gets Generated
+
+The workflow generates two preview images:
+
+| Preview | Contains | Purpose |
+|---------|----------|---------|
+| `frame_preview_url` | Background + frame elements | Shown BEHIND user photos in editor |
+| `overlay_preview_url` | Labels, arrows, decorations | Shown ON TOP of user photos in editor |
+
+### Visual Layer Order in Editor
+
+```
+┌─────────────────────────────────────┐
+│     Overlay (labels, arrows)        │  ← overlayPreviewUrl (TOP)
+├─────────────────────────────────────┤
+│     User Photos (Before/After)      │  ← SlotRegion components
+├─────────────────────────────────────┤
+│     Frame Background                │  ← framePreviewUrl (BOTTOM)
+└─────────────────────────────────────┘
+```
 
 ---
 
@@ -39,7 +106,7 @@ Webhook → Validate → Templated (List Layers) → Transform → Supabase → 
 ### 3. Link Credentials to Workflow
 
 1. Open the imported workflow
-2. Click on **"Templated: List Layers"** node
+2. Click on each **Templated** node (List Layers, Render Frame, Render Overlay)
 3. Select your Templated.io credential from the dropdown
 4. Save the workflow
 
@@ -89,7 +156,11 @@ curl -X POST https://your-n8n.com/webhook/sync-template \
   "success": true,
   "template_id": "uuid-from-supabase",
   "templated_id": "clx1234567890",
-  "message": "Template synced successfully"
+  "frame_preview_url": "https://...",
+  "overlay_preview_url": "https://...",
+  "slot_count": 2,
+  "overlay_layer_count": 4,
+  "message": "Template synced successfully with frame and overlay previews"
 }
 ```
 
@@ -113,31 +184,35 @@ curl -X POST https://your-n8n.com/webhook/sync-template \
 {
   "success": false,
   "error": "LAYER_ERROR",
-  "message": "Template must have layers: image-before, image-after (type: image)",
+  "message": "Template must have at least one slot layer (layer name must contain \"slot\", type: image)",
   "found_layers": ["background", "text-1"],
-  "missing_layers": ["image-before", "image-after"]
+  "hint": "Rename your image layers to include \"slot\" (e.g., slot-before, slot-after, slot-hero)"
 }
 ```
 
 ---
 
-## Templated.io Template Requirements
+## How to Set Up Layers in Templated.io
 
-Your templates **MUST** have these layers:
-
-| Layer Name | Type | Purpose |
-|------------|------|---------|
-| `image-before` | image | Where the "before" photo goes |
-| `image-after` | image | Where the "after" photo goes |
-
-### How to Name Layers in Templated.io
+### Step 1: Rename Slot Layers
 
 1. Open your template in Templated.io editor
-2. Select the image placeholder for "before"
-3. In the layer panel, rename it to `image-before`
-4. Repeat for the "after" placeholder → name it `image-after`
+2. Select each image placeholder where users will add photos
+3. Rename them to include `slot`:
+   - `slot-before` for the before image
+   - `slot-after` for the after image
 
-Other layers (text, shapes, backgrounds) can have any names.
+### Step 2: Rename Overlay Layers
+
+1. Select any text, shape, or icon that should appear ON TOP of user photos
+2. Rename them to include `overlay`:
+   - `overlay-before-text` for "Before" label
+   - `overlay-after-text` for "After" label
+   - `overlay-arrow` for arrow icons
+
+### Step 3: Background Layers
+
+Leave background elements with any name (without `slot` or `overlay`).
 
 ---
 
@@ -164,9 +239,15 @@ When you design a template in Templated.io, note these values:
 
 ## Troubleshooting
 
-### "Template must have 'image-before' and 'image-after' layers"
-- Check your Templated.io template has layers named exactly `image-before` and `image-after`
-- Both must be of type `image` (not shape or text)
+### "Template must have at least one slot layer"
+- Check your Templated.io template has layers with names containing `slot`
+- Slot layers must be of type `image`
+- Example: `slot-before`, `slot-after`, `slot-hero`
+
+### Overlay not showing in app
+- Ensure overlay layers have names containing `overlay`
+- Check the `overlay_preview_url` is populated in Supabase
+- Verify the template was re-synced after renaming layers
 
 ### "canvas_width must be a positive number"
 - Ensure you're sending numbers, not strings: `"canvas_width": 1080` ✓
