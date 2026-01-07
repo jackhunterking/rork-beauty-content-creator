@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import { Draft, Template, LocalDraft } from '@/types';
 import { fetchDrafts, deleteDraft as deleteSupabaseDraft } from '@/services/draftService';
 import { 
@@ -170,31 +170,36 @@ async function downloadAndSaveImage(
   width: number,
   height: number
 ): Promise<void> {
-  // Create temp file path
-  const cacheDir = FileSystem.cacheDirectory || '';
-  const tempPath = `${cacheDir}temp_migration_${Date.now()}.jpg`;
+  // Create temp directory for download
+  const tempDir = new Directory(Paths.cache, 'temp_migration');
+  if (!tempDir.exists) {
+    tempDir.create({ intermediates: true });
+  }
   
   try {
     // Download the image
-    const downloadResult = await FileSystem.downloadAsync(url, tempPath);
+    const downloadedFile = await File.downloadFileAsync(url, tempDir);
     
-    if (downloadResult.status !== 200) {
+    if (!downloadedFile.exists) {
       throw new Error('Download failed');
     }
     
     // Save to draft slot
-    await saveSlotImage(draftId, slotId, tempPath, width, height);
+    await saveSlotImage(draftId, slotId, downloadedFile.uri, width, height);
     
-  } finally {
-    // Clean up temp file
+    // Clean up downloaded file
+    downloadedFile.delete();
+    
+  } catch (error) {
+    // Clean up on error
     try {
-      const tempInfo = await FileSystem.getInfoAsync(tempPath);
-      if (tempInfo.exists) {
-        await FileSystem.deleteAsync(tempPath, { idempotent: true });
+      if (tempDir.exists) {
+        tempDir.delete();
       }
     } catch {
       // Ignore cleanup errors
     }
+    throw error;
   }
 }
 

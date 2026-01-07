@@ -1,9 +1,9 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 
 // Base directories for local storage
-const DOCUMENTS_DIR = FileSystem.documentDirectory || '';
-const DRAFTS_DIR = `${DOCUMENTS_DIR}drafts/`;
-const RENDER_CACHE_DIR = `${DOCUMENTS_DIR}render-cache/`;
+const DOCUMENTS_DIR = Paths.document;
+const DRAFTS_DIR = new Directory(DOCUMENTS_DIR, 'drafts');
+const RENDER_CACHE_DIR = new Directory(DOCUMENTS_DIR, 'render-cache');
 
 /**
  * Local Storage Service
@@ -30,32 +30,32 @@ export async function initializeLocalStorage(): Promise<void> {
 /**
  * Ensure a directory exists, create if it doesn't
  */
-export async function ensureDirectoryExists(dirPath: string): Promise<void> {
-  const info = await FileSystem.getInfoAsync(dirPath);
-  if (!info.exists) {
-    await FileSystem.makeDirectoryAsync(dirPath, { intermediates: true });
+export async function ensureDirectoryExists(dir: Directory | string): Promise<void> {
+  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
+  if (!directory.exists) {
+    directory.create({ intermediates: true });
   }
 }
 
 /**
  * Get the draft directory path for a specific draft
  */
-export function getDraftDirectory(draftId: string): string {
-  return `${DRAFTS_DIR}${draftId}/`;
+export function getDraftDirectory(draftId: string): Directory {
+  return new Directory(DRAFTS_DIR, draftId);
 }
 
 /**
  * Get the slots directory within a draft
  */
-export function getDraftSlotsDirectory(draftId: string): string {
-  return `${getDraftDirectory(draftId)}slots/`;
+export function getDraftSlotsDirectory(draftId: string): Directory {
+  return new Directory(getDraftDirectory(draftId), 'slots');
 }
 
 /**
  * Get the renders directory within a draft (for cached renders)
  */
-export function getDraftRendersDirectory(draftId: string): string {
-  return `${getDraftDirectory(draftId)}renders/`;
+export function getDraftRendersDirectory(draftId: string): Directory {
+  return new Directory(getDraftDirectory(draftId), 'renders');
 }
 
 /**
@@ -79,10 +79,9 @@ export async function copyFile(sourceUri: string, destPath: string): Promise<str
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
   
-  await FileSystem.copyAsync({
-    from: sourceUri,
-    to: destPath,
-  });
+  const sourceFile = new File(sourceUri);
+  const destFile = new File(destPath);
+  sourceFile.copy(destFile);
   
   return destPath;
 }
@@ -94,10 +93,9 @@ export async function moveFile(sourceUri: string, destPath: string): Promise<str
   const destDir = destPath.substring(0, destPath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(destDir);
   
-  await FileSystem.moveAsync({
-    from: sourceUri,
-    to: destPath,
-  });
+  const sourceFile = new File(sourceUri);
+  const destFile = new File(destPath);
+  sourceFile.move(destFile);
   
   return destPath;
 }
@@ -106,19 +104,19 @@ export async function moveFile(sourceUri: string, destPath: string): Promise<str
  * Delete a file if it exists
  */
 export async function deleteFile(filePath: string): Promise<void> {
-  const info = await FileSystem.getInfoAsync(filePath);
-  if (info.exists) {
-    await FileSystem.deleteAsync(filePath, { idempotent: true });
+  const file = new File(filePath);
+  if (file.exists) {
+    file.delete();
   }
 }
 
 /**
  * Delete a directory and all its contents
  */
-export async function deleteDirectory(dirPath: string): Promise<void> {
-  const info = await FileSystem.getInfoAsync(dirPath);
-  if (info.exists) {
-    await FileSystem.deleteAsync(dirPath, { idempotent: true });
+export async function deleteDirectory(dir: Directory | string): Promise<void> {
+  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
+  if (directory.exists) {
+    directory.delete();
   }
 }
 
@@ -126,8 +124,8 @@ export async function deleteDirectory(dirPath: string): Promise<void> {
  * Check if a file exists
  */
 export async function fileExists(filePath: string): Promise<boolean> {
-  const info = await FileSystem.getInfoAsync(filePath);
-  return info.exists;
+  const file = new File(filePath);
+  return file.exists;
 }
 
 /**
@@ -135,11 +133,11 @@ export async function fileExists(filePath: string): Promise<boolean> {
  */
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    const info = await FileSystem.getInfoAsync(filePath);
-    if (!info.exists) {
+    const file = new File(filePath);
+    if (!file.exists) {
       return null;
     }
-    const content = await FileSystem.readAsStringAsync(filePath);
+    const content = await file.text();
     return JSON.parse(content) as T;
   } catch (error) {
     console.error('Error reading JSON file:', error);
@@ -153,18 +151,19 @@ export async function readJsonFile<T>(filePath: string): Promise<T | null> {
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   const dirPath = filePath.substring(0, filePath.lastIndexOf('/') + 1);
   await ensureDirectoryExists(dirPath);
-  await FileSystem.writeAsStringAsync(filePath, JSON.stringify(data, null, 2));
+  const file = new File(filePath);
+  file.write(JSON.stringify(data, null, 2));
 }
 
 /**
  * List files in a directory
  */
-export async function listDirectory(dirPath: string): Promise<string[]> {
-  const info = await FileSystem.getInfoAsync(dirPath);
-  if (!info.exists) {
+export async function listDirectory(dir: Directory | string): Promise<string[]> {
+  const directory = typeof dir === 'string' ? new Directory(dir) : dir;
+  if (!directory.exists) {
     return [];
   }
-  return FileSystem.readDirectoryAsync(dirPath);
+  return directory.list().map(item => item.name);
 }
 
 // ============================================
@@ -228,17 +227,18 @@ export async function saveDraftSlotImage(
   const slotsDir = getDraftSlotsDirectory(draftId);
   await ensureDirectoryExists(slotsDir);
   
-  const destPath = `${slotsDir}${slotId}.jpg`;
-  await copyFile(sourceUri, destPath);
+  const destFile = new File(slotsDir, `${slotId}.jpg`);
+  await copyFile(sourceUri, destFile.uri);
   
-  return destPath;
+  return destFile.uri;
 }
 
 /**
  * Get the path to a slot image in a draft
  */
 export function getDraftSlotImagePath(draftId: string, slotId: string): string {
-  return `${getDraftSlotsDirectory(draftId)}${slotId}.jpg`;
+  const slotsDir = getDraftSlotsDirectory(draftId);
+  return new File(slotsDir, `${slotId}.jpg`).uri;
 }
 
 /**
@@ -260,14 +260,15 @@ export async function draftSlotImageExists(
  * Get the path for a cached render
  */
 export function getCachedRenderPath(draftId: string, themeId: string = 'default'): string {
-  return `${getDraftRendersDirectory(draftId)}${themeId}.jpg`;
+  const rendersDir = getDraftRendersDirectory(draftId);
+  return new File(rendersDir, `${themeId}.jpg`).uri;
 }
 
 /**
  * Get the global render cache path (for non-draft renders)
  */
 export function getGlobalCachePath(cacheKey: string): string {
-  return `${RENDER_CACHE_DIR}${cacheKey}.jpg`;
+  return new File(RENDER_CACHE_DIR, `${cacheKey}.jpg`).uri;
 }
 
 /**
@@ -329,26 +330,20 @@ export async function getRenderCacheSize(): Promise<number> {
 /**
  * Calculate the size of a directory recursively
  */
-async function getDirectorySize(dirPath: string): Promise<number> {
+async function getDirectorySize(dir: Directory): Promise<number> {
   let totalSize = 0;
   
-  const info = await FileSystem.getInfoAsync(dirPath);
-  if (!info.exists) {
+  if (!dir.exists) {
     return 0;
   }
   
-  const files = await FileSystem.readDirectoryAsync(dirPath);
+  const items = dir.list();
   
-  for (const file of files) {
-    const filePath = `${dirPath}${file}`;
-    const fileInfo = await FileSystem.getInfoAsync(filePath);
-    
-    if (fileInfo.exists) {
-      if (fileInfo.isDirectory) {
-        totalSize += await getDirectorySize(`${filePath}/`);
-      } else if ('size' in fileInfo) {
-        totalSize += fileInfo.size || 0;
-      }
+  for (const item of items) {
+    if (item instanceof Directory) {
+      totalSize += await getDirectorySize(item);
+    } else if (item instanceof File) {
+      totalSize += item.size ?? 0;
     }
   }
   
@@ -388,7 +383,7 @@ export function formatBytes(bytes: number): string {
 
 // Export directory constants for external use
 export const STORAGE_PATHS = {
-  DOCUMENTS: DOCUMENTS_DIR,
-  DRAFTS: DRAFTS_DIR,
-  RENDER_CACHE: RENDER_CACHE_DIR,
+  DOCUMENTS: DOCUMENTS_DIR.uri,
+  DRAFTS: DRAFTS_DIR.uri,
+  RENDER_CACHE: RENDER_CACHE_DIR.uri,
 };

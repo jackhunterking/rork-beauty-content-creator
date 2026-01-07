@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
 /**
@@ -84,8 +84,8 @@ export async function saveToGallery(
     }
     
     // Verify file exists
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
-    if (!fileInfo.exists) {
+    const file = new File(localPath);
+    if (!file.exists) {
       return {
         success: false,
         error: 'File not found at the specified path',
@@ -151,23 +151,31 @@ export async function downloadAndSaveToGallery(
     }
     
     // Generate local path for download
-    const cacheDir = FileSystem.cacheDirectory || '';
     const extension = getFileExtension(remoteUrl);
     const name = filename || `beauty_${Date.now()}`;
-    const localPath = `${cacheDir}${name}.${extension}`;
+    const destination = new Directory(Paths.cache);
+    
+    // Ensure cache directory exists
+    if (!destination.exists) {
+      destination.create({ intermediates: true });
+    }
     
     // Download the file
-    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
+    const downloadedFile = await File.downloadFileAsync(remoteUrl, destination);
     
-    if (downloadResult.status !== 200) {
+    if (!downloadedFile.exists) {
       return {
         success: false,
         error: 'Download failed',
       };
     }
     
+    // Rename to our desired filename
+    const finalFile = new File(Paths.cache, `${name}.${extension}`);
+    downloadedFile.move(finalFile);
+    
     // Save to gallery
-    return saveToGallery(localPath, albumName);
+    return saveToGallery(finalFile.uri, albumName);
     
   } catch (error) {
     console.error('Failed to download and save:', error);
@@ -187,15 +195,10 @@ export async function copyWithFilename(
   filename: string,
   extension: string = 'jpg'
 ): Promise<string> {
-  const cacheDir = FileSystem.cacheDirectory || '';
-  const destPath = `${cacheDir}${filename}.${extension}`;
-  
-  await FileSystem.copyAsync({
-    from: sourcePath,
-    to: destPath,
-  });
-  
-  return destPath;
+  const sourceFile = new File(sourcePath);
+  const destFile = new File(Paths.cache, `${filename}.${extension}`);
+  sourceFile.copy(destFile);
+  return destFile.uri;
 }
 
 // ============================================
@@ -234,24 +237,24 @@ export function generateDownloadFilename(prefix: string = 'beauty'): string {
  * Get the path where downloaded files will be saved
  */
 export function getDownloadDirectory(): string {
-  return FileSystem.cacheDirectory || '';
+  return Paths.cache.uri;
 }
 
 /**
  * Check if a file exists at the given path
  */
 export async function fileExists(path: string): Promise<boolean> {
-  const fileInfo = await FileSystem.getInfoAsync(path);
-  return fileInfo.exists;
+  const file = new File(path);
+  return file.exists;
 }
 
 /**
  * Get the size of a file in bytes
  */
 export async function getFileSize(path: string): Promise<number | null> {
-  const fileInfo = await FileSystem.getInfoAsync(path, { size: true });
-  if (fileInfo.exists) {
-    return (fileInfo as any).size || null;
+  const file = new File(path);
+  if (file.exists) {
+    return file.size ?? null;
   }
   return null;
 }
@@ -279,7 +282,7 @@ export async function getOrCreateAlbum(
     const hasPermission = await ensureMediaLibraryPermission();
     if (!hasPermission) return null;
     
-    let album = await MediaLibrary.getAlbumAsync(albumName);
+    const album = await MediaLibrary.getAlbumAsync(albumName);
     
     // Album will be created when first image is saved
     return album;

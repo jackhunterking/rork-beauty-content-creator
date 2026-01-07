@@ -1,5 +1,5 @@
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
 
 /**
@@ -64,8 +64,8 @@ export async function shareImage(
     }
     
     // Verify file exists
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
-    if (!fileInfo.exists) {
+    const file = new File(localPath);
+    if (!file.exists) {
       return {
         success: false,
         error: 'File not found',
@@ -109,22 +109,30 @@ export async function downloadAndShare(
 ): Promise<ShareResult> {
   try {
     // Generate local path
-    const cacheDir = FileSystem.cacheDirectory || '';
     const name = filename || `share_${Date.now()}`;
-    const localPath = `${cacheDir}${name}.jpg`;
+    const destination = new Directory(Paths.cache);
+    
+    // Ensure cache directory exists
+    if (!destination.exists) {
+      destination.create({ intermediates: true });
+    }
     
     // Download the file
-    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
+    const downloadedFile = await File.downloadFileAsync(remoteUrl, destination);
     
-    if (downloadResult.status !== 200) {
+    if (!downloadedFile.exists) {
       return {
         success: false,
         error: 'Download failed',
       };
     }
     
+    // Rename to our desired filename
+    const finalFile = new File(Paths.cache, `${name}.jpg`);
+    downloadedFile.move(finalFile);
+    
     // Share the downloaded file
-    return shareImage(localPath, options);
+    return shareImage(finalFile.uri, options);
     
   } catch (error) {
     console.error('Download and share failed:', error);
@@ -270,14 +278,14 @@ export async function checkPlatformRequirements(
   const issues: string[] = [];
   
   try {
-    const fileInfo = await FileSystem.getInfoAsync(localPath, { size: true });
+    const file = new File(localPath);
     
-    if (!fileInfo.exists) {
+    if (!file.exists) {
       return { valid: false, issues: ['File not found'] };
     }
     
     // Check file size
-    const fileSize = (fileInfo as any).size || 0;
+    const fileSize = file.size ?? 0;
     if (fileSize > platformInfo.maxFileSize) {
       const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
       const maxMB = (platformInfo.maxFileSize / (1024 * 1024)).toFixed(0);
@@ -308,16 +316,13 @@ export async function prepareForSharing(
   localPath: string,
   filename: string = 'beauty_creation'
 ): Promise<string> {
-  const cacheDir = FileSystem.cacheDirectory || '';
   const extension = localPath.split('.').pop() || 'jpg';
-  const sharePath = `${cacheDir}${filename}_${Date.now()}.${extension}`;
+  const sourceFile = new File(localPath);
+  const destFile = new File(Paths.cache, `${filename}_${Date.now()}.${extension}`);
   
-  await FileSystem.copyAsync({
-    from: localPath,
-    to: sharePath,
-  });
+  sourceFile.copy(destFile);
   
-  return sharePath;
+  return destFile.uri;
 }
 
 /**
@@ -325,19 +330,14 @@ export async function prepareForSharing(
  */
 export async function cleanupShareFiles(): Promise<void> {
   try {
-    const cacheDir = FileSystem.cacheDirectory || '';
-    const cacheInfo = await FileSystem.getInfoAsync(cacheDir);
-    if (!cacheInfo.exists) return;
+    const cacheDir = new Directory(Paths.cache);
+    if (!cacheDir.exists) return;
     
-    const items = await FileSystem.readDirectoryAsync(cacheDir);
+    const items = cacheDir.list();
     
     for (const item of items) {
-      if (item.startsWith('share_') || item.startsWith('beauty_creation_')) {
-        try {
-          await FileSystem.deleteAsync(`${cacheDir}${item}`, { idempotent: true });
-        } catch {
-          // Ignore individual file errors
-        }
+      if (item instanceof File && (item.name.startsWith('share_') || item.name.startsWith('beauty_creation_'))) {
+        item.delete();
       }
     }
   } catch (error) {
