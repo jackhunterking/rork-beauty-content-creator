@@ -223,14 +223,9 @@ export interface Template {
   templatedId?: string;
   templatedPreviewUrl?: string;
   
-  // Frame preview URL - template rendered with slot layers hidden
-  // Used in editor to show clean background without placeholder images
+  // Frame preview URL - optional fallback when templatedPreviewUrl isn't available
+  // Not actively used in new architecture - Templated.io handles all rendering
   framePreviewUrl?: string;
-  
-  // Overlay preview URL - template rendered with ONLY overlay layers visible
-  // Contains labels, arrows, decorative elements that appear ON TOP of slot images
-  // Overlay layers are identified by having 'overlay' in the layer name
-  overlayPreviewUrl?: string;
   
   // Source of truth for all layers - slots are extracted from this
   layersJson?: TemplatedLayer[];
@@ -284,10 +279,8 @@ export interface TemplateRow {
   // Templated.io integration fields
   templated_id: string | null;
   templated_preview_url: string | null;
-  // Frame preview URL - template with slot layers hidden
+  // Frame preview URL - optional fallback
   frame_preview_url: string | null;
-  // Overlay preview URL - template with ONLY overlay layers visible
-  overlay_preview_url: string | null;
   // Source of truth for layers
   layers_json: TemplatedLayer[] | null;
 }

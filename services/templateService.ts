@@ -41,10 +41,8 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
     templatedPreviewUrl: row.templated_preview_url || undefined,
-    // Frame preview URL - template with slot layers hidden for clean editor background
+    // Frame preview URL - optional fallback
     framePreviewUrl: row.frame_preview_url || undefined,
-    // Overlay preview URL - template with ONLY overlay layers visible (labels, arrows on top)
-    overlayPreviewUrl: row.overlay_preview_url || undefined,
     // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
   };

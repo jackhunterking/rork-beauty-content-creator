@@ -1,10 +1,8 @@
 # n8n Workflows for Beauty Content Creator
 
-## Sync Template Workflow (Lean Architecture)
+## Sync Template Workflow (Simplified)
 
-This workflow syncs templates from Templated.io to Supabase. It automatically generates:
-- **Frame Preview**: Background elements only (slots hidden)
-- **Overlay Preview**: Labels, arrows, decorations that appear ON TOP of user photos
+This workflow syncs templates from Templated.io to Supabase. All rendering is handled at runtime by the app.
 
 ### Architecture
 
@@ -12,25 +10,22 @@ This workflow syncs templates from Templated.io to Supabase. It automatically ge
 Webhook → Validate → Templated (List Layers) → Transform → If Valid
                 ↓                                            ↓
          [Validation Error]                           [Layer Error]
-                                                           ↓
-                                              ┌────────────┴────────────┐
-                                              ↓                         ↓
-                                    Render Frame Preview    Render Overlay Preview
-                                              ↓                         ↓
-                                              └────────────┬────────────┘
-                                                           ↓
-                                                    Merge Previews
-                                                           ↓
-                                                   Supabase Upsert
-                                                           ↓
-                                                    Respond Success
+                                                          ↓
+                                                  Supabase Upsert
+                                                          ↓
+                                                   Respond Success
 ```
+
+**Key Simplification**: No render steps in the workflow. The app calls Templated.io API at runtime for:
+- Preview rendering (after user adds photos)
+- Final rendering (for download/share)
+- Watermark control (hidden for premium users)
 
 ---
 
 ## Layer Naming Convention
 
-The workflow uses **naming conventions** to identify different layer types:
+The workflow identifies layer types by naming convention:
 
 ### Slot Layers (User Photos)
 Layers where users add their photos. Name must contain `slot`.
@@ -42,48 +37,45 @@ Layers where users add their photos. Name must contain `slot`.
 | `slot-hero` | Single hero image slot |
 | `slot-1`, `slot-2` | Numbered slots |
 
-### Overlay Layers (ON TOP of Photos)
-Layers that appear ON TOP of user photos. Name must contain `overlay`.
+### Watermark Layer
+Layer showing "Made with BeautyApp" for free users. Name must contain `watermark`.
 
 | Layer Name | Purpose |
 |------------|---------|
-| `overlay-before-text` | "Before" label text |
-| `overlay-after-text` | "After" label text |
-| `overlay-arrow-left` | Arrow icon pointing left |
-| `overlay-arrow-right` | Arrow icon pointing right |
-| `overlay-divider` | Decorative divider line |
-| `overlay-badge` | Badge or stamp decoration |
+| `watermark` | Branding text/logo |
+| `watermark-text` | Text-based watermark |
 
-### Background Layers
-Everything else becomes part of the frame/background. These render BEHIND user photos.
+Premium users have the watermark hidden automatically.
+
+### All Other Layers
+Everything else (labels, arrows, backgrounds) renders as part of the template.
 
 | Layer Name | Purpose |
 |------------|---------|
 | `background` | Main background |
-| `background-shape` | Decorative background shapes |
-| `frame-border` | Border around the template |
+| `before-label` | "Before" text |
+| `after-label` | "After" text |
+| `arrow-left` | Decorative arrow |
 
 ---
 
-## What Gets Generated
+## How Rendering Works
 
-The workflow generates two preview images:
+### In the App
 
-| Preview | Contains | Purpose |
-|---------|----------|---------|
-| `frame_preview_url` | Background + frame elements | Shown BEHIND user photos in editor |
-| `overlay_preview_url` | Labels, arrows, decorations | Shown ON TOP of user photos in editor |
+1. **Empty State**: Shows `templatedPreviewUrl` (template with placeholder buttons)
+2. **After Photo Added**: Calls Templated.io API to render preview
+3. **Download/Share**: Calls Templated.io API to render final image
 
-### Visual Layer Order in Editor
+### Watermark Logic
 
-```
-┌─────────────────────────────────────┐
-│     Overlay (labels, arrows)        │  ← overlayPreviewUrl (TOP)
-├─────────────────────────────────────┤
-│     User Photos (Before/After)      │  ← SlotRegion components
-├─────────────────────────────────────┤
-│     Frame Background                │  ← framePreviewUrl (BOTTOM)
-└─────────────────────────────────────┘
+```typescript
+// When rendering
+const layers = {
+  "slot-before": { image_url: "user_photo_1.jpg" },
+  "slot-after": { image_url: "user_photo_2.jpg" },
+  "watermark": { hide: isPremiumUser }  // Hidden for premium
+};
 ```
 
 ---
@@ -106,7 +98,7 @@ The workflow generates two preview images:
 ### 3. Link Credentials to Workflow
 
 1. Open the imported workflow
-2. Click on each **Templated** node (List Layers, Render Frame, Render Overlay)
+2. Click on the **Templated: List Layers** node
 3. Select your Templated.io credential from the dropdown
 4. Save the workflow
 
@@ -156,11 +148,9 @@ curl -X POST https://your-n8n.com/webhook/sync-template \
   "success": true,
   "template_id": "uuid-from-supabase",
   "templated_id": "clx1234567890",
-  "frame_preview_url": "https://...",
-  "overlay_preview_url": "https://...",
   "slot_count": 2,
-  "overlay_layer_count": 4,
-  "message": "Template synced successfully with frame and overlay previews"
+  "has_watermark": true,
+  "message": "Template synced successfully. Rendering handled at runtime."
 }
 ```
 
@@ -202,17 +192,16 @@ curl -X POST https://your-n8n.com/webhook/sync-template \
    - `slot-before` for the before image
    - `slot-after` for the after image
 
-### Step 2: Rename Overlay Layers
+### Step 2: Add Watermark Layer
 
-1. Select any text, shape, or icon that should appear ON TOP of user photos
-2. Rename them to include `overlay`:
-   - `overlay-before-text` for "Before" label
-   - `overlay-after-text` for "After" label
-   - `overlay-arrow` for arrow icons
+1. Add a text layer in a corner (bottom-right recommended)
+2. Set text to: `Made with BeautyApp`
+3. Rename layer to `watermark`
+4. Style it subtly (small, semi-transparent)
 
-### Step 3: Background Layers
+### Step 3: Other Layers
 
-Leave background elements with any name (without `slot` or `overlay`).
+Add labels, arrows, decorations with any names. These will render automatically with correct layer ordering.
 
 ---
 
@@ -244,10 +233,9 @@ When you design a template in Templated.io, note these values:
 - Slot layers must be of type `image`
 - Example: `slot-before`, `slot-after`, `slot-hero`
 
-### Overlay not showing in app
-- Ensure overlay layers have names containing `overlay`
-- Check the `overlay_preview_url` is populated in Supabase
-- Verify the template was re-synced after renaming layers
+### Watermark not hiding for premium users
+- Ensure watermark layer name contains `watermark`
+- Check user's premium status in app
 
 ### "canvas_width must be a positive number"
 - Ensure you're sending numbers, not strings: `"canvas_width": 1080` ✓
@@ -269,5 +257,4 @@ When you design a template in Templated.io, note these values:
 | File | Description |
 |------|-------------|
 | `sync-template-lean.json` | The n8n workflow to import |
-| `test-sync.sh` | Test script for the webhook |
 | `README.md` | This documentation |

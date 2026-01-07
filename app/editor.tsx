@@ -14,6 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useNavigation } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
 import { Save, Download, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -22,6 +25,8 @@ import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
 import { SlotState, SlotStates } from '@/types';
+import { renderPreview, renderTemplate } from '@/services/renderService';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 
 export default function EditorScreen() {
   const router = useRouter();
@@ -42,9 +47,16 @@ export default function EditorScreen() {
   // Per-slot state tracking
   const [slotStates, setSlotStates] = useState<SlotStates>({});
   
-  // Composed preview state
-  const [composedPreviewUri, setComposedPreviewUri] = useState<string | null>(null);
-  const [isComposing, setIsComposing] = useState(false);
+  // Rendered preview state (from Templated.io)
+  const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  
+  // Download/share state
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
+  // Premium status for watermark control
+  const { isPremium } = usePremiumStatus();
 
   // Extract slots from template
   const slots = useMemo(() => 
@@ -85,6 +97,45 @@ export default function EditorScreen() {
     getCapturedSlotCount(slots, capturedImages),
     [slots, capturedImages]
   );
+
+  // Trigger preview render when photos change
+  const triggerPreviewRender = useCallback(async () => {
+    if (!template?.templatedId) return;
+    
+    // Only render if we have at least one photo
+    const photosToRender: Record<string, string> = {};
+    for (const [slotId, media] of Object.entries(capturedImages)) {
+      if (media?.uri) {
+        photosToRender[slotId] = media.uri;
+      }
+    }
+    
+    if (Object.keys(photosToRender).length === 0) {
+      setRenderedPreviewUri(null);
+      return;
+    }
+    
+    setIsRendering(true);
+    
+    try {
+      const result = await renderPreview({
+        templateId: template.templatedId,
+        slotImages: photosToRender,
+        hideWatermark: isPremium,
+      });
+      
+      if (result.success && result.renderUrl) {
+        setRenderedPreviewUri(result.renderUrl);
+      } else {
+        console.warn('Preview render failed:', result.error);
+        // Don't show error toast for preview - just show template
+      }
+    } catch (error) {
+      console.error('Preview render error:', error);
+    } finally {
+      setIsRendering(false);
+    }
+  }, [template?.templatedId, capturedImages, isPremium]);
 
   // Redirect if no template selected
   useEffect(() => {
@@ -238,10 +289,15 @@ export default function EditorScreen() {
         Toast.show({
           type: 'success',
           text1: `${slot.label} image added`,
-          text2: `Ready for preview`,
+          text2: `Generating preview...`,
           position: 'top',
           visibilityTime: 1500,
         });
+
+        // Trigger preview render after short delay to allow state update
+        setTimeout(() => {
+          triggerPreviewRender();
+        }, 100);
       } catch (error) {
         console.error('Failed to process image:', error);
         setSlotState(slotId, 'error', 'Processing failed');
@@ -253,7 +309,7 @@ export default function EditorScreen() {
         });
       }
     },
-    [template, slots, setCapturedImage, setSlotState]
+    [template, slots, setCapturedImage, setSlotState, triggerPreviewRender]
   );
 
   // Navigate to camera screen for a slot
@@ -409,7 +465,7 @@ export default function EditorScreen() {
     );
   }, [template, capturedCount, performSaveDraft]);
 
-  // Handle download - this will trigger rendering and download
+  // Handle download - render and save to camera roll
   const handleDownload = useCallback(async () => {
     if (!canDownload || !template?.templatedId) {
       Toast.show({
@@ -423,20 +479,75 @@ export default function EditorScreen() {
       return;
     }
     
-    // TODO: Implement actual download with render
-    // For now, show that it's coming soon
-    Toast.show({
-      type: 'info',
-      text1: 'Download',
-      text2: 'Rendering your image...',
-      position: 'top',
-      visibilityTime: 2000,
-    });
-  }, [canDownload, template]);
+    setIsDownloading(true);
+    
+    try {
+      // Request permissions
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Toast.show({
+          type: 'error',
+          text1: 'Permission denied',
+          text2: 'Please allow access to save photos',
+          position: 'top',
+        });
+        return;
+      }
+      
+      // Build slot images map
+      const slotImages: Record<string, string> = {};
+      for (const [slotId, media] of Object.entries(capturedImages)) {
+        if (media?.uri) {
+          slotImages[slotId] = media.uri;
+        }
+      }
+      
+      // Render the template
+      Toast.show({
+        type: 'info',
+        text1: 'Rendering...',
+        text2: 'Please wait while we generate your image',
+        position: 'top',
+        visibilityTime: 3000,
+      });
+      
+      const result = await renderTemplate({
+        draftId: currentProject.draftId || `temp_${Date.now()}`,
+        templateId: template.templatedId,
+        slotImages,
+        hideWatermark: isPremium,
+      });
+      
+      if (!result.success || !result.localPath) {
+        throw new Error(result.error || 'Render failed');
+      }
+      
+      // Save to camera roll
+      await MediaLibrary.saveToLibraryAsync(result.localPath);
+      
+      Toast.show({
+        type: 'success',
+        text1: 'Downloaded!',
+        text2: 'Image saved to your photo library',
+        position: 'top',
+        visibilityTime: 3000,
+      });
+    } catch (error) {
+      console.error('Download failed:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Download failed',
+        text2: error instanceof Error ? error.message : 'Please try again',
+        position: 'top',
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [canDownload, template, capturedImages, currentProject.draftId, isPremium]);
 
-  // Handle share
+  // Handle share - render and open share sheet
   const handleShare = useCallback(async () => {
-    if (!canDownload) {
+    if (!canDownload || !template?.templatedId) {
       Toast.show({
         type: 'info',
         text1: 'Not ready',
@@ -446,15 +557,67 @@ export default function EditorScreen() {
       return;
     }
     
-    // TODO: Implement actual share with render
-    Toast.show({
-      type: 'info',
-      text1: 'Share',
-      text2: 'Preparing to share...',
-      position: 'top',
-      visibilityTime: 2000,
-    });
-  }, [canDownload]);
+    // Check if sharing is available
+    const isAvailable = await Sharing.isAvailableAsync();
+    if (!isAvailable) {
+      Toast.show({
+        type: 'error',
+        text1: 'Sharing not available',
+        text2: 'Your device does not support sharing',
+        position: 'top',
+      });
+      return;
+    }
+    
+    setIsSharing(true);
+    
+    try {
+      // Build slot images map
+      const slotImages: Record<string, string> = {};
+      for (const [slotId, media] of Object.entries(capturedImages)) {
+        if (media?.uri) {
+          slotImages[slotId] = media.uri;
+        }
+      }
+      
+      // Render the template
+      Toast.show({
+        type: 'info',
+        text1: 'Preparing...',
+        text2: 'Please wait while we generate your image',
+        position: 'top',
+        visibilityTime: 3000,
+      });
+      
+      const result = await renderTemplate({
+        draftId: currentProject.draftId || `temp_${Date.now()}`,
+        templateId: template.templatedId,
+        slotImages,
+        hideWatermark: isPremium,
+      });
+      
+      if (!result.success || !result.localPath) {
+        throw new Error(result.error || 'Render failed');
+      }
+      
+      // Open share sheet
+      await Sharing.shareAsync(result.localPath, {
+        mimeType: 'image/jpeg',
+        dialogTitle: 'Share your creation',
+      });
+      
+    } catch (error) {
+      console.error('Share failed:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Share failed',
+        text2: error instanceof Error ? error.message : 'Please try again',
+        position: 'top',
+      });
+    } finally {
+      setIsSharing(false);
+    }
+  }, [canDownload, template, capturedImages, currentProject.draftId, isPremium]);
 
   if (!template) {
     return null;
@@ -470,6 +633,8 @@ export default function EditorScreen() {
     }
     return `Tap on each slot to add your photos (${capturedCount}/${slots.length} added)`;
   };
+
+  const isProcessing = isDownloading || isSharing;
 
   return (
     <View style={styles.container}>
@@ -509,15 +674,15 @@ export default function EditorScreen() {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Template Canvas with dynamic slots and per-slot states */}
+          {/* Template Canvas with rendered preview from Templated.io */}
           <TemplateCanvas
             template={template}
             capturedImages={capturedImages}
             slotStates={slotStates}
             onSlotPress={handleSlotPress}
             onSlotRetry={handleRetry}
-            composedPreviewUri={composedPreviewUri}
-            isComposing={isComposing}
+            renderedPreviewUri={renderedPreviewUri}
+            isRendering={isRendering}
           />
 
           {/* Instructions */}
@@ -533,27 +698,35 @@ export default function EditorScreen() {
           <View style={styles.actionRow}>
             {/* Download Button */}
             <TouchableOpacity
-              style={[styles.actionButton, !canDownload && styles.actionButtonDisabled]}
+              style={[styles.actionButton, (!canDownload || isProcessing) && styles.actionButtonDisabled]}
               onPress={handleDownload}
-              disabled={!canDownload}
+              disabled={!canDownload || isProcessing}
               activeOpacity={0.8}
             >
-              <Download size={20} color={canDownload ? Colors.light.surface : Colors.light.textTertiary} />
-              <Text style={[styles.actionButtonText, !canDownload && styles.actionButtonTextDisabled]}>
-                Download
+              {isDownloading ? (
+                <ActivityIndicator size="small" color={Colors.light.surface} />
+              ) : (
+                <Download size={20} color={canDownload && !isProcessing ? Colors.light.surface : Colors.light.textTertiary} />
+              )}
+              <Text style={[styles.actionButtonText, (!canDownload || isProcessing) && styles.actionButtonTextDisabled]}>
+                {isDownloading ? 'Saving...' : 'Download'}
               </Text>
             </TouchableOpacity>
 
             {/* Share Button */}
             <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonSecondary, !canDownload && styles.actionButtonDisabled]}
+              style={[styles.actionButton, styles.actionButtonSecondary, (!canDownload || isProcessing) && styles.actionButtonDisabled]}
               onPress={handleShare}
-              disabled={!canDownload}
+              disabled={!canDownload || isProcessing}
               activeOpacity={0.8}
             >
-              <Share2 size={20} color={canDownload ? Colors.light.text : Colors.light.textTertiary} />
-              <Text style={[styles.actionButtonTextSecondary, !canDownload && styles.actionButtonTextDisabled]}>
-                Share
+              {isSharing ? (
+                <ActivityIndicator size="small" color={Colors.light.text} />
+              ) : (
+                <Share2 size={20} color={canDownload && !isProcessing ? Colors.light.text : Colors.light.textTertiary} />
+              )}
+              <Text style={[styles.actionButtonTextSecondary, (!canDownload || isProcessing) && styles.actionButtonTextDisabled]}>
+                {isSharing ? 'Sharing...' : 'Share'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -561,6 +734,13 @@ export default function EditorScreen() {
           {!canDownload && (
             <Text style={styles.helperText}>
               Add all {slots.length} images to download or share
+            </Text>
+          )}
+          
+          {/* Premium upsell hint */}
+          {!isPremium && canDownload && (
+            <Text style={styles.watermarkHint}>
+              Includes "Made with BeautyApp" watermark
             </Text>
           )}
         </View>
@@ -666,5 +846,12 @@ const styles = StyleSheet.create({
     color: Colors.light.textTertiary,
     textAlign: 'center',
     marginTop: 12,
+  },
+  watermarkHint: {
+    fontSize: 12,
+    color: Colors.light.textTertiary,
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 });

@@ -16,24 +16,26 @@ interface TemplateCanvasProps {
   slotStates?: SlotStates;
   onSlotPress: (slotId: string) => void;
   onSlotRetry?: (slotId: string) => void;
-  composedPreviewUri?: string | null;
-  isComposing?: boolean;
+  /** Rendered preview from Templated.io (shown when photos are added) */
+  renderedPreviewUri?: string | null;
+  /** Whether a render is in progress */
+  isRendering?: boolean;
 }
 
 /**
- * TemplateCanvas - Renders template preview with dynamic slot regions
+ * TemplateCanvas - Renders template preview with transparent slot regions
  * 
- * Modes:
- * 1. Editing mode: Shows individual slots with their states
- * 2. Composed mode: Shows the final rendered image from Templated.io
+ * Architecture:
+ * 1. Empty state: Shows template preview (templatedPreviewUrl) with placeholder buttons
+ *    - SlotRegions are transparent clickable zones
+ *    - User sees the template's designed placeholder buttons
  * 
- * Features:
- * - Uses framePreviewUrl (clean background without slot content) when available
- * - Falls back to templatedPreviewUrl or thumbnail
- * - Renders SlotRegion for each slot extracted from layers_json
- * - Supports any number of slots (not limited to before/after)
- * - Scales everything proportionally to fit the screen
- * - Per-slot loading states
+ * 2. Photos added: Shows rendered preview from Templated.io
+ *    - Templated.io handles all layer ordering
+ *    - Labels, decorations appear correctly on top of photos
+ *    - SlotRegions remain as transparent tap targets for replacing photos
+ * 
+ * This removes the need for complex overlay/frame logic.
  */
 export function TemplateCanvas({
   template,
@@ -41,8 +43,8 @@ export function TemplateCanvas({
   slotStates = {},
   onSlotPress,
   onSlotRetry,
-  composedPreviewUri,
-  isComposing = false,
+  renderedPreviewUri,
+  isRendering = false,
 }: TemplateCanvasProps) {
   // Calculate display dimensions to fit canvas on screen
   const { displayWidth, displayHeight } = useMemo(() => {
@@ -76,12 +78,13 @@ export function TemplateCanvas({
     );
   }, [template, displayWidth, displayHeight]);
 
-  // Use framePreviewUrl (no slot content) if available, fall back to templatedPreviewUrl or thumbnail
-  // framePreviewUrl provides a clean background where slot areas are transparent/hidden
-  const backgroundUrl = template.framePreviewUrl || template.templatedPreviewUrl || template.thumbnail;
+  // Determine which preview to show
+  // If we have a rendered preview from Templated.io, use it
+  // Otherwise show the template preview with placeholder buttons
+  const previewUrl = renderedPreviewUri || template.templatedPreviewUrl || template.thumbnail;
 
-  // Check if we should show composed preview
-  const showComposedPreview = composedPreviewUri && !isComposing;
+  // Check if any photos have been added
+  const hasPhotos = Object.values(capturedImages).some(img => img?.uri);
 
   return (
     <View style={styles.wrapper}>
@@ -94,67 +97,46 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Composed Preview Mode */}
-        {showComposedPreview ? (
-          <Image
-            source={{ uri: composedPreviewUri }}
-            style={styles.previewImage}
-            contentFit="cover"
-            transition={300}
-          />
-        ) : (
-          <>
-            {/* Background image - ideally framePreviewUrl without slot content */}
-            <Image
-              source={{ uri: backgroundUrl }}
-              style={styles.previewImage}
-              contentFit="cover"
-              transition={200}
+        {/* Template/Rendered Preview Image */}
+        <Image
+          source={{ uri: previewUrl }}
+          style={styles.previewImage}
+          contentFit="cover"
+          transition={200}
+        />
+
+        {/* Transparent slot regions - clickable zones at slot positions */}
+        {/* These are invisible - the template's placeholder design shows through */}
+        {scaledSlots.map(slot => {
+          const slotState = slotStates[slot.layerId] || { state: 'empty' };
+          const capturedUri = capturedImages[slot.layerId]?.uri || null;
+          
+          return (
+            <SlotRegion
+              key={slot.layerId}
+              slot={slot}
+              state={slotState.state}
+              capturedUri={capturedUri}
+              onPress={() => onSlotPress(slot.layerId)}
+              onRetry={onSlotRetry ? () => onSlotRetry(slot.layerId) : undefined}
+              errorMessage={slotState.errorMessage}
+              progress={slotState.progress}
+              // Show as transparent when we have a rendered preview
+              isTransparent={!!renderedPreviewUri || hasPhotos}
             />
+          );
+        })}
 
-            {/* Dynamic slot regions with per-slot states */}
-            {scaledSlots.map(slot => {
-              const slotState = slotStates[slot.layerId] || { state: 'empty' };
-              const capturedUri = capturedImages[slot.layerId]?.uri || null;
-              
-              return (
-                <SlotRegion
-                  key={slot.layerId}
-                  slot={slot}
-                  state={slotState.state}
-                  capturedUri={capturedUri}
-                  onPress={() => onSlotPress(slot.layerId)}
-                  onRetry={onSlotRetry ? () => onSlotRetry(slot.layerId) : undefined}
-                  errorMessage={slotState.errorMessage}
-                  progress={slotState.progress}
-                />
-              );
-            })}
-
-            {/* Overlay layer - rendered ON TOP of slots */}
-            {/* Contains labels, arrows, decorative elements that appear over user photos */}
-            {template.overlayPreviewUrl && (
-              <Image
-                source={{ uri: template.overlayPreviewUrl }}
-                style={styles.overlayImage}
-                contentFit="cover"
-                transition={200}
-                pointerEvents="none"
-              />
-            )}
-          </>
-        )}
-
-        {/* Composing Overlay */}
-        {isComposing && (
-          <View style={styles.composingOverlay}>
+        {/* Rendering Overlay */}
+        {isRendering && (
+          <View style={styles.renderingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={styles.composingText}>Generating preview...</Text>
+            <Text style={styles.renderingText}>Generating preview...</Text>
           </View>
         )}
       </View>
 
-      {/* Template info - dimensions only */}
+      {/* Template dimensions */}
       <View style={styles.infoContainer}>
         <Text style={styles.templateDimensions}>
           {template.canvasWidth} × {template.canvasHeight}
@@ -185,17 +167,14 @@ const styles = StyleSheet.create({
   previewImage: {
     ...StyleSheet.absoluteFillObject,
   },
-  overlayImage: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 10, // Ensure overlay appears on top of slot regions
-  },
-  composingOverlay: {
+  renderingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 100,
   },
-  composingText: {
+  renderingText: {
     marginTop: 16,
     fontSize: 14,
     fontWeight: '500',

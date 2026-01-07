@@ -9,10 +9,9 @@ A complete guide for creating, naming, and syncing templates from Templated.io t
 1. [Overview](#overview)
 2. [Layer Naming Convention](#layer-naming-convention)
 3. [Creating a Template in Templated.io](#creating-a-template-in-templatedappio)
-4. [Generating Preview URLs](#generating-preview-urls)
-5. [Syncing Template to App](#syncing-template-to-app)
-6. [Quick Sync Script](#quick-sync-script)
-7. [Troubleshooting](#troubleshooting)
+4. [Syncing Template to App](#syncing-template-to-app)
+5. [Watermark Setup](#watermark-setup)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -28,17 +27,16 @@ A complete guide for creating, naming, and syncing templates from Templated.io t
 ```
 
 1. **Design** template in Templated.io with correct layer names
-2. **Generate** frame and overlay preview images
-3. **Sync** via webhook to save to Supabase
-4. **Users** see the template in the app
+2. **Sync** via webhook to save to Supabase
+3. **Users** see the template in the app
+4. **Rendering** happens at runtime via Templated.io API
 
-### Three Layer Types
+### Key Concepts
 
-| Type | Purpose | Naming | Example |
-|------|---------|--------|---------|
-| **Slot** | Where user photos go | Contains `slot` | `slot-before`, `slot-after` |
-| **Overlay** | Elements ON TOP of photos | Contains `overlay` | `overlay-label`, `overlay-arrow` |
-| **Background** | Everything else | Any other name | `background`, `frame`, `divider` |
+- **No pre-rendered previews needed** - The app renders everything via Templated.io API
+- **Slot layers** - Where user photos go (identified by `slot` in name)
+- **Watermark layer** - "Made with BeautyApp" branding (hidden for premium users)
+- **All other layers** - Labels, decorations, backgrounds (rendered automatically)
 
 ---
 
@@ -57,33 +55,35 @@ These are image layers where users will add their before/after photos.
 | `slot-hero` | Single hero image |
 | `slot-1`, `slot-2` | Numbered slots |
 
-### Overlay Layers (ON TOP of Photos)
+### Watermark Layer (Branding)
 
-These elements appear over the user's photos (labels, arrows, badges).
+A text or image layer that shows "Made with BeautyApp" for free users.
 
-**Rule**: Layer name must contain `overlay`
+**Rule**: Layer name must contain `watermark`
 
 | Layer Name | Description |
 |------------|-------------|
-| `overlay-before-text` | "Before" label text |
-| `overlay-after-text` | "After" label text |
-| `overlay-arrow-left` | Left-pointing arrow |
-| `overlay-arrow-right` | Right-pointing arrow |
-| `overlay-badge` | Decorative badge/stamp |
-| `overlay-divider` | Line between photos |
+| `watermark` | Main watermark layer |
+| `watermark-text` | Text-based watermark |
+| `watermark-logo` | Logo-based watermark |
 
-### Background Layers (Behind Photos)
+**Important**: 
+- Position the watermark in a corner (designer's choice)
+- Keep it small and subtle
+- Premium users will have this hidden automatically
 
-Everything else becomes part of the background frame.
+### All Other Layers
 
-**Rule**: Any name without `slot` or `overlay`
+Everything else becomes part of the template design (labels, arrows, backgrounds).
 
 | Layer Name | Description |
 |------------|-------------|
 | `background` | Main background color/image |
+| `before-label` | "Before" text label |
+| `after-label` | "After" text label |
+| `arrow-left` | Decorative arrow |
 | `frame-border` | Border decoration |
-| `shape-corner` | Corner decorations |
-| `brand-logo` | Static logo |
+| `brand-logo` | Static branding (not watermark) |
 
 ---
 
@@ -102,7 +102,6 @@ Everything else becomes part of the background frame.
 
 1. Add your background color, shapes, or images
 2. Name them descriptively (e.g., `background`, `frame-shape`)
-3. These will appear BEHIND user photos
 
 ### Step 3: Add Slot Layers
 
@@ -111,24 +110,37 @@ Everything else becomes part of the background frame.
    - Select the layer
    - Click on layer name
    - Rename to `slot-before`, `slot-after`, etc.
-3. Add placeholder images (optional)
+3. Add placeholder images that look like buttons:
+   - Use a "+" icon
+   - Add text like "Tap to add Before photo"
+   - These will show in the app until user adds their photo
 
-### Step 4: Add Overlay Layers
+### Step 4: Add Labels and Decorations
 
-1. Add text, shapes, or icons that should appear ON TOP of photos
-2. **Rename each to include `overlay`**:
-   - `overlay-before-text` for "Before" label
-   - `overlay-after-text` for "After" label
-   - `overlay-arrow` for arrow icons
+1. Add text layers for "Before" and "After" labels
+2. Add arrows, dividers, or other decorations
+3. Position them ON TOP of the slot layers
+4. Templated.io handles layer ordering automatically
 
-### Step 5: Verify Layer Order
+### Step 5: Add Watermark Layer
 
-In Templated.io, layers are stacked. Verify:
+1. Add a text layer in a corner (bottom-right recommended)
+2. Set text to: `Made with BeautyApp`
+3. **Rename layer to `watermark`**
+4. Style it subtly:
+   - Small font size (12-16px)
+   - Semi-transparent (50-70% opacity)
+   - Neutral color that works on most backgrounds
+
+### Step 6: Verify Layer Order
+
+In Templated.io, check the layer panel:
 - Background layers at the bottom
-- Slot layers in the middle
-- Overlay layers at the top
+- Slot layers in the middle  
+- Labels and decorations above slots
+- Watermark at the top (always visible)
 
-### Step 6: Save Template
+### Step 7: Save Template
 
 1. Click **Save**
 2. Note the **Template ID** from the URL:
@@ -137,73 +149,6 @@ In Templated.io, layers are stacked. Verify:
                            ▲
                            └── Copy this
    ```
-
----
-
-## Generating Preview URLs
-
-You need to generate 2 preview images using the Templated.io API.
-
-### Get Your API Key
-
-1. Go to https://app.templated.io/settings/api
-2. Copy your API key
-
-### Generate Frame Preview
-
-This shows the background only (no slots, no overlays).
-
-**Hide**: All `slot-*` layers AND all `overlay-*` layers
-
-```bash
-curl -X POST "https://api.templated.io/v1/render" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "template": "YOUR_TEMPLATE_ID",
-    "format": "png",
-    "layers": {
-      "slot-before": { "hide": true },
-      "slot-after": { "hide": true },
-      "overlay-before-text": { "hide": true },
-      "overlay-after-text": { "hide": true },
-      "overlay-arrow-left": { "hide": true },
-      "overlay-arrow-right": { "hide": true }
-    }
-  }'
-```
-
-**Response:**
-```json
-{
-  "render_url": "https://api.templated.io/renders/abc123.png"
-}
-```
-Save this as `frame_preview_url`
-
-### Generate Overlay Preview
-
-This shows only the overlay elements (transparent background).
-
-**Hide**: All `slot-*` layers AND all background layers
-
-```bash
-curl -X POST "https://api.templated.io/v1/render" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "template": "YOUR_TEMPLATE_ID",
-    "format": "png",
-    "layers": {
-      "slot-before": { "hide": true },
-      "slot-after": { "hide": true },
-      "background": { "hide": true },
-      "frame-shape": { "hide": true }
-    }
-  }'
-```
-
-Save the response URL as `overlay_preview_url`
 
 ---
 
@@ -224,8 +169,6 @@ https://your-n8n-instance.com/webhook/sync-template
   "canvas_width": 1080,
   "canvas_height": 1080,
   "preview_url": "https://api.templated.io/v1/templates/clx1234567890/preview",
-  "frame_preview_url": "https://api.templated.io/renders/frame123.png",
-  "overlay_preview_url": "https://api.templated.io/renders/overlay456.png",
   "is_active": true,
   "supports": ["single"]
 }
@@ -240,8 +183,6 @@ https://your-n8n-instance.com/webhook/sync-template
 | `canvas_width` | Yes | Width in pixels (e.g., 1080) |
 | `canvas_height` | Yes | Height in pixels (e.g., 1080) |
 | `preview_url` | No | Thumbnail for template gallery |
-| `frame_preview_url` | No | Background-only render URL |
-| `overlay_preview_url` | No | Overlay-only render URL |
 | `is_active` | No | Show in app (default: true) |
 | `supports` | No | Content types (default: ["single"]) |
 
@@ -256,87 +197,72 @@ curl -X POST "https://your-n8n.com/webhook/sync-template" \
     "canvas_width": 1080,
     "canvas_height": 1080,
     "preview_url": "https://api.templated.io/v1/templates/clx1234567890/preview",
-    "frame_preview_url": "https://api.templated.io/renders/abc.png",
-    "overlay_preview_url": "https://api.templated.io/renders/xyz.png",
     "is_active": true,
     "supports": ["single"]
   }'
 ```
 
+### What Happens After Sync
+
+1. N8n receives the webhook
+2. Fetches layer information from Templated.io
+3. Validates slot layers exist
+4. Saves template to Supabase with `layers_json`
+5. Template appears in app (may need pull-to-refresh)
+
 ---
 
-## Quick Sync Script
+## Watermark Setup
 
-Save this script to quickly sync templates.
+### How Watermark Works
 
-### sync-template.sh
+1. **Free users**: Watermark is visible on all rendered images
+2. **Premium users**: Watermark layer is hidden via Templated.io API
 
-```bash
-#!/bin/bash
+### Setting Up Watermark in Template
 
-# Configuration
-TEMPLATED_API_KEY="your-templated-api-key"
-N8N_WEBHOOK_URL="https://your-n8n.com/webhook/sync-template"
+1. Create a text layer with content: `Made with BeautyApp`
+2. **Name the layer `watermark`** (this is important!)
+3. Position in a corner:
+   - Bottom-right (recommended)
+   - Bottom-left
+   - Top-right or top-left (less common)
+4. Style guidelines:
+   - Font size: 12-18px
+   - Opacity: 50-80%
+   - Color: White with shadow, or dark with light stroke
+   - Avoid covering important parts of the image
 
-# Template details (edit these)
-TEMPLATE_ID="clx1234567890"
-TEMPLATE_NAME="My Template"
-CANVAS_WIDTH=1080
-CANVAS_HEIGHT=1080
+### Example Watermark Styles
 
-# Layer names to hide (edit based on your template)
-SLOT_LAYERS='"slot-before": {"hide": true}, "slot-after": {"hide": true}'
-OVERLAY_LAYERS='"overlay-before-text": {"hide": true}, "overlay-after-text": {"hide": true}'
-BACKGROUND_LAYERS='"background": {"hide": true}'
-
-echo "🎨 Generating Frame Preview..."
-FRAME_RESPONSE=$(curl -s -X POST "https://api.templated.io/v1/render" \
-  -H "Authorization: Bearer $TEMPLATED_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"template\": \"$TEMPLATE_ID\",
-    \"format\": \"png\",
-    \"layers\": { $SLOT_LAYERS, $OVERLAY_LAYERS }
-  }")
-FRAME_URL=$(echo $FRAME_RESPONSE | grep -o '"render_url":"[^"]*"' | cut -d'"' -f4)
-echo "✅ Frame URL: $FRAME_URL"
-
-echo "🎨 Generating Overlay Preview..."
-OVERLAY_RESPONSE=$(curl -s -X POST "https://api.templated.io/v1/render" \
-  -H "Authorization: Bearer $TEMPLATED_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"template\": \"$TEMPLATE_ID\",
-    \"format\": \"png\",
-    \"layers\": { $SLOT_LAYERS, $BACKGROUND_LAYERS }
-  }")
-OVERLAY_URL=$(echo $OVERLAY_RESPONSE | grep -o '"render_url":"[^"]*"' | cut -d'"' -f4)
-echo "✅ Overlay URL: $OVERLAY_URL"
-
-echo "📤 Syncing to App..."
-curl -X POST "$N8N_WEBHOOK_URL" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"templated_id\": \"$TEMPLATE_ID\",
-    \"name\": \"$TEMPLATE_NAME\",
-    \"canvas_width\": $CANVAS_WIDTH,
-    \"canvas_height\": $CANVAS_HEIGHT,
-    \"preview_url\": \"https://api.templated.io/v1/templates/$TEMPLATE_ID/preview\",
-    \"frame_preview_url\": \"$FRAME_URL\",
-    \"overlay_preview_url\": \"$OVERLAY_URL\",
-    \"is_active\": true,
-    \"supports\": [\"single\"]
-  }"
-
-echo ""
-echo "✅ Template synced!"
+**Style 1: Simple Text**
+```
+Font: Inter or SF Pro
+Size: 14px
+Color: White
+Opacity: 60%
+Position: 20px from bottom-right corner
 ```
 
-### Usage
+**Style 2: With Background**
+```
+Text: Made with BeautyApp
+Background: Black pill shape, 40% opacity
+Position: Bottom-right corner with 15px padding
+```
 
-```bash
-chmod +x sync-template.sh
-./sync-template.sh
+### Technical Details
+
+When rendering, the app sends:
+```json
+{
+  "template": "template_id",
+  "layers": {
+    "slot-before": { "image_url": "user_photo_1.jpg" },
+    "slot-after": { "image_url": "user_photo_2.jpg" },
+    "watermark": { "hide": true }  // Only for premium users
+  }
+}
 ```
 
 ---
@@ -351,20 +277,26 @@ chmod +x sync-template.sh
 | Not in Supabase | Check N8n execution logs |
 | App not refreshed | Pull down to refresh template list |
 
-### Overlay not showing in editor
-
-| Check | Solution |
-|-------|----------|
-| `overlay_preview_url` is null | Generate and include in webhook |
-| No overlay layers | Rename layers to include `overlay` |
-| Wrong layers hidden | Verify you're hiding background, not overlay |
-
 ### Slots not detected
 
 | Check | Solution |
 |-------|----------|
 | Layer names | Must contain `slot` (e.g., `slot-before`) |
 | Layer type | Must be `image` type in Templated.io |
+
+### Watermark not hiding for premium
+
+| Check | Solution |
+|-------|----------|
+| Layer name | Must contain `watermark` |
+| Premium status | Verify user subscription is active |
+
+### Preview looks different than template
+
+| Check | Solution |
+|-------|----------|
+| Layer order | Check layer stacking in Templated.io |
+| Slot placeholders | Use placeholder images that match intended design |
 
 ### N8n webhook error
 
@@ -379,13 +311,48 @@ chmod +x sync-template.sh
 ## Checklist: Adding a New Template
 
 - [ ] Create template in Templated.io
-- [ ] Name slot layers with `slot-` prefix
-- [ ] Name overlay layers with `overlay-` prefix
-- [ ] Generate frame preview URL (hide slots + overlays)
-- [ ] Generate overlay preview URL (hide slots + background)
-- [ ] Send webhook with all URLs
+- [ ] Name slot layers with `slot` in the name
+- [ ] Add placeholder images to slots (button-style design)
+- [ ] Add labels, decorations, background
+- [ ] Add watermark layer named `watermark`
+- [ ] Position watermark in corner
+- [ ] Save template and copy ID
+- [ ] Send webhook to sync
 - [ ] Verify in Supabase
-- [ ] Test in app
+- [ ] Test in app:
+  - [ ] Template appears in gallery
+  - [ ] Slots are tappable
+  - [ ] Photos replace placeholders correctly
+  - [ ] Labels appear on top of photos
+  - [ ] Watermark visible (free user)
+  - [ ] Download works
+  - [ ] Share works
+
+---
+
+## Quick Reference
+
+### Layer Naming
+
+| Type | Rule | Examples |
+|------|------|----------|
+| Slot | Contains `slot` | `slot-before`, `slot-after`, `slot-1` |
+| Watermark | Contains `watermark` | `watermark`, `watermark-text` |
+| Other | Any name | `background`, `before-label`, `arrow` |
+
+### Webhook Fields
+
+```json
+{
+  "templated_id": "required - from URL",
+  "name": "required - display name",
+  "canvas_width": "required - 1080",
+  "canvas_height": "required - 1080 or 1920",
+  "preview_url": "optional - thumbnail",
+  "is_active": "optional - default true",
+  "supports": "optional - default [\"single\"]"
+}
+```
 
 ---
 
@@ -393,5 +360,4 @@ chmod +x sync-template.sh
 
 - **Templated.io Docs**: https://docs.templated.io
 - **Supabase Dashboard**: https://supabase.com/dashboard/project/tmgjsrxdjbazrwvbdoed
-- **N8n Workflow**: Check your N8n instance for "Admin Template Sync"
-
+- **N8n Workflow**: Check your N8n instance for "Sync Template (Lean)"

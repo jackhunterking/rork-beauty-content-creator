@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { 
   uploadMultipleTempImages, 
   cleanupSession, 
-  generateSessionId 
+  generateSessionId,
 } from './tempUploadService';
 import {
   lookupDraftCache,
@@ -12,16 +12,17 @@ import {
 import { getDraftSlotImagePath, fileExists } from './localStorageService';
 
 /**
- * Render Service (Refactored)
+ * Render Service (Refactored for Templated.io-First Architecture)
  * 
- * Handles Templated.io rendering with smart caching:
- * 1. Check cache first - return immediately if hit
- * 2. Upload slot images to temp storage
- * 3. Call Templated.io API
- * 4. Download and cache result
- * 5. Cleanup temp files
+ * Key changes:
+ * - Preview renders: Quick renders for editor preview after photo capture
+ * - Final renders: Full quality for download/share
+ * - Watermark control: Visible for free users, hidden for premium
  * 
- * Key principle: WYSIWYG - preview IS the final output
+ * Flow:
+ * 1. User adds photo → Upload to temp storage → Render preview
+ * 2. User taps Download → Render final (or use cached) → Save
+ * 3. User taps Share → Use same rendered image → Share sheet
  */
 
 // Templated.io API configuration
@@ -52,12 +53,28 @@ export interface RenderResult {
   error?: string;
 }
 
+export interface PreviewRenderResult {
+  success: boolean;
+  renderUrl?: string;      // Templated.io URL for preview display
+  error?: string;
+}
+
 export interface RenderOptions {
   draftId: string;
   templateId: string;       // Templated.io template ID
   slotImages: Record<string, string>;  // slotId -> local URI
   themeId?: string;
-  themeOverrides?: Record<string, { color?: string; text?: string }>;  // Future: color customization
+  themeOverrides?: Record<string, { color?: string; text?: string }>;
+  /** Whether to hide watermark (premium users only) */
+  hideWatermark?: boolean;
+}
+
+export interface PreviewRenderOptions {
+  templateId: string;       // Templated.io template ID
+  /** Map of slotId -> local URI for photos to include */
+  slotImages: Record<string, string>;
+  /** Whether to hide watermark (premium users only) */
+  hideWatermark?: boolean;
 }
 
 export interface RenderProgress {
@@ -69,7 +86,134 @@ export interface RenderProgress {
 export type RenderProgressCallback = (progress: RenderProgress) => void;
 
 // ============================================
-// Main Render Function
+// Preview Render Function (NEW)
+// ============================================
+
+/**
+ * Render a quick preview for the editor
+ * 
+ * This is called after each photo is added to show the user
+ * an accurate preview with correct layer ordering.
+ * 
+ * Does NOT cache - returns URL directly for display
+ * Optimized for speed over quality
+ * 
+ * @param options - Preview configuration
+ * @returns PreviewRenderResult with Templated.io URL
+ */
+export async function renderPreview(
+  options: PreviewRenderOptions
+): Promise<PreviewRenderResult> {
+  const { templateId, slotImages, hideWatermark = false } = options;
+  
+  try {
+    // Validate API key
+    const apiKey = getTemplatedApiKey();
+    if (!apiKey) {
+      throw new Error('Templated.io API key not configured');
+    }
+    
+    // Check if we have any images to render
+    if (Object.keys(slotImages).length === 0) {
+      throw new Error('No slot images provided for preview');
+    }
+    
+    // Upload images to temp storage
+    const sessionId = generateSessionId();
+    const publicUrls = await uploadMultipleTempImages(slotImages, sessionId);
+    
+    // Build layer payload
+    const layerPayload: Record<string, Record<string, unknown>> = {};
+    
+    // Add slot images
+    for (const [slotId, publicUrl] of Object.entries(publicUrls)) {
+      layerPayload[slotId] = { image_url: publicUrl };
+    }
+    
+    // Handle watermark visibility
+    // Watermark layer should be named 'watermark' or contain 'watermark' in template
+    if (hideWatermark) {
+      layerPayload['watermark'] = { hide: true };
+    }
+    
+    // Call Templated.io API
+    const response = await fetch(TEMPLATED_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        template: templateId,
+        format: 'jpeg',  // JPEG for faster rendering
+        layers: layerPayload,
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Templated.io API error:', errorText);
+      throw new Error(`Preview render failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    const renderUrl = result.render_url;
+    
+    if (!renderUrl) {
+      throw new Error('No render URL returned');
+    }
+    
+    // Cleanup temp files (fire and forget)
+    cleanupSession(sessionId).catch(console.warn);
+    
+    return {
+      success: true,
+      renderUrl,
+    };
+    
+  } catch (error) {
+    console.error('Preview render failed:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Preview render failed',
+    };
+  }
+}
+
+/**
+ * Render preview with a single new photo added
+ * 
+ * Convenience function for when user just captured one photo.
+ * Uploads just the new photo and renders.
+ * 
+ * @param templateId - Templated.io template ID
+ * @param slotId - The slot ID for the new photo
+ * @param photoUri - Local URI of the captured photo
+ * @param existingPhotos - Map of other slots that already have photos
+ * @param hideWatermark - Whether to hide watermark (premium)
+ */
+export async function renderPreviewWithNewPhoto(
+  templateId: string,
+  slotId: string,
+  photoUri: string,
+  existingPhotos: Record<string, string> = {},
+  hideWatermark: boolean = false
+): Promise<PreviewRenderResult> {
+  // Combine new photo with existing
+  const allPhotos = {
+    ...existingPhotos,
+    [slotId]: photoUri,
+  };
+  
+  return renderPreview({
+    templateId,
+    slotImages: allPhotos,
+    hideWatermark,
+  });
+}
+
+// ============================================
+// Main Render Function (for Download/Share)
 // ============================================
 
 /**
@@ -84,7 +228,14 @@ export async function renderTemplate(
   options: RenderOptions,
   onProgress?: RenderProgressCallback
 ): Promise<RenderResult> {
-  const { draftId, templateId, slotImages, themeId = 'default', themeOverrides } = options;
+  const { 
+    draftId, 
+    templateId, 
+    slotImages, 
+    themeId = 'default', 
+    themeOverrides,
+    hideWatermark = false,
+  } = options;
   
   try {
     // Stage 1: Check cache
@@ -118,11 +269,16 @@ export async function renderTemplate(
     // Stage 4: Build layer payload and call Templated.io
     onProgress?.({ stage: 'rendering', progress: 50, message: 'Rendering...' });
     
-    const layerPayload: Record<string, Record<string, string>> = {};
+    const layerPayload: Record<string, Record<string, unknown>> = {};
     
     // Add slot images
     for (const [slotId, publicUrl] of Object.entries(publicUrls)) {
       layerPayload[slotId] = { image_url: publicUrl };
+    }
+    
+    // Handle watermark visibility
+    if (hideWatermark) {
+      layerPayload['watermark'] = { hide: true };
     }
     
     // Add theme color overrides (future feature)
@@ -216,7 +372,8 @@ export async function renderDraft(
   templateId: string,
   slotIds: string[],
   themeId: string = 'default',
-  onProgress?: RenderProgressCallback
+  onProgress?: RenderProgressCallback,
+  hideWatermark: boolean = false
 ): Promise<RenderResult> {
   // Build slot images map from local storage paths
   const slotImages: Record<string, string> = {};
@@ -245,6 +402,7 @@ export async function renderDraft(
     templateId,
     slotImages,
     themeId,
+    hideWatermark,
   }, onProgress);
 }
 
@@ -257,13 +415,14 @@ export async function reRenderDraft(
   templateId: string,
   slotIds: string[],
   themeId: string = 'default',
-  onProgress?: RenderProgressCallback
+  onProgress?: RenderProgressCallback,
+  hideWatermark: boolean = false
 ): Promise<RenderResult> {
   // Invalidate existing cache
   await invalidateDraftCache(draftId);
   
   // Re-render
-  return renderDraft(draftId, templateId, slotIds, themeId, onProgress);
+  return renderDraft(draftId, templateId, slotIds, themeId, onProgress, hideWatermark);
 }
 
 // ============================================
@@ -305,7 +464,8 @@ export async function preRenderThemes(
   templateId: string,
   slotIds: string[],
   themeIds: string[],
-  onProgress?: (themeId: string, progress: RenderProgress) => void
+  onProgress?: (themeId: string, progress: RenderProgress) => void,
+  hideWatermark: boolean = false
 ): Promise<Record<string, RenderResult>> {
   const results: Record<string, RenderResult> = {};
   
@@ -315,7 +475,8 @@ export async function preRenderThemes(
       templateId,
       slotIds,
       themeId,
-      (progress) => onProgress?.(themeId, progress)
+      (progress) => onProgress?.(themeId, progress),
+      hideWatermark
     );
     results[themeId] = result;
   }
@@ -335,7 +496,8 @@ export async function preRenderThemes(
  */
 export async function legacyRenderTemplate(
   templatedId: string,
-  capturedImages: Record<string, { uri: string } | null>
+  capturedImages: Record<string, { uri: string } | null>,
+  hideWatermark: boolean = false
 ): Promise<{ renderUrl: string }> {
   // Convert to simple URI map
   const slotImages: Record<string, string> = {};
@@ -352,6 +514,7 @@ export async function legacyRenderTemplate(
     draftId: tempDraftId,
     templateId: templatedId,
     slotImages,
+    hideWatermark,
   });
   
   if (!result.success || !result.localPath) {

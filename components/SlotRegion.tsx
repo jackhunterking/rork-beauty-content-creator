@@ -1,7 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { AlertCircle, Plus, RefreshCw } from 'lucide-react-native';
+import { AlertCircle, Plus, RefreshCw, Check } from 'lucide-react-native';
 import { Slot, SlotState } from '@/types';
 import Colors from '@/constants/colors';
 
@@ -9,23 +9,33 @@ interface SlotRegionProps {
   slot: Slot;
   state: SlotState;
   capturedUri: string | null;
-  renderedUri?: string | null;  // From cache or fresh render
+  renderedUri?: string | null;
   onPress: () => void;
   onRetry?: () => void;
   errorMessage?: string;
-  progress?: number;  // 0-100
+  progress?: number;
+  /**
+   * When true, the slot is completely transparent (invisible).
+   * Used when Templated.io renders the full preview - slots become pure tap targets.
+   * The template's placeholder design shows through.
+   */
+  isTransparent?: boolean;
 }
 
 /**
- * SlotRegion - Interactive slot area with visual states
+ * SlotRegion - Interactive slot area
+ * 
+ * Two modes:
+ * 1. Normal mode (isTransparent=false): Shows UI for empty/loading/ready states
+ * 2. Transparent mode (isTransparent=true): Invisible tap target, template shows through
  * 
  * States:
- * - empty: Shows "+" button to add photo
- * - capturing: User is taking photo (slot dims slightly)
- * - processing: Local image processing (spinner)
- * - uploading: Uploading to Supabase (spinner + progress)
- * - rendering: Waiting for Templated.io (spinner + progress)
- * - ready: Shows captured image
+ * - empty: Ready to add photo
+ * - capturing: User is taking photo
+ * - processing: Local image processing
+ * - uploading: Uploading to Supabase
+ * - rendering: Waiting for Templated.io
+ * - ready: Photo captured and processed
  * - error: Shows error with retry button
  */
 export function SlotRegion({ 
@@ -37,11 +47,10 @@ export function SlotRegion({
   onRetry,
   errorMessage,
   progress,
+  isTransparent = false,
 }: SlotRegionProps) {
   const isLoading = ['processing', 'uploading', 'rendering'].includes(state);
   const hasImage = capturedUri || renderedUri;
-  
-  // Get the appropriate image URI
   const imageUri = renderedUri || capturedUri;
   
   // Get loading message based on state
@@ -57,7 +66,49 @@ export function SlotRegion({
         return '';
     }
   };
-  
+
+  // Transparent mode - invisible tap target with small indicator
+  if (isTransparent) {
+    return (
+      <TouchableOpacity
+        onPress={state === 'error' && onRetry ? onRetry : onPress}
+        activeOpacity={0.9}
+        disabled={isLoading && state !== 'error'}
+        style={[
+          styles.transparentContainer,
+          {
+            left: slot.x,
+            top: slot.y,
+            width: slot.width,
+            height: slot.height,
+          },
+        ]}
+      >
+        {/* Small filled indicator when photo exists */}
+        {state === 'ready' && hasImage && (
+          <View style={styles.filledIndicator}>
+            <Check size={12} color="#FFFFFF" />
+          </View>
+        )}
+        
+        {/* Loading indicator (small, unobtrusive) */}
+        {isLoading && (
+          <View style={styles.loadingIndicator}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          </View>
+        )}
+        
+        {/* Error indicator */}
+        {state === 'error' && (
+          <View style={styles.errorIndicator}>
+            <AlertCircle size={16} color="#FFFFFF" />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+
+  // Normal mode - full UI (used when no rendered preview)
   return (
     <TouchableOpacity
       onPress={state === 'error' && onRetry ? onRetry : onPress}
@@ -172,6 +223,52 @@ export function SlotRegion({
 }
 
 const styles = StyleSheet.create({
+  // Transparent mode styles
+  transparentContainer: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    // Slightly visible on press for feedback
+  },
+  filledIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(52, 199, 89, 0.9)', // Green success color
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  loadingIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.light.error,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Normal mode styles
   container: {
     position: 'absolute',
     overflow: 'hidden',
