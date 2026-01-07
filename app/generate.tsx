@@ -2,12 +2,15 @@ import { StyleSheet, View, Text, TouchableOpacity, Modal, ActivityIndicator, Scr
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { ChevronLeft, Coins, Sparkles, Wand2, RefreshCw, X, Lock } from "lucide-react-native";
-import React, { useState, useCallback } from "react";
+import { ChevronLeft, Coins, Sparkles, Wand2, RefreshCw, X, Lock, AlertCircle } from "lucide-react-native";
+import React, { useState, useCallback, useMemo } from "react";
+import Toast from "react-native-toast-message";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
+import { extractSlots } from "@/utils/slotParser";
+import { renderTemplate } from "@/services/renderService";
 
-
+type GenerateState = 'idle' | 'uploading' | 'rendering' | 'complete' | 'error';
 
 type EnhancementOption = {
   id: string;
@@ -24,13 +27,21 @@ export default function GenerateScreen() {
   const router = useRouter();
   const { currentProject, credits, getCreditCost, spendCredits, saveToWork, deleteDraft } = useApp();
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateState, setGenerateState] = useState<GenerateState>('idle');
   const [selectedEnhancements, setSelectedEnhancements] = useState<string[]>([]);
-  const [viewingImage, setViewingImage] = useState<{ uri: string; type: 'before' | 'after' } | null>(null);
+  const [viewingImage, setViewingImage] = useState<{ uri: string; label: string } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const template = currentProject.template;
+  const capturedImages = currentProject.capturedImages;
   const creditCost = getCreditCost();
   const canAfford = credits >= creditCost;
-  
+
+  // Extract slots from template
+  const slots = useMemo(() => 
+    template ? extractSlots(template) : [], 
+    [template]
+  );
 
   const toggleEnhancement = useCallback((id: string) => {
     setSelectedEnhancements(prev => 
@@ -38,19 +49,15 @@ export default function GenerateScreen() {
     );
   }, []);
 
-  const handleImagePress = useCallback((type: 'before' | 'after') => {
-    const media = type === 'before' ? currentProject.beforeMedia : currentProject.afterMedia;
-    if (media) {
-      setViewingImage({ uri: media.uri, type });
+  const handleImagePress = useCallback((slotId: string, label: string) => {
+    const media = capturedImages[slotId];
+    if (media?.uri) {
+      setViewingImage({ uri: media.uri, label });
     }
-  }, [currentProject.beforeMedia, currentProject.afterMedia]);
+  }, [capturedImages]);
 
-  const handleRetake = useCallback((type: 'before' | 'after') => {
-    if (type === 'before') {
-      router.push('/capture/before');
-    } else {
-      router.push('/capture/after');
-    }
+  const handleRetake = useCallback((slotId: string) => {
+    router.push(`/capture/${slotId}`);
   }, [router]);
 
   const handleGenerate = useCallback(() => {
@@ -60,55 +67,146 @@ export default function GenerateScreen() {
 
   const handleConfirm = useCallback(async () => {
     setShowConfirmModal(false);
-    setIsGenerating(true);
+    setGenerateState('uploading');
+    setErrorMessage(null);
 
-    await new Promise(resolve => setTimeout(resolve, 2500));
+    try {
+      // Check if template has a Templated.io ID
+      if (!template?.templatedId) {
+        // Fallback to mock generation for templates without Templated.io
+        console.log('Template does not have templatedId, using mock generation');
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        
+        spendCredits(creditCost);
+        
+        // Get first captured image for thumbnail
+        const firstSlot = slots[0];
+        const thumbnailUri = firstSlot ? capturedImages[firstSlot.layerId]?.uri : '';
+        
+        const newAsset = {
+          id: Date.now().toString(),
+          type: currentProject.contentType as 'single' | 'carousel',
+          projectId: Date.now().toString(),
+          themeId: template?.id || '',
+          thumbnailUri: thumbnailUri || '',
+          outputUris: [thumbnailUri || ''],
+          createdAt: new Date().toISOString(),
+          creditCost,
+        };
 
-    spendCredits(creditCost);
-    
-    const newAsset = {
-      id: Date.now().toString(),
-      type: currentProject.contentType as 'single' | 'carousel',
-      projectId: Date.now().toString(),
-      themeId: currentProject.template?.id || '',
-      thumbnailUri: currentProject.afterMedia?.uri || '',
-      outputUris: currentProject.contentType === 'carousel' 
-        ? [
-            currentProject.beforeMedia?.uri || '',
-            currentProject.afterMedia?.uri || '',
-            currentProject.afterMedia?.uri || '',
-          ]
-        : [currentProject.afterMedia?.uri || ''],
-      createdAt: new Date().toISOString(),
-      creditCost,
-    };
-
-    saveToWork(newAsset);
-    
-    // Auto-delete the draft after successful generation
-    if (currentProject.draftId) {
-      try {
-        await deleteDraft(currentProject.draftId);
-      } catch (error) {
-        // Silent fail - draft cleanup is not critical
-        console.log('Failed to clean up draft:', error);
+        saveToWork(newAsset);
+        
+        // Auto-delete the draft after successful generation
+        if (currentProject.draftId) {
+          try {
+            await deleteDraft(currentProject.draftId);
+          } catch (error) {
+            console.log('Failed to clean up draft:', error);
+          }
+        }
+        
+        setGenerateState('complete');
+        router.push({
+          pathname: '/result',
+          params: { assetId: newAsset.id }
+        });
+        return;
       }
-    }
-    
-    setIsGenerating(false);
-    router.push({
-      pathname: '/result',
-      params: { assetId: newAsset.id }
-    });
-  }, [creditCost, currentProject, spendCredits, saveToWork, deleteDraft, router]);
 
-  if (isGenerating) {
+      // Real Templated.io rendering flow
+      setGenerateState('rendering');
+      
+      const { renderUrl } = await renderTemplate(
+        template.templatedId,
+        capturedImages
+      );
+
+      setGenerateState('complete');
+      
+      // Spend credits after successful render
+      spendCredits(creditCost);
+
+      // Save to work
+      const newAsset = {
+        id: Date.now().toString(),
+        type: currentProject.contentType as 'single' | 'carousel',
+        projectId: Date.now().toString(),
+        themeId: template.id,
+        thumbnailUri: renderUrl,
+        outputUris: [renderUrl],
+        createdAt: new Date().toISOString(),
+        creditCost,
+      };
+
+      saveToWork(newAsset);
+
+      // Auto-delete the draft after successful generation
+      if (currentProject.draftId) {
+        try {
+          await deleteDraft(currentProject.draftId);
+        } catch (error) {
+          console.log('Failed to clean up draft:', error);
+        }
+      }
+
+      router.push({
+        pathname: '/result',
+        params: { assetId: newAsset.id }
+      });
+      
+    } catch (error) {
+      console.error('Generation failed:', error);
+      setGenerateState('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Generation failed. Please try again.');
+      
+      Toast.show({
+        type: 'error',
+        text1: 'Generation Failed',
+        text2: error instanceof Error ? error.message : 'Please try again',
+        position: 'top',
+        visibilityTime: 4000,
+      });
+    }
+  }, [template, capturedImages, slots, creditCost, currentProject, spendCredits, saveToWork, deleteDraft, router]);
+
+  const handleRetry = useCallback(() => {
+    setGenerateState('idle');
+    setErrorMessage(null);
+  }, []);
+
+  // Loading/Processing state
+  if (generateState !== 'idle' && generateState !== 'error') {
+    const stateMessages = {
+      uploading: { title: 'Uploading...', subtitle: 'Preparing your images' },
+      rendering: { title: 'Generating...', subtitle: 'Applying clinic-safe enhancements' },
+      complete: { title: 'Complete!', subtitle: 'Your content is ready' },
+    };
+    
+    const message = stateMessages[generateState as keyof typeof stateMessages];
+    
     return (
       <View style={styles.loadingContainer}>
         <View style={styles.loadingContent}>
           <ActivityIndicator size="large" color={Colors.light.accent} />
-          <Text style={styles.loadingText}>Generating...</Text>
-          <Text style={styles.loadingSubtext}>Applying clinic-safe enhancements</Text>
+          <Text style={styles.loadingText}>{message.title}</Text>
+          <Text style={styles.loadingSubtext}>{message.subtitle}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Error state
+  if (generateState === 'error') {
+    return (
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingContent}>
+          <AlertCircle size={48} color={Colors.light.error} />
+          <Text style={styles.errorTitle}>Generation Failed</Text>
+          <Text style={styles.errorSubtext}>{errorMessage || 'Something went wrong'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <RefreshCw size={18} color={Colors.light.surface} />
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -128,34 +226,32 @@ export default function GenerateScreen() {
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <View style={styles.mediaSection}>
             <View style={styles.imagesRow}>
-              <TouchableOpacity 
-                style={styles.imageCard}
-                onPress={() => handleImagePress('before')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.imageLabel}>BEFORE</Text>
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: currentProject.beforeMedia?.uri }}
-                    style={styles.mediaImage}
-                    contentFit="cover"
-                  />
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.imageCard}
-                onPress={() => handleImagePress('after')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.imageLabel}>AFTER</Text>
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: currentProject.afterMedia?.uri }}
-                    style={styles.mediaImage}
-                    contentFit="cover"
-                  />
-                </View>
-              </TouchableOpacity>
+              {slots.map((slot) => {
+                const media = capturedImages[slot.layerId];
+                return (
+                  <TouchableOpacity 
+                    key={slot.layerId}
+                    style={styles.imageCard}
+                    onPress={() => handleImagePress(slot.layerId, slot.label)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.imageLabel}>{slot.label.toUpperCase()}</Text>
+                    <View style={styles.imageContainer}>
+                      {media?.uri ? (
+                        <Image
+                          source={{ uri: media.uri }}
+                          style={styles.mediaImage}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View style={styles.placeholderContainer}>
+                          <Text style={styles.placeholderText}>No image</Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
@@ -295,7 +391,7 @@ export default function GenerateScreen() {
                   <X size={22} color={Colors.light.surface} />
                 </TouchableOpacity>
                 <Text style={styles.fullscreenTitle}>
-                  {viewingImage?.type === 'before' ? 'Before' : 'After'}
+                  {viewingImage?.label}
                 </Text>
                 <View style={styles.headerSpacer} />
               </View>
@@ -310,9 +406,10 @@ export default function GenerateScreen() {
                 <TouchableOpacity 
                   style={styles.fullscreenRetakeButton} 
                   onPress={() => {
-                    const type = viewingImage?.type;
+                    // Find the slot by label
+                    const slot = slots.find(s => s.label === viewingImage?.label);
                     setViewingImage(null);
-                    if (type) handleRetake(type);
+                    if (slot) handleRetake(slot.layerId);
                   }}
                 >
                   <RefreshCw size={18} color={Colors.light.surface} />
@@ -365,9 +462,11 @@ const styles = StyleSheet.create({
   imagesRow: {
     flexDirection: 'row',
     gap: 10,
+    flexWrap: 'wrap',
   },
   imageCard: {
     flex: 1,
+    minWidth: '45%',
   },
   imageLabel: {
     fontSize: 12,
@@ -386,6 +485,15 @@ const styles = StyleSheet.create({
   mediaImage: {
     width: '100%',
     height: '100%',
+  },
+  placeholderContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    fontSize: 14,
+    color: Colors.light.textTertiary,
   },
   enhancementsSection: {
     paddingHorizontal: 20,
@@ -531,6 +639,34 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     marginTop: 6,
   },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
+    marginTop: 20,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 24,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.light.overlay,
@@ -552,7 +688,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
   },
-
   modalEnhancementsList: {
     marginTop: 16,
     marginBottom: 20,

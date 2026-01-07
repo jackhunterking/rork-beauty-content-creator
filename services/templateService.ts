@@ -18,6 +18,7 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     canvasWidth: row.canvas_width,
     canvasHeight: row.canvas_height,
     backgroundUrl: row.background_url || undefined,
+    // Legacy slot data - kept for backwards compatibility
     beforeSlot: {
       width: row.before_slot_width,
       height: row.before_slot_height,
@@ -40,6 +41,9 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
     templatedPreviewUrl: row.templated_preview_url || undefined,
+    // Frame preview URL - template with slot layers hidden for clean editor background
+    framePreviewUrl: row.frame_preview_url || undefined,
+    // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
   };
 }

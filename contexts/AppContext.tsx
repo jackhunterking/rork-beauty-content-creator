@@ -2,10 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat } from '@/types';
+import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
+import { extractSlots } from '@/utils/slotParser';
 
 const STORAGE_KEYS = {
   WORK: 'beauty_work',
@@ -37,16 +38,20 @@ export const [AppProvider, useApp] = createContextHook(() => {
   // Selected format filter ('all' shows all templates)
   const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>('all');
 
-  // Current project now stores the full template object instead of just themeId
+  // Current project stores the template and captured images for each slot
   const [currentProject, setCurrentProject] = useState<{
     contentType: ContentType;
     template: Template | null;
+    // Dynamic captured images keyed by slot layer ID
+    capturedImages: CapturedImages;
+    // Legacy fields - kept for backwards compatibility during transition
     beforeMedia: MediaAsset | null;
     afterMedia: MediaAsset | null;
     draftId: string | null;  // Track if we're editing an existing draft
   }>({
     contentType: 'single',
     template: null,
+    capturedImages: {},
     beforeMedia: null,
     afterMedia: null,
     draftId: null,
@@ -235,30 +240,81 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   // Select template - stores the full template object with slot specs
+  // Also resets all captured images and draftId to ensure fresh start
   const selectTemplate = useCallback((template: Template) => {
-    setCurrentProject(prev => ({ ...prev, template }));
+    setCurrentProject(prev => ({ 
+      ...prev, 
+      template,
+      capturedImages: {},
+      beforeMedia: null,
+      afterMedia: null,
+      draftId: null,
+    }));
   }, []);
 
   // Legacy support: select by ID (finds template from list)
+  // Also resets all captured images and draftId to ensure fresh start
   const selectTemplateById = useCallback((templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (template) {
-      setCurrentProject(prev => ({ ...prev, template }));
+      setCurrentProject(prev => ({ 
+        ...prev, 
+        template,
+        capturedImages: {},
+        beforeMedia: null,
+        afterMedia: null,
+        draftId: null,
+      }));
     }
   }, [templates]);
 
-  const setBeforeMedia = useCallback((media: MediaAsset | null) => {
-    setCurrentProject(prev => ({ ...prev, beforeMedia: media }));
+  // Set captured image for a specific slot by layer ID
+  const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
+    setCurrentProject(prev => ({
+      ...prev,
+      capturedImages: {
+        ...prev.capturedImages,
+        [layerId]: media,
+      },
+    }));
   }, []);
 
+  // Clear a specific slot
+  const clearCapturedImage = useCallback((layerId: string) => {
+    setCapturedImage(layerId, null);
+  }, [setCapturedImage]);
+
+  // Reset all captured images
+  const resetCapturedImages = useCallback(() => {
+    setCurrentProject(prev => ({
+      ...prev,
+      capturedImages: {},
+    }));
+  }, []);
+
+  // Legacy: set before media (for backwards compatibility)
+  const setBeforeMedia = useCallback((media: MediaAsset | null) => {
+    setCurrentProject(prev => ({ ...prev, beforeMedia: media }));
+    // Also set in capturedImages for new architecture
+    if (media) {
+      setCapturedImage('slot-before', media);
+    }
+  }, [setCapturedImage]);
+
+  // Legacy: set after media (for backwards compatibility)
   const setAfterMedia = useCallback((media: MediaAsset | null) => {
     setCurrentProject(prev => ({ ...prev, afterMedia: media }));
-  }, []);
+    // Also set in capturedImages for new architecture
+    if (media) {
+      setCapturedImage('slot-after', media);
+    }
+  }, [setCapturedImage]);
 
   const resetProject = useCallback(() => {
     setCurrentProject({
       contentType: 'single',
       template: null,
+      capturedImages: {},
       beforeMedia: null,
       afterMedia: null,
       draftId: null,
@@ -266,20 +322,68 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   // Load a draft into the current project
+  // Supports both legacy before/after format and new capturedImageUrls format
   const loadDraft = useCallback((draft: Draft, template: Template) => {
+    // Extract slots from template to get dimensions
+    const slots = extractSlots(template);
+    
+    // Build capturedImages from draft data
+    const capturedImages: CapturedImages = {};
+    
+    // First, try new format (capturedImageUrls)
+    if (draft.capturedImageUrls) {
+      for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
+        const slot = slots.find(s => s.layerId === layerId);
+        if (slot && url) {
+          capturedImages[layerId] = {
+            uri: url,
+            width: slot.width,
+            height: slot.height,
+          };
+        }
+      }
+    }
+    
+    // Legacy: Handle before/after image URLs
+    // Map to slot-before and slot-after for backwards compatibility
+    const beforeSlot = slots.find(s => s.layerId.includes('before'));
+    const afterSlot = slots.find(s => s.layerId.includes('after'));
+    
+    if (draft.beforeImageUrl && beforeSlot) {
+      capturedImages[beforeSlot.layerId] = {
+        uri: draft.beforeImageUrl,
+        width: beforeSlot.width,
+        height: beforeSlot.height,
+      };
+    }
+    
+    if (draft.afterImageUrl && afterSlot) {
+      capturedImages[afterSlot.layerId] = {
+        uri: draft.afterImageUrl,
+        width: afterSlot.width,
+        height: afterSlot.height,
+      };
+    }
+    
+    // Legacy beforeMedia/afterMedia for backwards compatibility
+    const beforeMedia = draft.beforeImageUrl && template.beforeSlot ? {
+      uri: draft.beforeImageUrl,
+      width: template.beforeSlot.width,
+      height: template.beforeSlot.height,
+    } : null;
+    
+    const afterMedia = draft.afterImageUrl && template.afterSlot ? {
+      uri: draft.afterImageUrl,
+      width: template.afterSlot.width,
+      height: template.afterSlot.height,
+    } : null;
+    
     setCurrentProject({
       contentType: 'single',
       template,
-      beforeMedia: draft.beforeImageUrl ? {
-        uri: draft.beforeImageUrl,
-        width: template.beforeSlot.width,
-        height: template.beforeSlot.height,
-      } : null,
-      afterMedia: draft.afterImageUrl ? {
-        uri: draft.afterImageUrl,
-        width: template.afterSlot.width,
-        height: template.afterSlot.height,
-      } : null,
+      capturedImages,
+      beforeMedia,
+      afterMedia,
       draftId: draft.id,
     });
   }, []);
@@ -321,6 +425,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setFormat,
     selectTemplate,
     selectTemplateById,
+    
+    // Dynamic slot actions (new architecture)
+    setCapturedImage,
+    clearCapturedImage,
+    resetCapturedImages,
+    
+    // Legacy actions (backwards compatibility)
     setBeforeMedia,
     setAfterMedia,
     resetProject,

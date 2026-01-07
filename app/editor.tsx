@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -9,9 +9,10 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Stack } from 'expo-router';
+import { useRouter, Stack, useNavigation } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
 import { Save, Sparkles } from 'lucide-react-native';
@@ -19,29 +20,42 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
-import { extractInteractiveRegions, getRegionByType } from '@/utils/layerParser';
-
-type SlotType = 'before' | 'after';
+import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
 
 export default function EditorScreen() {
   const router = useRouter();
-  const { currentProject, setBeforeMedia, setAfterMedia, saveDraft, isSavingDraft } = useApp();
+  const navigation = useNavigation();
+  const { 
+    currentProject, 
+    setCapturedImage, 
+    saveDraft, 
+    isSavingDraft, 
+    resetProject 
+  } = useApp();
   const template = currentProject.template;
-
-  // Initialize from currentProject (supports both fresh start and draft restoration)
-  const [beforeUri, setBeforeUri] = useState<string | null>(
-    currentProject.beforeMedia?.uri || null
-  );
-  const [afterUri, setAfterUri] = useState<string | null>(
-    currentProject.afterMedia?.uri || null
-  );
+  const capturedImages = currentProject.capturedImages;
+  
+  // Track if we should allow navigation (after user confirms)
+  const allowNavigationRef = useRef(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Sync state when currentProject changes (e.g., when loading a draft)
-  useEffect(() => {
-    setBeforeUri(currentProject.beforeMedia?.uri || null);
-    setAfterUri(currentProject.afterMedia?.uri || null);
-  }, [currentProject.beforeMedia?.uri, currentProject.afterMedia?.uri]);
+  // Extract slots from template
+  const slots = useMemo(() => 
+    template ? extractSlots(template) : [], 
+    [template]
+  );
+
+  // Check if all slots have been captured
+  const canGenerate = useMemo(() => 
+    allSlotsCaptured(slots, capturedImages),
+    [slots, capturedImages]
+  );
+
+  // Count captured slots for progress display
+  const capturedCount = useMemo(() => 
+    getCapturedSlotCount(slots, capturedImages),
+    [slots, capturedImages]
+  );
 
   // Redirect if no template selected
   useEffect(() => {
@@ -56,19 +70,112 @@ export default function EditorScreen() {
     }
   }, [template, router]);
 
-  const canGenerate = beforeUri && afterUri;
+  // Check if user has made any changes (unsaved work)
+  const hasUnsavedChanges = capturedCount > 0;
+
+  // Handle back navigation confirmation
+  const showBackConfirmation = useCallback(() => {
+    // Get first captured image URIs for legacy save
+    const beforeSlot = slots.find(s => s.layerId.includes('before'));
+    const afterSlot = slots.find(s => s.layerId.includes('after'));
+    const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
+    const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
+
+    Alert.alert(
+      'Unsaved Changes',
+      'You have unsaved changes. What would you like to do?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            allowNavigationRef.current = true;
+            resetProject();
+            router.back();
+          },
+        },
+        {
+          text: 'Save Draft',
+          onPress: async () => {
+            if (!template) return;
+            try {
+              await saveDraft({
+                templateId: template.id,
+                beforeImageUri: beforeUri || null,
+                afterImageUri: afterUri || null,
+                existingDraftId: currentProject.draftId || undefined,
+              });
+              Toast.show({
+                type: 'success',
+                text1: 'Draft saved',
+                text2: 'You can continue later from Drafts',
+                position: 'top',
+                visibilityTime: 2000,
+              });
+              allowNavigationRef.current = true;
+              router.back();
+            } catch (error) {
+              console.error('Failed to save draft:', error);
+              Toast.show({
+                type: 'error',
+                text1: 'Save failed',
+                text2: 'Please try again',
+                position: 'top',
+              });
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router]);
+
+  // Intercept back navigation (iOS gesture and header back button)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
+      // Allow navigation if explicitly permitted or no unsaved changes
+      if (allowNavigationRef.current || !hasUnsavedChanges) {
+        return;
+      }
+
+      // Prevent default behavior (going back)
+      e.preventDefault();
+
+      // Show confirmation dialog
+      showBackConfirmation();
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedChanges, showBackConfirmation]);
+
+  // Handle Android hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (hasUnsavedChanges && !allowNavigationRef.current) {
+        showBackConfirmation();
+        return true; // Prevent default back behavior
+      }
+      return false; // Allow default back behavior
+    });
+
+    return () => backHandler.remove();
+  }, [hasUnsavedChanges, showBackConfirmation]);
+
   const isEditingDraft = !!currentProject.draftId;
 
-  // Process image for the slot - uses layers_json dimensions when available
+  // Process image for a specific slot
   const processImage = useCallback(
-    async (uri: string, width: number, height: number, slotType: SlotType) => {
+    async (uri: string, width: number, height: number, slotId: string) => {
       if (!template) return;
 
-      // Extract regions from layers_json (falls back to slot data automatically)
-      const regions = extractInteractiveRegions(template);
-      const region = getRegionByType(regions, slotType);
+      // Find the slot by ID
+      const slot = getSlotById(slots, slotId);
       
-      if (!region) {
+      if (!slot) {
         Toast.show({
           type: 'error',
           text1: 'Template error',
@@ -85,29 +192,19 @@ export default function EditorScreen() {
           uri, 
           width, 
           height, 
-          region.width, 
-          region.height
+          slot.width, 
+          slot.height
         );
 
-        if (slotType === 'before') {
-          setBeforeUri(processed.uri);
-          setBeforeMedia({
-            uri: processed.uri,
-            width: processed.width,
-            height: processed.height,
-          });
-        } else {
-          setAfterUri(processed.uri);
-          setAfterMedia({
-            uri: processed.uri,
-            width: processed.width,
-            height: processed.height,
-          });
-        }
+        setCapturedImage(slotId, {
+          uri: processed.uri,
+          width: processed.width,
+          height: processed.height,
+        });
 
         Toast.show({
           type: 'success',
-          text1: `${slotType === 'before' ? 'Before' : 'After'} image added`,
+          text1: `${slot.label} image added`,
           text2: `Cropped to ${processed.width}×${processed.height}`,
           position: 'top',
           visibilityTime: 2000,
@@ -124,23 +221,20 @@ export default function EditorScreen() {
         setIsProcessing(false);
       }
     },
-    [template, setBeforeMedia, setAfterMedia]
+    [template, slots, setCapturedImage]
   );
 
-  // Take photo with camera
+  // Navigate to camera screen for a slot
   const takePhoto = useCallback(
-    async (slotType: SlotType) => {
-      // Navigate to camera screen with slot info
-      router.push({
-        pathname: slotType === 'before' ? '/capture/before' : '/capture/after',
-      });
+    (slotId: string) => {
+      router.push(`/capture/${slotId}`);
     },
     [router]
   );
 
-  // Choose from library
+  // Choose from library for a slot
   const chooseFromLibrary = useCallback(
-    async (slotType: SlotType) => {
+    async (slotId: string) => {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
@@ -149,7 +243,7 @@ export default function EditorScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        await processImage(asset.uri, asset.width, asset.height, slotType);
+        await processImage(asset.uri, asset.width, asset.height, slotId);
       }
     },
     [processImage]
@@ -157,47 +251,56 @@ export default function EditorScreen() {
 
   // Show action sheet for slot
   const handleSlotPress = useCallback(
-    (slotType: SlotType) => {
+    (slotId: string) => {
+      const slot = getSlotById(slots, slotId);
+      const slotLabel = slot?.label || 'Photo';
+
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
           {
             options: ['Cancel', 'Take Photo', 'Choose from Library'],
             cancelButtonIndex: 0,
-            title: `Add ${slotType === 'before' ? 'Before' : 'After'} Image`,
+            title: `Add ${slotLabel} Image`,
           },
           (buttonIndex) => {
             if (buttonIndex === 1) {
-              takePhoto(slotType);
+              takePhoto(slotId);
             } else if (buttonIndex === 2) {
-              chooseFromLibrary(slotType);
+              chooseFromLibrary(slotId);
             }
           }
         );
       } else {
         // Android: Use Alert as a simple alternative
         Alert.alert(
-          `Add ${slotType === 'before' ? 'Before' : 'After'} Image`,
+          `Add ${slotLabel} Image`,
           'Choose an option',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Take Photo', onPress: () => takePhoto(slotType) },
-            { text: 'Choose from Library', onPress: () => chooseFromLibrary(slotType) },
+            { text: 'Take Photo', onPress: () => takePhoto(slotId) },
+            { text: 'Choose from Library', onPress: () => chooseFromLibrary(slotId) },
           ]
         );
       }
     },
-    [takePhoto, chooseFromLibrary]
+    [slots, takePhoto, chooseFromLibrary]
   );
 
   // Actually perform the save operation
   const performSaveDraft = useCallback(async () => {
     if (!template) return;
 
+    // Get before/after URIs for legacy draft storage
+    const beforeSlot = slots.find(s => s.layerId.includes('before'));
+    const afterSlot = slots.find(s => s.layerId.includes('after'));
+    const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
+    const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
+
     try {
       await saveDraft({
         templateId: template.id,
-        beforeImageUri: beforeUri,
-        afterImageUri: afterUri,
+        beforeImageUri: beforeUri || null,
+        afterImageUri: afterUri || null,
         existingDraftId: currentProject.draftId || undefined,
       });
       
@@ -220,14 +323,14 @@ export default function EditorScreen() {
         position: 'top',
       });
     }
-  }, [template, beforeUri, afterUri, saveDraft, currentProject.draftId, router]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router]);
 
   // Save draft - shows confirmation dialog first
   const handleSaveDraft = useCallback(() => {
     if (!template) return;
 
     // Need at least one image to save
-    if (!beforeUri && !afterUri) {
+    if (capturedCount === 0) {
       Toast.show({
         type: 'info',
         text1: 'Nothing to save',
@@ -254,7 +357,7 @@ export default function EditorScreen() {
       ],
       { cancelable: true }
     );
-  }, [template, beforeUri, afterUri, performSaveDraft]);
+  }, [template, capturedCount, performSaveDraft]);
 
   // Navigate to generate screen
   const handleGenerate = useCallback(() => {
@@ -274,6 +377,17 @@ export default function EditorScreen() {
       </View>
     );
   }
+
+  // Generate instruction text based on slot count
+  const getInstructionText = () => {
+    if (slots.length === 0) {
+      return 'This template has no image slots configured';
+    }
+    if (slots.length === 1) {
+      return `Tap on the slot to add your ${slots[0].label.toLowerCase()} photo`;
+    }
+    return `Tap on each slot to add your photos (${capturedCount}/${slots.length} added)`;
+  };
 
   return (
     <View style={styles.container}>
@@ -313,18 +427,17 @@ export default function EditorScreen() {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Template Canvas */}
+          {/* Template Canvas with dynamic slots */}
           <TemplateCanvas
             template={template}
-            beforeUri={beforeUri}
-            afterUri={afterUri}
+            capturedImages={capturedImages}
             onSlotPress={handleSlotPress}
           />
 
           {/* Instructions */}
           <View style={styles.instructions}>
             <Text style={styles.instructionText}>
-              Tap on each slot to add your before and after photos
+              {getInstructionText()}
             </Text>
           </View>
         </ScrollView>
@@ -339,7 +452,7 @@ export default function EditorScreen() {
           >
             <Sparkles size={20} color={Colors.light.surface} />
             <Text style={styles.generateButtonText}>
-              {canGenerate ? 'Generate' : 'Add both images to continue'}
+              {canGenerate ? 'Generate' : `Add all ${slots.length} images to continue`}
             </Text>
           </TouchableOpacity>
         </View>

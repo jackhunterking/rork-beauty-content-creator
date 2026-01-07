@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
   draftCard: {
     width: CARD_WIDTH,
     backgroundColor: Colors.light.surface,
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: Colors.light.border,

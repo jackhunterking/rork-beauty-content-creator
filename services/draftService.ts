@@ -9,8 +9,11 @@ function mapRowToDraft(row: DraftRow): Draft {
   return {
     id: row.id,
     templateId: row.template_id,
+    // Legacy fields for backwards compatibility
     beforeImageUrl: row.before_image_url,
     afterImageUrl: row.after_image_url,
+    // New dynamic captured images field
+    capturedImageUrls: row.captured_image_urls || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -83,7 +86,8 @@ export async function fetchDraftByTemplateId(templateId: string): Promise<Draft 
 export async function createDraft(
   templateId: string,
   beforeImageUrl: string | null = null,
-  afterImageUrl: string | null = null
+  afterImageUrl: string | null = null,
+  capturedImageUrls: Record<string, string> | null = null
 ): Promise<Draft> {
   const { data, error } = await supabase
     .from('drafts')
@@ -91,6 +95,7 @@ export async function createDraft(
       template_id: templateId,
       before_image_url: beforeImageUrl,
       after_image_url: afterImageUrl,
+      captured_image_urls: capturedImageUrls,
     })
     .select()
     .single();
@@ -111,6 +116,7 @@ export async function updateDraft(
   updates: {
     beforeImageUrl?: string | null;
     afterImageUrl?: string | null;
+    capturedImageUrls?: Record<string, string> | null;
   }
 ): Promise<Draft> {
   const updateData: Record<string, unknown> = {
@@ -122,6 +128,9 @@ export async function updateDraft(
   }
   if (updates.afterImageUrl !== undefined) {
     updateData.after_image_url = updates.afterImageUrl;
+  }
+  if (updates.capturedImageUrls !== undefined) {
+    updateData.captured_image_urls = updates.capturedImageUrls;
   }
 
   const { data, error } = await supabase
@@ -141,16 +150,19 @@ export async function updateDraft(
 
 /**
  * Save a draft with images - uploads images to Supabase Storage
+ * Supports both legacy before/after format and new dynamic captured images
  * @param templateId - The template ID
- * @param beforeImageUri - Local URI of the before image (or null)
- * @param afterImageUri - Local URI of the after image (or null)
+ * @param beforeImageUri - Local URI of the before image (or null) - legacy format
+ * @param afterImageUri - Local URI of the after image (or null) - legacy format
  * @param existingDraftId - Optional existing draft ID to update
+ * @param capturedImageUris - Optional map of slot ID to local URIs - new dynamic format
  */
 export async function saveDraftWithImages(
   templateId: string,
   beforeImageUri: string | null,
   afterImageUri: string | null,
-  existingDraftId?: string
+  existingDraftId?: string,
+  capturedImageUris?: Record<string, string>
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -176,7 +188,9 @@ export async function saveDraftWithImages(
     // Upload images if they are local URIs (not already Supabase URLs)
     let beforeImageUrl = draft.beforeImageUrl;
     let afterImageUrl = draft.afterImageUrl;
+    let capturedImageUrls = draft.capturedImageUrls || {};
 
+    // Handle legacy before/after format
     // Upload before image if it's a new local file
     if (beforeImageUri && !beforeImageUri.includes('supabase')) {
       beforeImageUrl = await uploadDraftImage(draft.id, beforeImageUri, 'before');
@@ -191,10 +205,26 @@ export async function saveDraftWithImages(
       afterImageUrl = null;
     }
 
+    // Handle new dynamic captured images format
+    if (capturedImageUris) {
+      for (const [slotId, localUri] of Object.entries(capturedImageUris)) {
+        if (localUri && !localUri.includes('supabase')) {
+          // Upload new local image
+          const publicUrl = await uploadDraftImage(draft.id, localUri, slotId);
+          capturedImageUrls[slotId] = publicUrl;
+        } else if (localUri) {
+          // Keep existing Supabase URL
+          capturedImageUrls[slotId] = localUri;
+        }
+        // If localUri is empty/null, the slot will be removed from capturedImageUrls
+      }
+    }
+
     // Update the draft with the new URLs
     const updatedDraft = await updateDraft(draft.id, {
       beforeImageUrl,
       afterImageUrl,
+      capturedImageUrls: Object.keys(capturedImageUrls).length > 0 ? capturedImageUrls : null,
     });
 
     return updatedDraft;

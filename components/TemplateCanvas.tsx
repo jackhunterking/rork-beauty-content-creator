@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, Dimensions, Text } from 'react-native';
 import { Image } from 'expo-image';
-import { Template } from '@/types';
-import { TouchRegion } from './TouchRegion';
-import { extractInteractiveRegions, scaleRegionsToDisplay, getRegionByType } from '@/utils/layerParser';
+import { Template, CapturedImages } from '@/types';
+import { SlotRegion } from './SlotRegion';
+import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -12,23 +12,22 @@ const MAX_CANVAS_WIDTH = SCREEN_WIDTH - CANVAS_PADDING * 2;
 
 interface TemplateCanvasProps {
   template: Template;
-  beforeUri: string | null;
-  afterUri: string | null;
-  onSlotPress: (slotType: 'before' | 'after') => void;
+  capturedImages: CapturedImages;
+  onSlotPress: (slotId: string) => void;
 }
 
 /**
- * TemplateCanvas - Renders template preview with interactive touch regions
+ * TemplateCanvas - Renders template preview with dynamic slot regions
  * 
- * - Displays the templatedPreviewUrl (or thumbnail) as full background
- * - Overlays TouchRegion components at positions from layers_json
- * - Falls back to slot data if layers_json is not available
+ * - Uses framePreviewUrl (clean background without slot content) when available
+ * - Falls back to templatedPreviewUrl or thumbnail
+ * - Renders SlotRegion for each slot extracted from layers_json
+ * - Supports any number of slots (not limited to before/after)
  * - Scales everything proportionally to fit the screen
  */
 export function TemplateCanvas({
   template,
-  beforeUri,
-  afterUri,
+  capturedImages,
   onSlotPress,
 }: TemplateCanvasProps) {
   // Calculate display dimensions to fit canvas on screen
@@ -51,11 +50,11 @@ export function TemplateCanvas({
     };
   }, [template.canvasWidth, template.canvasHeight]);
 
-  // Extract and scale interactive regions
-  const scaledRegions = useMemo(() => {
-    const regions = extractInteractiveRegions(template);
-    return scaleRegionsToDisplay(
-      regions,
+  // Extract slots from template and scale to display dimensions
+  const scaledSlots = useMemo(() => {
+    const slots = extractSlots(template);
+    return scaleSlots(
+      slots,
       template.canvasWidth,
       template.canvasHeight,
       displayWidth,
@@ -63,12 +62,9 @@ export function TemplateCanvas({
     );
   }, [template, displayWidth, displayHeight]);
 
-  // Get individual regions
-  const beforeRegion = getRegionByType(scaledRegions, 'before');
-  const afterRegion = getRegionByType(scaledRegions, 'after');
-
-  // Use templatedPreviewUrl if available, fall back to thumbnail
-  const previewImageUrl = template.templatedPreviewUrl || template.thumbnail;
+  // Use framePreviewUrl (no slot content) if available, fall back to templatedPreviewUrl or thumbnail
+  // framePreviewUrl provides a clean background where slot areas are transparent/hidden
+  const backgroundUrl = template.framePreviewUrl || template.templatedPreviewUrl || template.thumbnail;
 
   return (
     <View style={styles.wrapper}>
@@ -81,32 +77,23 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Preview image as background */}
+        {/* Background image - ideally framePreviewUrl without slot content */}
         <Image
-          source={{ uri: previewImageUrl }}
+          source={{ uri: backgroundUrl }}
           style={styles.previewImage}
           contentFit="cover"
           transition={200}
         />
 
-        {/* Touch regions for before/after */}
-        {beforeRegion && (
-          <TouchRegion
-            region={beforeRegion}
-            capturedUri={beforeUri}
-            onPress={() => onSlotPress('before')}
-            showIndicator={!beforeUri}
+        {/* Dynamic slot regions */}
+        {scaledSlots.map(slot => (
+          <SlotRegion
+            key={slot.layerId}
+            slot={slot}
+            capturedUri={capturedImages[slot.layerId]?.uri || null}
+            onPress={() => onSlotPress(slot.layerId)}
           />
-        )}
-
-        {afterRegion && (
-          <TouchRegion
-            region={afterRegion}
-            capturedUri={afterUri}
-            onPress={() => onSlotPress('after')}
-            showIndicator={!afterUri}
-          />
-        )}
+        ))}
       </View>
 
       {/* Template info */}
@@ -125,7 +112,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   canvas: {
-    borderRadius: 12,
+    borderRadius: 6,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
     // Glass UI border effect

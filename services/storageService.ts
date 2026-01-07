@@ -8,13 +8,13 @@ const BUCKET_NAME = 'draft-images';
  * Upload an image to Supabase Storage
  * @param draftId - The draft ID to organize the image
  * @param localUri - The local file URI to upload
- * @param slot - 'before' or 'after' to name the file
+ * @param slotId - Slot identifier (e.g., 'before', 'after', 'slot-before', 'slot-hero')
  * @returns The public URL of the uploaded image
  */
 export async function uploadDraftImage(
   draftId: string,
   localUri: string,
-  slot: 'before' | 'after'
+  slotId: string
 ): Promise<string> {
   try {
     // Read the file as base64
@@ -25,8 +25,11 @@ export async function uploadDraftImage(
     const extension = localUri.split('.').pop()?.toLowerCase() || 'jpg';
     const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
     
-    // Create the file path: {draftId}/{slot}.{extension}
-    const filePath = `${draftId}/${slot}.${extension}`;
+    // Clean the slot ID for use in filename (replace special chars)
+    const cleanSlotId = slotId.replace(/[^a-zA-Z0-9-_]/g, '-');
+    
+    // Create the file path: {draftId}/{slotId}.{extension}
+    const filePath = `${draftId}/${cleanSlotId}.${extension}`;
 
     // Upload to Supabase Storage
     const { error } = await supabase.storage
@@ -90,13 +93,16 @@ export async function deleteDraftImages(draftId: string): Promise<void> {
 /**
  * Delete a specific draft image
  * @param draftId - The draft ID
- * @param slot - 'before' or 'after'
+ * @param slotId - Slot identifier (e.g., 'before', 'after', 'slot-before', 'slot-hero')
  */
 export async function deleteDraftImage(
   draftId: string,
-  slot: 'before' | 'after'
+  slotId: string
 ): Promise<void> {
   try {
+    // Clean the slot ID for matching
+    const cleanSlotId = slotId.replace(/[^a-zA-Z0-9-_]/g, '-');
+    
     // List files to find the exact filename (extension may vary)
     const { data: files, error: listError } = await supabase.storage
       .from(BUCKET_NAME)
@@ -106,7 +112,7 @@ export async function deleteDraftImage(
       throw listError;
     }
 
-    const targetFile = files?.find(file => file.name.startsWith(slot));
+    const targetFile = files?.find(file => file.name.startsWith(cleanSlotId));
     if (targetFile) {
       const { error: deleteError } = await supabase.storage
         .from(BUCKET_NAME)

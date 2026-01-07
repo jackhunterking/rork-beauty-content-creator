@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
   },
   templateTile: {
     width: TILE_WIDTH,
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
     // Glass UI border effect

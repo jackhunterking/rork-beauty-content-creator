@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
   templateTile: {
     width: TILE_WIDTH,
     height: TILE_HEIGHT,
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
   },

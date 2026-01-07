@@ -9,7 +9,8 @@ export interface Theme {
   isFavourite: boolean;
 }
 
-// Image slot with dimensions, position, and placeholder
+// Legacy Image slot with dimensions, position, and placeholder
+// Kept for backwards compatibility - use Slot instead
 export interface ImageSlot {
   // Dimensions for camera overlay aspect ratio
   width: number;        // pixels
@@ -22,6 +23,23 @@ export interface ImageSlot {
   // Placeholder image URL (designed to look like a button)
   placeholderUrl: string;
 }
+
+// Dynamic slot extracted from layers_json
+// Any layer with "slot" in the name is a replaceable slot
+export interface Slot {
+  layerId: string;        // e.g., "slot-before", "slot-after", "slot-hero"
+  label: string;          // Human-readable: "Before", "After", "Hero"
+  x: number;              // Position on canvas (pixels)
+  y: number;
+  width: number;          // Slot dimensions (pixels)
+  height: number;
+  placeholderUrl?: string;
+  captureOrder: number;   // Order in capture flow (1, 2, 3...)
+}
+
+// Captured images keyed by layer ID
+// e.g., { "slot-before": MediaAsset, "slot-after": MediaAsset }
+export type CapturedImages = Record<string, MediaAsset | null>;
 
 // Template with canvas and slot specifications
 export interface Template {
@@ -36,9 +54,10 @@ export interface Template {
   // Optional background image (frame design, branding)
   backgroundUrl?: string;
   
-  // Slot definitions with positions and placeholders
-  beforeSlot: ImageSlot;
-  afterSlot: ImageSlot;
+  // Legacy slot definitions - kept for backwards compatibility
+  // Use layersJson and extractSlots() for dynamic slot support
+  beforeSlot?: ImageSlot;
+  afterSlot?: ImageSlot;
   
   // Content type support
   supports: ContentType[];
@@ -53,6 +72,12 @@ export interface Template {
   // Templated.io integration fields
   templatedId?: string;
   templatedPreviewUrl?: string;
+  
+  // Frame preview URL - template rendered with slot layers hidden
+  // Used in editor to show clean background without placeholder images
+  framePreviewUrl?: string;
+  
+  // Source of truth for all layers - slots are extracted from this
   layersJson?: TemplatedLayer[];
 }
 
@@ -80,13 +105,13 @@ export interface TemplateRow {
   canvas_width: number;
   canvas_height: number;
   background_url: string | null;
-  // Before slot
+  // Legacy before slot - kept for backwards compatibility
   before_slot_width: number;
   before_slot_height: number;
   before_slot_x_percent: number;
   before_slot_y_percent: number;
   before_placeholder_url: string | null;
-  // After slot
+  // Legacy after slot - kept for backwards compatibility
   after_slot_width: number;
   after_slot_height: number;
   after_slot_x_percent: number;
@@ -101,6 +126,9 @@ export interface TemplateRow {
   // Templated.io integration fields
   templated_id: string | null;
   templated_preview_url: string | null;
+  // Frame preview URL - template with slot layers hidden
+  frame_preview_url: string | null;
+  // Source of truth for layers
   layers_json: TemplatedLayer[] | null;
 }
 
@@ -108,8 +136,12 @@ export interface TemplateRow {
 export interface Draft {
   id: string;
   templateId: string;
+  // Legacy fields - kept for backwards compatibility
   beforeImageUrl: string | null;  // Supabase Storage URL
   afterImageUrl: string | null;   // Supabase Storage URL
+  // Dynamic captured images keyed by slot layer ID
+  // e.g., { "slot-before": "url", "slot-after": "url" }
+  capturedImageUrls?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,8 +150,11 @@ export interface Draft {
 export interface DraftRow {
   id: string;
   template_id: string;
+  // Legacy fields - kept for backwards compatibility
   before_image_url: string | null;
   after_image_url: string | null;
+  // Dynamic captured images as JSONB
+  captured_image_urls: Record<string, string> | null;
   created_at: string;
   updated_at: string;
 }
