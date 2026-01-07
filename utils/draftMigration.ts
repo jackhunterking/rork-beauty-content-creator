@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import { Draft, Template, LocalDraft } from '@/types';
 import { fetchDrafts, deleteDraft as deleteSupabaseDraft } from '@/services/draftService';
 import { 
@@ -171,14 +171,14 @@ async function downloadAndSaveImage(
   height: number
 ): Promise<void> {
   // Create temp file path
-  const tempPath = `${FileSystem.cacheDirectory}temp_migration_${Date.now()}.jpg`;
+  const tempPath = `${Paths.cache}/temp_migration_${Date.now()}.jpg`;
   
   try {
     // Download the image
-    const downloadResult = await FileSystem.downloadAsync(url, tempPath);
+    const downloadedFile = await File.downloadFileAsync(url, new File(tempPath));
     
-    if (downloadResult.status !== 200) {
-      throw new Error(`Download failed with status ${downloadResult.status}`);
+    if (!downloadedFile.exists) {
+      throw new Error('Download failed');
     }
     
     // Save to draft slot
@@ -187,7 +187,10 @@ async function downloadAndSaveImage(
   } finally {
     // Clean up temp file
     try {
-      await FileSystem.deleteAsync(tempPath, { idempotent: true });
+      const tempFile = new File(tempPath);
+      if (tempFile.exists) {
+        tempFile.delete();
+      }
     } catch {
       // Ignore cleanup errors
     }

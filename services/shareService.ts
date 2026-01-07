@@ -1,7 +1,6 @@
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
-import { Platform } from 'react-native';
 
 /**
  * Share Service
@@ -65,8 +64,8 @@ export async function shareImage(
     }
     
     // Verify file exists
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
-    if (!fileInfo.exists) {
+    const file = new File(localPath);
+    if (!file.exists) {
       return {
         success: false,
         error: 'File not found',
@@ -111,15 +110,15 @@ export async function downloadAndShare(
   try {
     // Generate local path
     const name = filename || `share_${Date.now()}`;
-    const localPath = `${FileSystem.cacheDirectory}${name}.jpg`;
+    const localPath = `${Paths.cache}/${name}.jpg`;
     
     // Download the file
-    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
+    const downloadedFile = await File.downloadFileAsync(remoteUrl, new File(localPath));
     
-    if (downloadResult.status !== 200) {
+    if (!downloadedFile.exists) {
       return {
         success: false,
-        error: `Download failed with status ${downloadResult.status}`,
+        error: 'Download failed',
       };
     }
     
@@ -270,15 +269,16 @@ export async function checkPlatformRequirements(
   const issues: string[] = [];
   
   try {
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
+    const file = new File(localPath);
     
-    if (!fileInfo.exists) {
+    if (!file.exists) {
       return { valid: false, issues: ['File not found'] };
     }
     
     // Check file size
-    if ('size' in fileInfo && fileInfo.size && fileInfo.size > platformInfo.maxFileSize) {
-      const sizeMB = (fileInfo.size / (1024 * 1024)).toFixed(1);
+    const fileSize = file.size ?? 0;
+    if (fileSize > platformInfo.maxFileSize) {
+      const sizeMB = (fileSize / (1024 * 1024)).toFixed(1);
       const maxMB = (platformInfo.maxFileSize / (1024 * 1024)).toFixed(0);
       issues.push(`File size (${sizeMB}MB) exceeds ${platformInfo.name} limit (${maxMB}MB)`);
     }
@@ -291,7 +291,7 @@ export async function checkPlatformRequirements(
     
     return { valid: issues.length === 0, issues };
     
-  } catch (error) {
+  } catch {
     return { valid: false, issues: ['Could not verify file'] };
   }
 }
@@ -308,12 +308,10 @@ export async function prepareForSharing(
   filename: string = 'beauty_creation'
 ): Promise<string> {
   const extension = localPath.split('.').pop() || 'jpg';
-  const sharePath = `${FileSystem.cacheDirectory}${filename}_${Date.now()}.${extension}`;
+  const sharePath = `${Paths.cache}/${filename}_${Date.now()}.${extension}`;
   
-  await FileSystem.copyAsync({
-    from: localPath,
-    to: sharePath,
-  });
+  const sourceFile = new File(localPath);
+  await sourceFile.copy(new File(sharePath));
   
   return sharePath;
 }
@@ -323,14 +321,15 @@ export async function prepareForSharing(
  */
 export async function cleanupShareFiles(): Promise<void> {
   try {
-    const cacheDir = FileSystem.cacheDirectory;
-    if (!cacheDir) return;
+    const { Directory } = await import('expo-file-system');
+    const cacheDir = new Directory(Paths.cache);
+    if (!cacheDir.exists) return;
     
-    const files = await FileSystem.readDirectoryAsync(cacheDir);
+    const items = cacheDir.list();
     
-    for (const file of files) {
-      if (file.startsWith('share_') || file.startsWith('beauty_creation_')) {
-        await FileSystem.deleteAsync(`${cacheDir}${file}`, { idempotent: true });
+    for (const item of items) {
+      if (item instanceof File && (item.name.startsWith('share_') || item.name.startsWith('beauty_creation_'))) {
+        item.delete();
       }
     }
   } catch (error) {

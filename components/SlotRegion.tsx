@@ -96,7 +96,7 @@ export function SlotRegion({
       {(isLoading || state === 'ready') && hasImage && (
         <>
           <Image
-            source={{ uri: imageUri }}
+            source={imageUri ? { uri: imageUri } : undefined}
             style={styles.capturedImage}
             contentFit="cover"
             transition={200}
@@ -135,7 +135,7 @@ export function SlotRegion({
         <View style={styles.errorState}>
           {hasImage && (
             <Image
-              source={{ uri: imageUri }}
+              source={imageUri ? { uri: imageUri } : undefined}
               style={[styles.capturedImage, styles.errorImage]}
               contentFit="cover"
             />

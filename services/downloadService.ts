@@ -1,6 +1,5 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
-import { Platform } from 'react-native';
 
 /**
  * Download Service
@@ -85,8 +84,8 @@ export async function saveToGallery(
     }
     
     // Verify file exists
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
-    if (!fileInfo.exists) {
+    const file = new File(localPath);
+    if (!file.exists) {
       return {
         success: false,
         error: 'File not found at the specified path',
@@ -154,15 +153,15 @@ export async function downloadAndSaveToGallery(
     // Generate local path for download
     const extension = getFileExtension(remoteUrl);
     const name = filename || `beauty_${Date.now()}`;
-    const localPath = `${FileSystem.cacheDirectory}${name}.${extension}`;
+    const localPath = `${Paths.cache}/${name}.${extension}`;
     
     // Download the file
-    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
+    const downloadedFile = await File.downloadFileAsync(remoteUrl, new File(localPath));
     
-    if (downloadResult.status !== 200) {
+    if (!downloadedFile.exists) {
       return {
         success: false,
-        error: `Download failed with status ${downloadResult.status}`,
+        error: 'Download failed',
       };
     }
     
@@ -187,8 +186,9 @@ export async function copyWithFilename(
   filename: string,
   extension: string = 'jpg'
 ): Promise<string> {
-  const destPath = `${FileSystem.cacheDirectory}${filename}.${extension}`;
-  await FileSystem.copyAsync({ from: sourcePath, to: destPath });
+  const destPath = `${Paths.cache}/${filename}.${extension}`;
+  const sourceFile = new File(sourcePath);
+  await sourceFile.copy(new File(destPath));
   return destPath;
 }
 
@@ -228,24 +228,24 @@ export function generateDownloadFilename(prefix: string = 'beauty'): string {
  * Get the path where downloaded files will be saved
  */
 export function getDownloadDirectory(): string {
-  return FileSystem.cacheDirectory || '';
+  return Paths.cache.uri;
 }
 
 /**
  * Check if a file exists at the given path
  */
 export async function fileExists(path: string): Promise<boolean> {
-  const info = await FileSystem.getInfoAsync(path);
-  return info.exists;
+  const file = new File(path);
+  return file.exists;
 }
 
 /**
  * Get the size of a file in bytes
  */
 export async function getFileSize(path: string): Promise<number | null> {
-  const info = await FileSystem.getInfoAsync(path);
-  if (info.exists && 'size' in info) {
-    return info.size || null;
+  const file = new File(path);
+  if (file.exists) {
+    return file.size ?? null;
   }
   return null;
 }
