@@ -228,6 +228,18 @@ When you design a template in Templated.io, note these values:
 
 ## Troubleshooting
 
+### "template.layersJson.filter is not a function"
+- This error means `layers_json` was stored as a string instead of an array
+- **Cause**: Double-encoding JSON (using `JSON.stringify()` on data that's already JSON)
+- **Prevention**: The workflow correctly sends arrays directly to Supabase without extra stringification
+- **Fix**: Run this SQL to fix existing data:
+  ```sql
+  UPDATE templates
+  SET layers_json = (layers_json #>> '{}')::jsonb
+  WHERE layers_json IS NOT NULL 
+    AND jsonb_typeof(layers_json) = 'string';
+  ```
+
 ### "Template must have at least one slot layer"
 - Check your Templated.io template has layers with names containing `slot`
 - Slot layers must be of type `image`

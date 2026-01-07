@@ -43,6 +43,40 @@ export function deriveSlotLabel(layerId: string): string {
 }
 
 /**
+ * Safely parse layersJson which might be a string (double-encoded) or array
+ * This handles edge cases from API responses or database quirks
+ */
+function parseLayersJson(layersJson: unknown): TemplatedLayer[] | null {
+  // Already null/undefined
+  if (!layersJson) {
+    return null;
+  }
+
+  // If it's a string, try to parse it
+  if (typeof layersJson === 'string') {
+    try {
+      const parsed = JSON.parse(layersJson);
+      if (Array.isArray(parsed)) {
+        return parsed as TemplatedLayer[];
+      }
+      console.warn('layersJson string parsed but not an array:', typeof parsed);
+      return null;
+    } catch (e) {
+      console.warn('Failed to parse layersJson string:', e);
+      return null;
+    }
+  }
+
+  // If it's already an array, use it directly
+  if (Array.isArray(layersJson)) {
+    return layersJson as TemplatedLayer[];
+  }
+
+  console.warn('layersJson is neither string nor array:', typeof layersJson);
+  return null;
+}
+
+/**
  * Extract all replaceable slots from a template
  * Slots are layers with "slot" in their name
  * 
@@ -50,11 +84,14 @@ export function deriveSlotLabel(layerId: string): string {
  * @returns Array of Slot objects sorted by their order in layersJson
  */
 export function extractSlots(template: Template): Slot[] {
-  if (!template.layersJson || template.layersJson.length === 0) {
+  // Safely parse layersJson - handles string, array, null/undefined
+  const layers = parseLayersJson(template.layersJson);
+  
+  if (!layers || layers.length === 0) {
     return [];
   }
 
-  return template.layersJson
+  return layers
     .filter(isSlotLayer)
     .map((layer, index) => ({
       layerId: layer.layer,
