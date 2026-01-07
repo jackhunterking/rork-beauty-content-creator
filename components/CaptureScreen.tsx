@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
@@ -165,26 +164,21 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   // Main capture UI - single unified structure
   return (
     <View style={styles.container}>
-      {/* Background Layer - Camera or Preview Image */}
-      {previewUri ? (
-        <Image
-          source={{ uri: previewUri }}
-          style={StyleSheet.absoluteFillObject}
-          contentFit="cover"
-        />
-      ) : (
-        <CameraView 
-          ref={cameraRef} 
-          style={StyleSheet.absoluteFillObject} 
-          facing="back"
-        />
-      )}
+      {/* Background Layer - Camera always visible (FrameOverlay will black out around preview) */}
+      <CameraView 
+        ref={cameraRef} 
+        style={StyleSheet.absoluteFillObject} 
+        facing="back"
+      />
 
-      {/* Frame Overlay */}
+      {/* Frame Overlay - handles both camera guide and preview display */}
+      {/* When previewUri is set, the captured image displays inside the frame */}
+      {/* The overlay becomes fully opaque to hide the camera behind it */}
       {slot && (
         <FrameOverlay 
           slot={slot} 
           label={`${title}: ${slot.width}x${slot.height}`}
+          previewUri={previewUri || undefined}
         />
       )}
 
@@ -391,4 +385,3 @@ const styles = StyleSheet.create({
 });
 
 export default CaptureScreen;
-

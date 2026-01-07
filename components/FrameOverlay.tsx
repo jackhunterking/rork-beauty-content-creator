@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Dimensions, Text } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
+import { Image } from 'expo-image';
 import { ImageSlot } from '@/types';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { calculateFrameDimensions } from '@/utils/frameCalculator';
 
 interface FrameOverlayProps {
   slot: ImageSlot;
   label?: string;
   showCorners?: boolean;
+  previewUri?: string; // When provided, display the captured image inside the frame
 }
 
 /**
@@ -16,61 +17,56 @@ interface FrameOverlayProps {
  * 
  * The overlay calculates the aspect ratio from pixel dimensions
  * and renders a centered frame guide for the user to align their shot.
+ * 
+ * When previewUri is provided, it displays the captured image inside
+ * the same frame area, ensuring visual consistency between capture and preview.
  */
-export function FrameOverlay({ slot, label, showCorners = true }: FrameOverlayProps) {
-  // Calculate aspect ratio from pixel dimensions
-  const aspectRatio = slot.width / slot.height;
-  
-  // Calculate frame dimensions that fit within the screen
-  // while maintaining the target aspect ratio
-  const frameDimensions = useMemo(() => {
-    const maxWidth = SCREEN_WIDTH * 0.85;
-    const maxHeight = SCREEN_HEIGHT * 0.65;
-    
-    let frameWidth: number;
-    let frameHeight: number;
-    
-    // Determine which dimension is the limiting factor
-    if (maxWidth / maxHeight > aspectRatio) {
-      // Height is the limiting factor
-      frameHeight = maxHeight;
-      frameWidth = frameHeight * aspectRatio;
-    } else {
-      // Width is the limiting factor
-      frameWidth = maxWidth;
-      frameHeight = frameWidth / aspectRatio;
-    }
-    
-    return { width: frameWidth, height: frameHeight };
-  }, [aspectRatio]);
+export function FrameOverlay({ slot, label, showCorners = true, previewUri }: FrameOverlayProps) {
+  // Calculate frame dimensions using the centralized calculator
+  // This handles dynamic aspect ratios and enforces minimum dimensions
+  const frameCalculation = useMemo(() => {
+    return calculateFrameDimensions(slot);
+  }, [slot]);
 
-  const cornerSize = Math.min(frameDimensions.width, frameDimensions.height) * 0.08;
+  const cornerSize = Math.min(frameCalculation.width, frameCalculation.height) * 0.08;
   const cornerThickness = 3;
+
+  // Use fully opaque black when showing preview to completely hide camera
+  const overlayOpacity = previewUri ? 1.0 : 0.5;
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Semi-transparent overlay around the frame */}
+      {/* Semi-transparent (or opaque when preview) overlay around the frame */}
       <View style={styles.overlayContainer}>
         {/* Top dark area */}
-        <View style={[styles.darkArea, { flex: 1 }]} />
+        <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
         
         {/* Middle row with frame */}
         <View style={styles.middleRow}>
           {/* Left dark area */}
-          <View style={[styles.darkArea, { flex: 1 }]} />
+          <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
           
-          {/* Clear frame area */}
+          {/* Frame area - shows either camera view or captured image */}
           <View 
             style={[
               styles.frameArea, 
               { 
-                width: frameDimensions.width, 
-                height: frameDimensions.height 
+                width: frameCalculation.width, 
+                height: frameCalculation.height 
               }
             ]}
           >
+            {/* Preview image inside frame (when captured) */}
+            {previewUri && (
+              <Image
+                source={{ uri: previewUri }}
+                style={StyleSheet.absoluteFillObject}
+                contentFit="cover"
+              />
+            )}
+            
             {/* Frame border */}
-            <View style={styles.frameBorder}>
+            <View style={[styles.frameBorder, previewUri && styles.frameBorderPreview]}>
               {showCorners && (
                 <>
                   {/* Top-left corner - bars point right and down */}
@@ -109,11 +105,11 @@ export function FrameOverlay({ slot, label, showCorners = true }: FrameOverlayPr
           </View>
           
           {/* Right dark area */}
-          <View style={[styles.darkArea, { flex: 1 }]} />
+          <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
         </View>
         
         {/* Bottom dark area */}
-        <View style={[styles.darkArea, { flex: 1 }]} />
+        <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
       </View>
     </View>
   );
@@ -136,12 +132,17 @@ const styles = StyleSheet.create({
   },
   frameArea: {
     position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 4,
   },
   frameBorder: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
     borderRadius: 4,
+  },
+  frameBorderPreview: {
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
   corner: {
     position: 'absolute',
@@ -191,4 +192,3 @@ const styles = StyleSheet.create({
 });
 
 export default FrameOverlay;
-
