@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -9,16 +9,22 @@ import { ImagePlus, ChevronLeft } from "lucide-react-native";
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
+import { FrameOverlay } from "@/components/FrameOverlay";
+import { processImageForSlot } from "@/utils/imageProcessing";
 
 export default function BeforeScreen() {
   const router = useRouter();
-  const { setBeforeMedia } = useApp();
+  const { currentProject, setBeforeMedia } = useApp();
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [isProcessing, setIsProcessing] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
   const isCapturingRef = useRef(false);
+
+  // Get the before slot from the selected template
+  const beforeSlot = currentProject.template?.beforeSlot;
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -27,8 +33,57 @@ export default function BeforeScreen() {
     };
   }, []);
 
+  // If no template is selected, go back
+  useEffect(() => {
+    if (!currentProject.template) {
+      Toast.show({
+        type: 'error',
+        text1: 'No template selected',
+        text2: 'Please select a template first',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      router.back();
+    }
+  }, [currentProject.template, router]);
+
+  const processAndSetImage = useCallback(async (uri: string, width: number, height: number) => {
+    if (!beforeSlot) return;
+    
+    setIsProcessing(true);
+    try {
+      // Process the image to match the slot dimensions
+      const processed = await processImageForSlot(uri, width, height, beforeSlot);
+      
+      if (isMountedRef.current) {
+        setPreviewUri(processed.uri);
+        setImageSize({ width: processed.width, height: processed.height });
+        Toast.show({
+          type: 'success',
+          text1: 'Photo captured',
+          text2: `Cropped to ${processed.width}x${processed.height}`,
+          position: 'top',
+          visibilityTime: 2000,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to process image:', error);
+      if (isMountedRef.current) {
+        Toast.show({
+          type: 'error',
+          text1: 'Processing failed',
+          text2: 'Please try again',
+          position: 'top',
+          visibilityTime: 2000,
+        });
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [beforeSlot]);
+
   const handleCapture = useCallback(async () => {
-    if (!cameraRef.current || isCapturingRef.current) return;
+    if (!cameraRef.current || isCapturingRef.current || !beforeSlot) return;
 
     isCapturingRef.current = true;
 
@@ -38,15 +93,7 @@ export default function BeforeScreen() {
       });
 
       if (photo && isMountedRef.current) {
-        setPreviewUri(photo.uri);
-        setImageSize({ width: photo.width, height: photo.height });
-        Toast.show({
-          type: 'success',
-          text1: 'Photo captured',
-          text2: 'Review and continue',
-          position: 'top',
-          visibilityTime: 2000,
-        });
+        await processAndSetImage(photo.uri, photo.width, photo.height);
       }
     } catch (error) {
       console.error('Failed to take picture:', error);
@@ -62,9 +109,11 @@ export default function BeforeScreen() {
     } finally {
       isCapturingRef.current = false;
     }
-  }, []);
+  }, [beforeSlot, processAndSetImage]);
 
   const handleImport = useCallback(async () => {
+    if (!beforeSlot) return;
+    
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.9,
@@ -73,17 +122,9 @@ export default function BeforeScreen() {
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      setPreviewUri(asset.uri);
-      setImageSize({ width: asset.width, height: asset.height });
-      Toast.show({
-        type: 'success',
-        text1: 'Photo imported',
-        text2: 'Review and continue',
-        position: 'top',
-        visibilityTime: 2000,
-      });
+      await processAndSetImage(asset.uri, asset.width, asset.height);
     }
-  }, []);
+  }, [beforeSlot, processAndSetImage]);
 
   const handleContinue = useCallback(() => {
     if (previewUri) {
@@ -100,6 +141,16 @@ export default function BeforeScreen() {
     setPreviewUri(null);
   }, []);
 
+  // Processing overlay
+  if (isProcessing) {
+    return (
+      <View style={styles.processingContainer}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+        <Text style={styles.processingText}>Processing image...</Text>
+      </View>
+    );
+  }
+
   if (previewUri) {
     return (
       <View style={styles.container}>
@@ -113,7 +164,9 @@ export default function BeforeScreen() {
             <TouchableOpacity style={styles.backButton} onPress={handleRetake}>
               <ChevronLeft size={24} color={Colors.light.surface} />
             </TouchableOpacity>
-            <View style={{ width: 40 }} />
+            <View style={styles.dimensionBadge}>
+              <Text style={styles.dimensionText}>{imageSize.width}x{imageSize.height}</Text>
+            </View>
           </View>
           
           <View style={styles.previewActions}>
@@ -149,6 +202,14 @@ export default function BeforeScreen() {
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back">
+        {/* Frame overlay based on template's beforeSlot dimensions */}
+        {beforeSlot && (
+          <FrameOverlay 
+            slot={beforeSlot} 
+            label={`Before: ${beforeSlot.width}x${beforeSlot.height}`}
+          />
+        )}
+        
         <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
           <View style={styles.topBar}>
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -182,6 +243,17 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
+  },
+  processingContainer: {
+    flex: 1,
+    backgroundColor: Colors.light.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  processingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: Colors.light.surface,
   },
   permissionContainer: {
     flex: 1,
@@ -278,6 +350,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 12,
+  },
+  dimensionBadge: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  dimensionText: {
+    color: Colors.light.surface,
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   previewActions: {
     flexDirection: 'row',

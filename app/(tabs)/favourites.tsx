@@ -6,6 +6,7 @@ import { Star, Heart } from "lucide-react-native";
 import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
+import { Template } from "@/types";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -15,16 +16,16 @@ const TILE_HEIGHT = TILE_WIDTH * 1.3;
 
 export default function FavouritesScreen() {
   const router = useRouter();
-  const { favouriteThemes, selectTheme, toggleFavourite } = useApp();
+  const { favouriteTemplates, selectTemplate, toggleFavourite } = useApp();
 
-  const handleThemeSelect = useCallback((themeId: string) => {
-    selectTheme(themeId);
-    router.push('/capture/before');
-  }, [selectTheme, router]);
+  const handleTemplateSelect = useCallback((template: Template) => {
+    selectTemplate(template);
+    router.push('/editor');
+  }, [selectTemplate, router]);
 
-  const handleToggleFavourite = useCallback((e: any, themeId: string) => {
+  const handleToggleFavourite = useCallback((e: any, templateId: string) => {
     e.stopPropagation();
-    toggleFavourite(themeId);
+    toggleFavourite(templateId);
   }, [toggleFavourite]);
 
   return (
@@ -33,14 +34,14 @@ export default function FavouritesScreen() {
         <Text style={styles.title}>Favourites</Text>
       </View>
 
-      {favouriteThemes.length === 0 ? (
+      {favouriteTemplates.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
             <Heart size={48} color={Colors.light.textTertiary} />
           </View>
           <Text style={styles.emptyTitle}>No favourites yet</Text>
           <Text style={styles.emptyText}>
-            Star themes you love for quick access
+            Star templates you love for quick access
           </Text>
         </View>
       ) : (
@@ -50,21 +51,27 @@ export default function FavouritesScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.grid}>
-            {favouriteThemes.map((theme) => (
+            {favouriteTemplates.map((template) => (
               <Pressable
-                key={theme.id}
-                style={styles.themeTile}
-                onPress={() => handleThemeSelect(theme.id)}
+                key={template.id}
+                style={styles.templateTile}
+                onPress={() => handleTemplateSelect(template)}
               >
                 <Image
-                  source={{ uri: theme.thumbnail }}
-                  style={styles.themeThumbnail}
+                  source={{ uri: template.thumbnail }}
+                  style={styles.templateThumbnail}
                   contentFit="cover"
                   transition={200}
                 />
+                {/* Template info badge */}
+                <View style={styles.templateInfoBadge}>
+                  <Text style={styles.templateInfoText}>
+                    {template.canvasWidth}x{template.canvasHeight}
+                  </Text>
+                </View>
                 <TouchableOpacity
                   style={[styles.favouriteButton, styles.favouriteButtonActive]}
-                  onPress={(e) => handleToggleFavourite(e, theme.id)}
+                  onPress={(e) => handleToggleFavourite(e, template.id)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Star
@@ -73,6 +80,12 @@ export default function FavouritesScreen() {
                     fill={Colors.light.accent}
                   />
                 </TouchableOpacity>
+                {/* Template name */}
+                <View style={styles.templateNameContainer}>
+                  <Text style={styles.templateName} numberOfLines={1}>
+                    {template.name}
+                  </Text>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -137,16 +150,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: GRID_GAP,
   },
-  themeTile: {
+  templateTile: {
     width: TILE_WIDTH,
     height: TILE_HEIGHT,
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
   },
-  themeThumbnail: {
+  templateThumbnail: {
     width: '100%',
     height: '100%',
+  },
+  templateInfoBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  templateInfoText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
   },
   favouriteButton: {
     position: 'absolute',
@@ -161,5 +188,19 @@ const styles = StyleSheet.create({
   },
   favouriteButtonActive: {
     backgroundColor: Colors.light.surface,
+  },
+  templateNameContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  templateName: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
   },
 });

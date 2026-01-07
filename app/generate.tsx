@@ -70,7 +70,7 @@ export default function GenerateScreen() {
       id: Date.now().toString(),
       type: currentProject.contentType as 'single' | 'carousel',
       projectId: Date.now().toString(),
-      themeId: currentProject.themeId || '',
+      themeId: currentProject.template?.id || '',
       thumbnailUri: currentProject.afterMedia?.uri || '',
       outputUris: currentProject.contentType === 'carousel' 
         ? [

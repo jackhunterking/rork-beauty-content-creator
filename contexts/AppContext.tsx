@@ -2,11 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Theme, SavedAsset, BrandKit, ContentType, MediaAsset } from '@/types';
-import { mockThemes } from '@/mocks/themes';
+import { Template, SavedAsset, BrandKit, ContentType, MediaAsset } from '@/types';
+import { fetchTemplates, toggleTemplateFavourite } from '@/services/templateService';
 
 const STORAGE_KEYS = {
-  THEMES: 'beauty_themes',
   LIBRARY: 'beauty_library',
   CREDITS: 'beauty_credits',
   BRAND_KIT: 'beauty_brand_kit',
@@ -15,7 +14,7 @@ const STORAGE_KEYS = {
 export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   
-  const [themes, setThemes] = useState<Theme[]>(mockThemes);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [library, setLibrary] = useState<SavedAsset[]>([]);
   const [credits, setCredits] = useState<number>(50);
   const [brandKit, setBrandKit] = useState<BrandKit>({
@@ -23,28 +22,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
     addDisclaimer: false,
   });
 
+  // Current project now stores the full template object instead of just themeId
   const [currentProject, setCurrentProject] = useState<{
     contentType: ContentType;
-    themeId: string | null;
+    template: Template | null;
     beforeMedia: MediaAsset | null;
     afterMedia: MediaAsset | null;
   }>({
     contentType: 'single',
-    themeId: null,
+    template: null,
     beforeMedia: null,
     afterMedia: null,
   });
 
-  const themesQuery = useQuery({
-    queryKey: ['themes'],
-    queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.THEMES);
-      if (stored) {
-        return JSON.parse(stored) as Theme[];
-      }
-      await AsyncStorage.setItem(STORAGE_KEYS.THEMES, JSON.stringify(mockThemes));
-      return mockThemes;
-    },
+  // Fetch templates from Supabase
+  const templatesQuery = useQuery({
+    queryKey: ['templates'],
+    queryFn: fetchTemplates,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
   const libraryQuery = useQuery({
@@ -75,8 +70,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   });
 
   useEffect(() => {
-    if (themesQuery.data) setThemes(themesQuery.data);
-  }, [themesQuery.data]);
+    if (templatesQuery.data) setTemplates(templatesQuery.data);
+  }, [templatesQuery.data]);
 
   useEffect(() => {
     if (libraryQuery.data) setLibrary(libraryQuery.data);
@@ -90,17 +85,22 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (brandKitQuery.data) setBrandKit(brandKitQuery.data);
   }, [brandKitQuery.data]);
 
+  // Toggle favourite - updates both Supabase and local state
   const toggleFavouriteMutation = useMutation({
-    mutationFn: async (themeId: string) => {
-      const updated = themes.map(t => 
-        t.id === themeId ? { ...t, isFavourite: !t.isFavourite } : t
+    mutationFn: async (templateId: string) => {
+      const template = templates.find(t => t.id === templateId);
+      if (!template) throw new Error('Template not found');
+      
+      const newFavouriteState = !template.isFavourite;
+      await toggleTemplateFavourite(templateId, newFavouriteState);
+      
+      return templates.map(t => 
+        t.id === templateId ? { ...t, isFavourite: newFavouriteState } : t
       );
-      await AsyncStorage.setItem(STORAGE_KEYS.THEMES, JSON.stringify(updated));
-      return updated;
     },
     onSuccess: (data) => {
-      setThemes(data);
-      queryClient.invalidateQueries({ queryKey: ['themes'] });
+      setTemplates(data);
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
     },
   });
 
@@ -152,18 +152,27 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  const favouriteThemes = useMemo(() => 
-    themes.filter(t => t.isFavourite), 
-    [themes]
+  const favouriteTemplates = useMemo(() => 
+    templates.filter(t => t.isFavourite), 
+    [templates]
   );
 
   const setContentType = useCallback((type: ContentType) => {
     setCurrentProject(prev => ({ ...prev, contentType: type }));
   }, []);
 
-  const selectTheme = useCallback((themeId: string) => {
-    setCurrentProject(prev => ({ ...prev, themeId }));
+  // Select template - stores the full template object with slot specs
+  const selectTemplate = useCallback((template: Template) => {
+    setCurrentProject(prev => ({ ...prev, template }));
   }, []);
+
+  // Legacy support: select by ID (finds template from list)
+  const selectTemplateById = useCallback((templateId: string) => {
+    const template = templates.find(t => t.id === templateId);
+    if (template) {
+      setCurrentProject(prev => ({ ...prev, template }));
+    }
+  }, [templates]);
 
   const setBeforeMedia = useCallback((media: MediaAsset | null) => {
     setCurrentProject(prev => ({ ...prev, beforeMedia: media }));
@@ -176,7 +185,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const resetProject = useCallback(() => {
     setCurrentProject({
       contentType: 'single',
-      themeId: null,
+      template: null,
       beforeMedia: null,
       afterMedia: null,
     });
@@ -187,20 +196,26 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [currentProject.contentType]);
 
   return {
-    themes,
-    favouriteThemes,
+    // Templates (renamed from themes)
+    templates,
+    favouriteTemplates,
+    
+    // Other state
     library,
     credits,
     brandKit,
     currentProject,
-    isLoading: themesQuery.isLoading || libraryQuery.isLoading,
+    isLoading: templatesQuery.isLoading || libraryQuery.isLoading,
+    
+    // Actions
     toggleFavourite: (id: string) => toggleFavouriteMutation.mutate(id),
     saveToLibrary: (asset: SavedAsset) => saveToLibraryMutation.mutate(asset),
     deleteFromLibrary: (id: string) => deleteFromLibraryMutation.mutate(id),
     spendCredits: (amount: number) => spendCreditsMutation.mutate(amount),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,
-    selectTheme,
+    selectTemplate,
+    selectTemplateById,
     setBeforeMedia,
     setAfterMedia,
     resetProject,

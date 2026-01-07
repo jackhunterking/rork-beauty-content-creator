@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Pressable } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Pressable, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -6,7 +6,7 @@ import { Star, Image as ImageIcon, Layers, Video } from "lucide-react-native";
 import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
-import { ContentType } from "@/types";
+import { ContentType, Template } from "@/types";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -22,21 +22,21 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
 
 export default function CreateScreen() {
   const router = useRouter();
-  const { themes, currentProject, setContentType, selectTheme, toggleFavourite } = useApp();
+  const { templates, currentProject, setContentType, selectTemplate, toggleFavourite, isLoading } = useApp();
 
   const handleContentTypeSelect = useCallback((type: ContentType) => {
     if (type === 'video' || type === 'carousel') return;
     setContentType(type);
   }, [setContentType]);
 
-  const handleThemeSelect = useCallback((themeId: string) => {
-    selectTheme(themeId);
-    router.push('/capture/before');
-  }, [selectTheme, router]);
+  const handleTemplateSelect = useCallback((template: Template) => {
+    selectTemplate(template);
+    router.push('/editor');
+  }, [selectTemplate, router]);
 
-  const handleToggleFavourite = useCallback((e: any, themeId: string) => {
+  const handleToggleFavourite = useCallback((e: any, templateId: string) => {
     e.stopPropagation();
-    toggleFavourite(themeId);
+    toggleFavourite(templateId);
   }, [toggleFavourite]);
 
   return (
@@ -75,39 +75,58 @@ export default function CreateScreen() {
         ))}
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.gridContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.grid}>
-          {themes.map((theme) => (
-            <Pressable
-              key={theme.id}
-              style={styles.themeTile}
-              onPress={() => handleThemeSelect(theme.id)}
-            >
-              <Image
-                source={{ uri: theme.thumbnail }}
-                style={styles.themeThumbnail}
-                contentFit="cover"
-                transition={200}
-              />
-              <TouchableOpacity
-                style={[styles.favouriteButton, theme.isFavourite && styles.favouriteButtonActive]}
-                onPress={(e) => handleToggleFavourite(e, theme.id)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Star
-                  size={16}
-                  color={theme.isFavourite ? Colors.light.accent : Colors.light.surface}
-                  fill={theme.isFavourite ? Colors.light.accent : 'transparent'}
-                />
-              </TouchableOpacity>
-            </Pressable>
-          ))}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.light.accent} />
+          <Text style={styles.loadingText}>Loading templates...</Text>
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={styles.gridContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.grid}>
+            {templates.map((template) => (
+              <Pressable
+                key={template.id}
+                style={styles.templateTile}
+                onPress={() => handleTemplateSelect(template)}
+              >
+                <Image
+                  source={{ uri: template.thumbnail }}
+                  style={styles.templateThumbnail}
+                  contentFit="cover"
+                  transition={200}
+                />
+                {/* Template info badge */}
+                <View style={styles.templateInfoBadge}>
+                  <Text style={styles.templateInfoText}>
+                    {template.canvasWidth}x{template.canvasHeight}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}
+                  onPress={(e) => handleToggleFavourite(e, template.id)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Star
+                    size={16}
+                    color={template.isFavourite ? Colors.light.accent : Colors.light.surface}
+                    fill={template.isFavourite ? Colors.light.accent : 'transparent'}
+                  />
+                </TouchableOpacity>
+                {/* Template name */}
+                <View style={styles.templateNameContainer}>
+                  <Text style={styles.templateName} numberOfLines={1}>
+                    {template.name}
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -180,6 +199,16 @@ const styles = StyleSheet.create({
     color: Colors.light.surface,
     textTransform: 'uppercase',
   },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
   scrollView: {
     flex: 1,
   },
@@ -192,16 +221,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: GRID_GAP,
   },
-  themeTile: {
+  templateTile: {
     width: TILE_WIDTH,
     height: TILE_HEIGHT,
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
   },
-  themeThumbnail: {
+  templateThumbnail: {
     width: '100%',
     height: '100%',
+  },
+  templateInfoBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  templateInfoText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
   },
   favouriteButton: {
     position: 'absolute',
@@ -216,5 +259,19 @@ const styles = StyleSheet.create({
   },
   favouriteButtonActive: {
     backgroundColor: Colors.light.surface,
+  },
+  templateNameContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  templateName: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
   },
 });
