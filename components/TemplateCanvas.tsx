@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Dimensions, Text } from 'react-native';
+import { View, StyleSheet, Dimensions, Text, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { Template, CapturedImages } from '@/types';
+import { Template, CapturedImages, SlotStates } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
@@ -13,22 +13,36 @@ const MAX_CANVAS_WIDTH = SCREEN_WIDTH - CANVAS_PADDING * 2;
 interface TemplateCanvasProps {
   template: Template;
   capturedImages: CapturedImages;
+  slotStates?: SlotStates;
   onSlotPress: (slotId: string) => void;
+  onSlotRetry?: (slotId: string) => void;
+  composedPreviewUri?: string | null;
+  isComposing?: boolean;
 }
 
 /**
  * TemplateCanvas - Renders template preview with dynamic slot regions
  * 
+ * Modes:
+ * 1. Editing mode: Shows individual slots with their states
+ * 2. Composed mode: Shows the final rendered image from Templated.io
+ * 
+ * Features:
  * - Uses framePreviewUrl (clean background without slot content) when available
  * - Falls back to templatedPreviewUrl or thumbnail
  * - Renders SlotRegion for each slot extracted from layers_json
  * - Supports any number of slots (not limited to before/after)
  * - Scales everything proportionally to fit the screen
+ * - Per-slot loading states
  */
 export function TemplateCanvas({
   template,
   capturedImages,
+  slotStates = {},
   onSlotPress,
+  onSlotRetry,
+  composedPreviewUri,
+  isComposing = false,
 }: TemplateCanvasProps) {
   // Calculate display dimensions to fit canvas on screen
   const { displayWidth, displayHeight } = useMemo(() => {
@@ -66,6 +80,9 @@ export function TemplateCanvas({
   // framePreviewUrl provides a clean background where slot areas are transparent/hidden
   const backgroundUrl = template.framePreviewUrl || template.templatedPreviewUrl || template.thumbnail;
 
+  // Check if we should show composed preview
+  const showComposedPreview = composedPreviewUri && !isComposing;
+
   return (
     <View style={styles.wrapper}>
       <View
@@ -77,23 +94,52 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Background image - ideally framePreviewUrl without slot content */}
-        <Image
-          source={{ uri: backgroundUrl }}
-          style={styles.previewImage}
-          contentFit="cover"
-          transition={200}
-        />
-
-        {/* Dynamic slot regions */}
-        {scaledSlots.map(slot => (
-          <SlotRegion
-            key={slot.layerId}
-            slot={slot}
-            capturedUri={capturedImages[slot.layerId]?.uri || null}
-            onPress={() => onSlotPress(slot.layerId)}
+        {/* Composed Preview Mode */}
+        {showComposedPreview ? (
+          <Image
+            source={{ uri: composedPreviewUri }}
+            style={styles.previewImage}
+            contentFit="cover"
+            transition={300}
           />
-        ))}
+        ) : (
+          <>
+            {/* Background image - ideally framePreviewUrl without slot content */}
+            <Image
+              source={{ uri: backgroundUrl }}
+              style={styles.previewImage}
+              contentFit="cover"
+              transition={200}
+            />
+
+            {/* Dynamic slot regions with per-slot states */}
+            {scaledSlots.map(slot => {
+              const slotState = slotStates[slot.layerId] || { state: 'empty' };
+              const capturedUri = capturedImages[slot.layerId]?.uri || null;
+              
+              return (
+                <SlotRegion
+                  key={slot.layerId}
+                  slot={slot}
+                  state={slotState.state}
+                  capturedUri={capturedUri}
+                  onPress={() => onSlotPress(slot.layerId)}
+                  onRetry={onSlotRetry ? () => onSlotRetry(slot.layerId) : undefined}
+                  errorMessage={slotState.errorMessage}
+                  progress={slotState.progress}
+                />
+              );
+            })}
+          </>
+        )}
+
+        {/* Composing Overlay */}
+        {isComposing && (
+          <View style={styles.composingOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.composingText}>Generating preview...</Text>
+          </View>
+        )}
       </View>
 
       {/* Template info */}
@@ -127,6 +173,18 @@ const styles = StyleSheet.create({
   },
   previewImage: {
     ...StyleSheet.absoluteFillObject,
+  },
+  composingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  composingText: {
+    marginTop: 16,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#FFFFFF',
   },
   infoContainer: {
     marginTop: 16,

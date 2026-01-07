@@ -1,12 +1,12 @@
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Coins, Palette, User, ChevronRight, CreditCard } from "lucide-react-native";
+import { Palette, User, ChevronRight, Crown, Check } from "lucide-react-native";
 import React from "react";
 import Colors from "@/constants/colors";
-import { useApp } from "@/contexts/AppContext";
 
 export default function SettingsScreen() {
-  const { credits } = useApp();
+  // Subscription status - will be connected to actual subscription service later
+  const isSubscribed = false;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -19,25 +19,61 @@ export default function SettingsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Subscription Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Credits & Billing</Text>
+          <Text style={styles.sectionTitle}>Subscription</Text>
           <View style={styles.card}>
-            <View style={styles.creditsRow}>
-              <View style={styles.creditsIcon}>
-                <Coins size={24} color={Colors.light.accent} />
+            {isSubscribed ? (
+              // Active subscription view
+              <View style={styles.subscriptionActive}>
+                <View style={styles.subscriptionIcon}>
+                  <Crown size={24} color={Colors.light.accent} />
+                </View>
+                <View style={styles.subscriptionInfo}>
+                  <Text style={styles.subscriptionStatus}>Pro Member</Text>
+                  <Text style={styles.subscriptionDetail}>Unlimited access to all features</Text>
+                </View>
+                <View style={styles.activeBadge}>
+                  <Check size={14} color={Colors.light.success} />
+                  <Text style={styles.activeBadgeText}>Active</Text>
+                </View>
               </View>
-              <View style={styles.creditsInfo}>
-                <Text style={styles.creditsBalance}>{credits}</Text>
-                <Text style={styles.creditsLabel}>Credits available</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.buyButton} activeOpacity={0.8}>
-              <CreditCard size={18} color={Colors.light.surface} />
-              <Text style={styles.buyButtonText}>Buy Credits</Text>
-            </TouchableOpacity>
+            ) : (
+              // Upgrade prompt view
+              <>
+                <View style={styles.upgradePrompt}>
+                  <View style={styles.subscriptionIcon}>
+                    <Crown size={24} color={Colors.light.textSecondary} />
+                  </View>
+                  <View style={styles.subscriptionInfo}>
+                    <Text style={styles.subscriptionStatus}>Free Plan</Text>
+                    <Text style={styles.subscriptionDetail}>Upgrade to unlock unlimited access</Text>
+                  </View>
+                </View>
+                <View style={styles.featuresList}>
+                  <View style={styles.featureItem}>
+                    <Check size={16} color={Colors.light.success} />
+                    <Text style={styles.featureText}>Unlimited downloads</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Check size={16} color={Colors.light.success} />
+                    <Text style={styles.featureText}>All templates included</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <Check size={16} color={Colors.light.success} />
+                    <Text style={styles.featureText}>Theme customization</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={styles.upgradeButton} activeOpacity={0.8}>
+                  <Crown size={18} color={Colors.light.surface} />
+                  <Text style={styles.upgradeButtonText}>Upgrade to Pro</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
 
+        {/* Brand Kit Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Brand Kit</Text>
@@ -91,6 +127,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.card}>
@@ -109,6 +146,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* AI Rules Section */}
         <View style={styles.aiRulesSection}>
           <Text style={styles.aiRulesTitle}>Clinic-Safe Processing</Text>
           <Text style={styles.aiRulesText}>
@@ -159,6 +197,8 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
+    marginLeft: 4,
   },
   comingSoonBadge: {
     backgroundColor: Colors.light.accent,
@@ -183,13 +223,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
   },
-  creditsRow: {
+  
+  // Subscription styles
+  subscriptionActive: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 14,
   },
-  creditsIcon: {
+  upgradePrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+  },
+  subscriptionIcon: {
     width: 52,
     height: 52,
     borderRadius: 26,
@@ -197,21 +245,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  creditsInfo: {
+  subscriptionInfo: {
     flex: 1,
   },
-  creditsBalance: {
-    fontSize: 32,
+  subscriptionStatus: {
+    fontSize: 18,
     fontWeight: '700' as const,
     color: Colors.light.text,
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
-  creditsLabel: {
+  subscriptionDetail: {
     fontSize: 14,
     color: Colors.light.textSecondary,
     marginTop: 2,
   },
-  buyButton: {
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(90, 171, 97, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  activeBadgeText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.light.success,
+  },
+  featuresList: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  featureText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  upgradeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -222,11 +298,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
   },
-  buyButtonText: {
+  upgradeButtonText: {
     fontSize: 15,
     fontWeight: '600' as const,
     color: Colors.light.surface,
   },
+  
+  // Settings row styles
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',

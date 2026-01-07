@@ -15,12 +15,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useNavigation } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Toast from 'react-native-toast-message';
-import { Save, Sparkles } from 'lucide-react-native';
+import { Save, Download, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
+import { SlotState, SlotStates } from '@/types';
 
 export default function EditorScreen() {
   const router = useRouter();
@@ -37,16 +38,44 @@ export default function EditorScreen() {
   
   // Track if we should allow navigation (after user confirms)
   const allowNavigationRef = useRef(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Per-slot state tracking
+  const [slotStates, setSlotStates] = useState<SlotStates>({});
+  
+  // Composed preview state
+  const [composedPreviewUri, setComposedPreviewUri] = useState<string | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
 
   // Extract slots from template
   const slots = useMemo(() => 
     template ? extractSlots(template) : [], 
     [template]
   );
+  
+  // Initialize slot states
+  useEffect(() => {
+    if (slots.length > 0) {
+      const initialStates: SlotStates = {};
+      slots.forEach(slot => {
+        const hasCaptured = capturedImages[slot.layerId]?.uri;
+        initialStates[slot.layerId] = {
+          state: hasCaptured ? 'ready' : 'empty',
+        };
+      });
+      setSlotStates(initialStates);
+    }
+  }, [slots, capturedImages]);
+
+  // Set a specific slot's state
+  const setSlotState = useCallback((slotId: string, state: SlotState, errorMessage?: string, progress?: number) => {
+    setSlotStates(prev => ({
+      ...prev,
+      [slotId]: { state, errorMessage, progress },
+    }));
+  }, []);
 
   // Check if all slots have been captured
-  const canGenerate = useMemo(() => 
+  const canDownload = useMemo(() => 
     allSlotsCaptured(slots, capturedImages),
     [slots, capturedImages]
   );
@@ -185,7 +214,8 @@ export default function EditorScreen() {
         return;
       }
 
-      setIsProcessing(true);
+      // Set processing state for this slot only
+      setSlotState(slotId, 'processing');
 
       try {
         const processed = await processImageForDimensions(
@@ -202,34 +232,37 @@ export default function EditorScreen() {
           height: processed.height,
         });
 
+        // Set ready state
+        setSlotState(slotId, 'ready');
+
         Toast.show({
           type: 'success',
           text1: `${slot.label} image added`,
-          text2: `Cropped to ${processed.width}×${processed.height}`,
+          text2: `Ready for preview`,
           position: 'top',
-          visibilityTime: 2000,
+          visibilityTime: 1500,
         });
       } catch (error) {
         console.error('Failed to process image:', error);
+        setSlotState(slotId, 'error', 'Processing failed');
         Toast.show({
           type: 'error',
           text1: 'Processing failed',
           text2: 'Please try again',
           position: 'top',
         });
-      } finally {
-        setIsProcessing(false);
       }
     },
-    [template, slots, setCapturedImage]
+    [template, slots, setCapturedImage, setSlotState]
   );
 
   // Navigate to camera screen for a slot
   const takePhoto = useCallback(
     (slotId: string) => {
+      setSlotState(slotId, 'capturing');
       router.push(`/capture/${slotId}`);
     },
-    [router]
+    [router, setSlotState]
   );
 
   // Choose from library for a slot
@@ -244,9 +277,15 @@ export default function EditorScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         await processImage(asset.uri, asset.width, asset.height, slotId);
+      } else {
+        // User cancelled, reset state if it was empty
+        const currentState = slotStates[slotId]?.state;
+        if (currentState === 'capturing') {
+          setSlotState(slotId, capturedImages[slotId]?.uri ? 'ready' : 'empty');
+        }
       }
     },
-    [processImage]
+    [processImage, slotStates, capturedImages, setSlotState]
   );
 
   // Show action sheet for slot
@@ -254,6 +293,12 @@ export default function EditorScreen() {
     (slotId: string) => {
       const slot = getSlotById(slots, slotId);
       const slotLabel = slot?.label || 'Photo';
+      const currentState = slotStates[slotId]?.state;
+      
+      // Don't allow interaction during loading states
+      if (['processing', 'uploading', 'rendering'].includes(currentState || '')) {
+        return;
+      }
 
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
@@ -283,8 +328,13 @@ export default function EditorScreen() {
         );
       }
     },
-    [slots, takePhoto, chooseFromLibrary]
+    [slots, slotStates, takePhoto, chooseFromLibrary]
   );
+
+  // Retry handler for error state
+  const handleRetry = useCallback((slotId: string) => {
+    handleSlotPress(slotId);
+  }, [handleSlotPress]);
 
   // Actually perform the save operation
   const performSaveDraft = useCallback(async () => {
@@ -359,23 +409,55 @@ export default function EditorScreen() {
     );
   }, [template, capturedCount, performSaveDraft]);
 
-  // Navigate to generate screen
-  const handleGenerate = useCallback(() => {
-    if (!canGenerate) return;
-    router.push('/generate');
-  }, [canGenerate, router]);
+  // Handle download - this will trigger rendering and download
+  const handleDownload = useCallback(async () => {
+    if (!canDownload || !template?.templatedId) {
+      Toast.show({
+        type: 'info',
+        text1: 'Not ready',
+        text2: template?.templatedId 
+          ? 'Add all images first' 
+          : 'Template not configured for rendering',
+        position: 'top',
+      });
+      return;
+    }
+    
+    // TODO: Implement actual download with render
+    // For now, show that it's coming soon
+    Toast.show({
+      type: 'info',
+      text1: 'Download',
+      text2: 'Rendering your image...',
+      position: 'top',
+      visibilityTime: 2000,
+    });
+  }, [canDownload, template]);
+
+  // Handle share
+  const handleShare = useCallback(async () => {
+    if (!canDownload) {
+      Toast.show({
+        type: 'info',
+        text1: 'Not ready',
+        text2: 'Add all images first',
+        position: 'top',
+      });
+      return;
+    }
+    
+    // TODO: Implement actual share with render
+    Toast.show({
+      type: 'info',
+      text1: 'Share',
+      text2: 'Preparing to share...',
+      position: 'top',
+      visibilityTime: 2000,
+    });
+  }, [canDownload]);
 
   if (!template) {
     return null;
-  }
-
-  if (isProcessing) {
-    return (
-      <View style={styles.processingContainer}>
-        <ActivityIndicator size="large" color={Colors.light.accent} />
-        <Text style={styles.processingText}>Processing image...</Text>
-      </View>
-    );
   }
 
   // Generate instruction text based on slot count
@@ -404,8 +486,8 @@ export default function EditorScreen() {
                 <ActivityIndicator size="small" color={Colors.light.accent} />
               ) : (
                 <>
-                  <Save size={22} color={Colors.light.accent} />
-                  <Text style={styles.headerSaveText}>Save Draft</Text>
+                  <Save size={20} color={Colors.light.accent} />
+                  <Text style={styles.headerSaveText}>Save</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -427,11 +509,15 @@ export default function EditorScreen() {
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* Template Canvas with dynamic slots */}
+          {/* Template Canvas with dynamic slots and per-slot states */}
           <TemplateCanvas
             template={template}
             capturedImages={capturedImages}
+            slotStates={slotStates}
             onSlotPress={handleSlotPress}
+            onSlotRetry={handleRetry}
+            composedPreviewUri={composedPreviewUri}
+            isComposing={isComposing}
           />
 
           {/* Instructions */}
@@ -442,19 +528,41 @@ export default function EditorScreen() {
           </View>
         </ScrollView>
 
-        {/* Bottom section */}
+        {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
-          <TouchableOpacity
-            style={[styles.generateButton, !canGenerate && styles.generateButtonDisabled]}
-            onPress={handleGenerate}
-            disabled={!canGenerate}
-            activeOpacity={0.8}
-          >
-            <Sparkles size={20} color={Colors.light.surface} />
-            <Text style={styles.generateButtonText}>
-              {canGenerate ? 'Generate' : `Add all ${slots.length} images to continue`}
+          <View style={styles.actionRow}>
+            {/* Download Button */}
+            <TouchableOpacity
+              style={[styles.actionButton, !canDownload && styles.actionButtonDisabled]}
+              onPress={handleDownload}
+              disabled={!canDownload}
+              activeOpacity={0.8}
+            >
+              <Download size={20} color={canDownload ? Colors.light.surface : Colors.light.textTertiary} />
+              <Text style={[styles.actionButtonText, !canDownload && styles.actionButtonTextDisabled]}>
+                Download
+              </Text>
+            </TouchableOpacity>
+
+            {/* Share Button */}
+            <TouchableOpacity
+              style={[styles.actionButton, styles.actionButtonSecondary, !canDownload && styles.actionButtonDisabled]}
+              onPress={handleShare}
+              disabled={!canDownload}
+              activeOpacity={0.8}
+            >
+              <Share2 size={20} color={canDownload ? Colors.light.text : Colors.light.textTertiary} />
+              <Text style={[styles.actionButtonTextSecondary, !canDownload && styles.actionButtonTextDisabled]}>
+                Share
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {!canDownload && (
+            <Text style={styles.helperText}>
+              Add all {slots.length} images to download or share
             </Text>
-          </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
     </View>
@@ -469,25 +577,14 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  processingContainer: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  processingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: Colors.light.textSecondary,
-  },
   headerSaveButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     padding: 8,
   },
   headerSaveText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: Colors.light.accent,
   },
@@ -528,7 +625,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
-  generateButton: {
+  actionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -537,12 +639,32 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
   },
-  generateButtonDisabled: {
-    backgroundColor: Colors.light.border,
+  actionButtonSecondary: {
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
   },
-  generateButtonText: {
+  actionButtonDisabled: {
+    backgroundColor: Colors.light.border,
+    borderColor: Colors.light.border,
+  },
+  actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.surface,
+  },
+  actionButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  actionButtonTextDisabled: {
+    color: Colors.light.textTertiary,
+  },
+  helperText: {
+    fontSize: 13,
+    color: Colors.light.textTertiary,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });

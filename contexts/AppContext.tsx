@@ -2,15 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages } from '@/types';
+import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 import { extractSlots } from '@/utils/slotParser';
+import { initializeLocalStorage } from '@/services/localStorageService';
 
 const STORAGE_KEYS = {
   WORK: 'beauty_work',
-  CREDITS: 'beauty_credits',
   BRAND_KIT: 'beauty_brand_kit',
 };
 
@@ -29,7 +29,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [work, setWork] = useState<SavedAsset[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [credits, setCredits] = useState<number>(50);
   const [brandKit, setBrandKit] = useState<BrandKit>({
     applyLogoAutomatically: false,
     addDisclaimer: false,
@@ -37,6 +36,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
   
   // Selected format filter ('all' shows all templates)
   const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>('all');
+
+  // Per-slot state management (NEW)
+  const [slotStates, setSlotStatesMap] = useState<SlotStates>({});
+  
+  // Composed preview state (NEW)
+  const [composedPreviewUri, setComposedPreviewUri] = useState<string | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
 
   // Current project stores the template and captured images for each slot
   const [currentProject, setCurrentProject] = useState<{
@@ -57,6 +63,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     draftId: null,
   });
 
+  // Initialize local storage on app start
+  useEffect(() => {
+    initializeLocalStorage().catch(console.error);
+  }, []);
+
   // Sync real-time templates to local state
   useEffect(() => {
     setTemplates(realtimeTemplates);
@@ -67,14 +78,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     queryFn: async () => {
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.WORK);
       return stored ? (JSON.parse(stored) as SavedAsset[]) : [];
-    },
-  });
-
-  const creditsQuery = useQuery({
-    queryKey: ['credits'],
-    queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.CREDITS);
-      return stored ? parseInt(stored, 10) : 50;
     },
   });
 
@@ -89,7 +92,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  // Fetch drafts from Supabase
+  // Fetch drafts from Supabase (legacy - will migrate to local)
   const draftsQuery = useQuery({
     queryKey: ['drafts'],
     queryFn: fetchDrafts,
@@ -99,10 +102,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     if (workQuery.data) setWork(workQuery.data);
   }, [workQuery.data]);
-
-  useEffect(() => {
-    if (creditsQuery.data !== undefined) setCredits(creditsQuery.data);
-  }, [creditsQuery.data]);
 
   useEffect(() => {
     if (brandKitQuery.data) setBrandKit(brandKitQuery.data);
@@ -154,18 +153,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     onSuccess: (data) => {
       setWork(data);
       queryClient.invalidateQueries({ queryKey: ['work'] });
-    },
-  });
-
-  const spendCreditsMutation = useMutation({
-    mutationFn: async (amount: number) => {
-      const newBalance = Math.max(0, credits - amount);
-      await AsyncStorage.setItem(STORAGE_KEYS.CREDITS, String(newBalance));
-      return newBalance;
-    },
-    onSuccess: (data) => {
-      setCredits(data);
-      queryClient.invalidateQueries({ queryKey: ['credits'] });
     },
   });
 
@@ -242,6 +229,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
   // Select template - stores the full template object with slot specs
   // Also resets all captured images and draftId to ensure fresh start
   const selectTemplate = useCallback((template: Template) => {
+    // Initialize slot states for new template
+    const slots = extractSlots(template);
+    const initialSlotStates: SlotStates = {};
+    slots.forEach(slot => {
+      initialSlotStates[slot.layerId] = { state: 'empty' };
+    });
+    setSlotStatesMap(initialSlotStates);
+    setComposedPreviewUri(null);
+    
     setCurrentProject(prev => ({ 
       ...prev, 
       template,
@@ -257,16 +253,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const selectTemplateById = useCallback((templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (template) {
-      setCurrentProject(prev => ({ 
-        ...prev, 
-        template,
-        capturedImages: {},
-        beforeMedia: null,
-        afterMedia: null,
-        draftId: null,
-      }));
+      selectTemplate(template);
     }
-  }, [templates]);
+  }, [templates, selectTemplate]);
+
+  // Set slot state for a specific slot (NEW)
+  const setSlotState = useCallback((slotId: string, state: SlotState, errorMessage?: string, progress?: number) => {
+    setSlotStatesMap(prev => ({
+      ...prev,
+      [slotId]: { state, errorMessage, progress },
+    }));
+  }, []);
 
   // Set captured image for a specific slot by layer ID
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
@@ -277,7 +274,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
         [layerId]: media,
       },
     }));
-  }, []);
+    
+    // Update slot state
+    if (media) {
+      setSlotState(layerId, 'ready');
+    } else {
+      setSlotState(layerId, 'empty');
+    }
+    
+    // Invalidate composed preview when images change
+    setComposedPreviewUri(null);
+  }, [setSlotState]);
 
   // Clear a specific slot
   const clearCapturedImage = useCallback((layerId: string) => {
@@ -290,7 +297,20 @@ export const [AppProvider, useApp] = createContextHook(() => {
       ...prev,
       capturedImages: {},
     }));
-  }, []);
+    
+    // Reset all slot states to empty
+    const template = currentProject.template;
+    if (template) {
+      const slots = extractSlots(template);
+      const resetStates: SlotStates = {};
+      slots.forEach(slot => {
+        resetStates[slot.layerId] = { state: 'empty' };
+      });
+      setSlotStatesMap(resetStates);
+    }
+    
+    setComposedPreviewUri(null);
+  }, [currentProject.template]);
 
   // Legacy: set before media (for backwards compatibility)
   const setBeforeMedia = useCallback((media: MediaAsset | null) => {
@@ -319,6 +339,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       afterMedia: null,
       draftId: null,
     });
+    setSlotStatesMap({});
+    setComposedPreviewUri(null);
   }, []);
 
   // Load a draft into the current project
@@ -329,6 +351,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Build capturedImages from draft data
     const capturedImages: CapturedImages = {};
+    const slotStates: SlotStates = {};
+    
+    // Initialize all slots
+    slots.forEach(slot => {
+      slotStates[slot.layerId] = { state: 'empty' };
+    });
     
     // First, try new format (capturedImageUrls)
     if (draft.capturedImageUrls) {
@@ -340,6 +368,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
             width: slot.width,
             height: slot.height,
           };
+          slotStates[layerId] = { state: 'ready' };
         }
       }
     }
@@ -355,6 +384,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         width: beforeSlot.width,
         height: beforeSlot.height,
       };
+      slotStates[beforeSlot.layerId] = { state: 'ready' };
     }
     
     if (draft.afterImageUrl && afterSlot) {
@@ -363,6 +393,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         width: afterSlot.width,
         height: afterSlot.height,
       };
+      slotStates[afterSlot.layerId] = { state: 'ready' };
     }
     
     // Legacy beforeMedia/afterMedia for backwards compatibility
@@ -377,6 +408,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       width: template.afterSlot.width,
       height: template.afterSlot.height,
     } : null;
+    
+    setSlotStatesMap(slotStates);
+    setComposedPreviewUri(null);
     
     setCurrentProject({
       contentType: 'single',
@@ -393,10 +427,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     queryClient.invalidateQueries({ queryKey: ['drafts'] });
   }, [queryClient]);
 
-  const getCreditCost = useCallback(() => {
-    return currentProject.contentType === 'carousel' ? 3 : 1;
-  }, [currentProject.contentType]);
-
   return {
     // Templates (with real-time updates)
     templates,
@@ -408,18 +438,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
     // Other state
     work,
     drafts,
-    credits,
     brandKit,
     currentProject,
     selectedFormat,
     isLoading: isTemplatesLoading || workQuery.isLoading,
     isDraftsLoading: draftsQuery.isLoading,
     
+    // Slot state management (NEW)
+    slotStates,
+    setSlotState,
+    composedPreviewUri,
+    setComposedPreviewUri,
+    isComposing,
+    setIsComposing,
+    
     // Actions
     toggleFavourite,
     saveToWork: (asset: SavedAsset) => saveToWorkMutation.mutate(asset),
     deleteFromWork: (id: string) => deleteFromWorkMutation.mutate(id),
-    spendCredits: (amount: number) => spendCreditsMutation.mutate(amount),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,
     setFormat,
@@ -435,7 +471,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setBeforeMedia,
     setAfterMedia,
     resetProject,
-    getCreditCost,
     
     // Draft actions
     saveDraft: (params: { 

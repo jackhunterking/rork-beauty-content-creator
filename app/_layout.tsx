@@ -168,20 +168,6 @@ function RootLayoutNav() {
         }} 
       />
       <Stack.Screen 
-        name="generate" 
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
-        name="result" 
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
         name="library/viewer" 
         options={{ 
           headerShown: false,

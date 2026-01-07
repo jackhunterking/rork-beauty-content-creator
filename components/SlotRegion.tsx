@@ -1,27 +1,68 @@
 import React from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+import { TouchableOpacity, StyleSheet, View, Text, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { Slot } from '@/types';
+import { AlertCircle, Plus, RefreshCw } from 'lucide-react-native';
+import { Slot, SlotState } from '@/types';
+import Colors from '@/constants/colors';
 
 interface SlotRegionProps {
   slot: Slot;
+  state: SlotState;
   capturedUri: string | null;
+  renderedUri?: string | null;  // From cache or fresh render
   onPress: () => void;
+  onRetry?: () => void;
+  errorMessage?: string;
+  progress?: number;  // 0-100
 }
 
 /**
- * SlotRegion - Simplified slot touch area for templates
+ * SlotRegion - Interactive slot area with visual states
  * 
- * No UI overlay needed - placeholder buttons are designed in the template itself.
- * When no image is captured, the slot area is transparent, showing the
- * placeholder design from the template's frame preview background.
- * When an image is captured, it fills the entire slot area.
+ * States:
+ * - empty: Shows "+" button to add photo
+ * - capturing: User is taking photo (slot dims slightly)
+ * - processing: Local image processing (spinner)
+ * - uploading: Uploading to Supabase (spinner + progress)
+ * - rendering: Waiting for Templated.io (spinner + progress)
+ * - ready: Shows captured image
+ * - error: Shows error with retry button
  */
-export function SlotRegion({ slot, capturedUri, onPress }: SlotRegionProps) {
+export function SlotRegion({ 
+  slot, 
+  state, 
+  capturedUri, 
+  renderedUri,
+  onPress, 
+  onRetry,
+  errorMessage,
+  progress,
+}: SlotRegionProps) {
+  const isLoading = ['processing', 'uploading', 'rendering'].includes(state);
+  const hasImage = capturedUri || renderedUri;
+  
+  // Get the appropriate image URI
+  const imageUri = renderedUri || capturedUri;
+  
+  // Get loading message based on state
+  const getLoadingMessage = () => {
+    switch (state) {
+      case 'processing':
+        return 'Processing...';
+      case 'uploading':
+        return progress ? `Uploading ${progress}%` : 'Uploading...';
+      case 'rendering':
+        return progress ? `Rendering ${progress}%` : 'Rendering...';
+      default:
+        return '';
+    }
+  };
+  
   return (
     <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.9}
+      onPress={state === 'error' && onRetry ? onRetry : onPress}
+      activeOpacity={isLoading ? 1 : 0.8}
+      disabled={isLoading && state !== 'error'}
       style={[
         styles.container,
         {
@@ -30,17 +71,101 @@ export function SlotRegion({ slot, capturedUri, onPress }: SlotRegionProps) {
           width: slot.width,
           height: slot.height,
         },
+        state === 'capturing' && styles.containerCapturing,
       ]}
     >
-      {/* Show captured image if available, otherwise slot area is transparent
-          (placeholder is visible from frame preview background) */}
-      {capturedUri && (
-        <Image
-          source={{ uri: capturedUri }}
-          style={styles.capturedImage}
-          contentFit="cover"
-          transition={200}
-        />
+      {/* Empty State */}
+      {state === 'empty' && (
+        <View style={styles.emptyState}>
+          <View style={styles.addButton}>
+            <Plus size={24} color={Colors.light.textSecondary} />
+          </View>
+          <Text style={styles.emptyLabel}>{slot.label}</Text>
+        </View>
+      )}
+      
+      {/* Capturing State */}
+      {state === 'capturing' && (
+        <View style={styles.capturingState}>
+          <View style={styles.capturingPulse} />
+          <Text style={styles.capturingText}>Taking photo...</Text>
+        </View>
+      )}
+      
+      {/* Image with Loading Overlay */}
+      {(isLoading || state === 'ready') && hasImage && (
+        <>
+          <Image
+            source={{ uri: imageUri }}
+            style={styles.capturedImage}
+            contentFit="cover"
+            transition={200}
+          />
+          
+          {/* Loading Overlay */}
+          {isLoading && (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+              <Text style={styles.loadingText}>{getLoadingMessage()}</Text>
+            </View>
+          )}
+          
+          {/* Ready State - Tap to Replace indicator */}
+          {state === 'ready' && (
+            <View style={styles.readyOverlay}>
+              <View style={styles.tapIndicator}>
+                <RefreshCw size={12} color="#FFFFFF" />
+                <Text style={styles.tapText}>Tap to replace</Text>
+              </View>
+            </View>
+          )}
+        </>
+      )}
+      
+      {/* Loading without image (edge case) */}
+      {isLoading && !hasImage && (
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={Colors.light.accent} />
+          <Text style={styles.loadingStateText}>{getLoadingMessage()}</Text>
+        </View>
+      )}
+      
+      {/* Error State */}
+      {state === 'error' && (
+        <View style={styles.errorState}>
+          {hasImage && (
+            <Image
+              source={{ uri: imageUri }}
+              style={[styles.capturedImage, styles.errorImage]}
+              contentFit="cover"
+            />
+          )}
+          <View style={styles.errorOverlay}>
+            <AlertCircle size={24} color={Colors.light.error} />
+            <Text style={styles.errorText} numberOfLines={2}>
+              {errorMessage || 'Something went wrong'}
+            </Text>
+            <TouchableOpacity 
+              style={styles.retryButton} 
+              onPress={onRetry}
+              activeOpacity={0.8}
+            >
+              <RefreshCw size={14} color="#FFFFFF" />
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      
+      {/* Slot Label Badge (always visible except in empty state) */}
+      {state !== 'empty' && (
+        <View style={[
+          styles.labelBadge,
+          state === 'error' && styles.labelBadgeError,
+          isLoading && styles.labelBadgeLoading,
+        ]}>
+          <Text style={styles.labelText}>{slot.label}</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -50,12 +175,180 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     overflow: 'hidden',
+    borderRadius: 4,
+    backgroundColor: Colors.light.surfaceSecondary,
   },
+  containerCapturing: {
+    opacity: 0.7,
+  },
+  
+  // Empty State
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    borderStyle: 'dashed',
+    borderRadius: 4,
+  },
+  addButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.light.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  emptyLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.light.textSecondary,
+  },
+  
+  // Capturing State
+  capturingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  capturingPulse: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    marginBottom: 8,
+  },
+  capturingText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  
+  // Captured Image
   capturedImage: {
     width: '100%',
     height: '100%',
   },
+  
+  // Loading Overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  
+  // Loading State (no image)
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  loadingStateText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    fontWeight: '500',
+  },
+  
+  // Ready State Overlay
+  readyOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  tapIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 4,
+  },
+  tapText: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+  
+  // Error State
+  errorState: {
+    flex: 1,
+  },
+  errorImage: {
+    opacity: 0.4,
+  },
+  errorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.error,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    marginTop: 12,
+    gap: 6,
+  },
+  retryText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  
+  // Label Badge
+  labelBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  labelBadgeError: {
+    backgroundColor: Colors.light.error,
+  },
+  labelBadgeLoading: {
+    backgroundColor: Colors.light.accent,
+  },
+  labelText: {
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 });
 
 export default SlotRegion;
-

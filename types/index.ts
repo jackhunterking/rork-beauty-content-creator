@@ -1,13 +1,163 @@
 export type ContentType = 'single' | 'carousel' | 'video';
 export type TemplateFormat = 'square' | 'vertical';
 
-// Legacy Theme interface - kept for backwards compatibility
+// ============================================
+// Slot State Management (NEW)
+// ============================================
+
+/**
+ * State machine for individual slot loading/rendering
+ * Used for per-slot loading indicators in the editor
+ */
+export type SlotState = 
+  | 'empty'           // No photo yet
+  | 'capturing'       // Camera/picker open
+  | 'processing'      // Cropping, resizing locally
+  | 'uploading'       // Uploading to Supabase for API access
+  | 'rendering'       // Waiting for Templated.io
+  | 'ready'           // Photo captured and processed
+  | 'error';          // Something failed
+
+/**
+ * Extended slot state with error info
+ */
+export interface SlotStateInfo {
+  state: SlotState;
+  errorMessage?: string;
+  progress?: number;  // 0-100 for upload/render progress
+}
+
+/**
+ * Map of slot IDs to their current state
+ */
+export type SlotStates = Record<string, SlotStateInfo>;
+
+// ============================================
+// Local Draft System (NEW)
+// ============================================
+
+/**
+ * Local-first draft stored in device file system
+ * Replaces Supabase-based drafts for privacy and offline support
+ */
+export interface LocalDraft {
+  id: string;
+  templateId: string;
+  templatedId?: string;  // Templated.io template ID for rendering
+  createdAt: string;
+  updatedAt: string;
+  
+  // Slot images stored locally
+  // Map of slotId -> relative path within draft folder
+  slots: Record<string, LocalSlotImage>;
+  
+  // Cached renders for different themes
+  // Map of themeId -> relative path to rendered image
+  cachedRenders: Record<string, string>;
+  
+  // Currently selected theme
+  selectedTheme: string;
+  
+  // Optional theme customizations (future)
+  themeCustomizations?: Record<string, ThemeOverride>;
+}
+
+/**
+ * Information about a locally stored slot image
+ */
+export interface LocalSlotImage {
+  localPath: string;      // Full path to image file
+  originalWidth: number;
+  originalHeight: number;
+  capturedAt: string;     // ISO timestamp
+}
+
+/**
+ * Lightweight draft metadata for index/listing
+ */
+export interface LocalDraftIndex {
+  id: string;
+  templateId: string;
+  templateName: string;
+  thumbnailPath?: string;  // Path to first slot image for preview
+  slotCount: number;
+  filledSlotCount: number;
+  hasRender: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================
+// Theme System (NEW - Future Ready)
+// ============================================
+
+/**
+ * Theme definition for template customization
+ * Each template can have multiple themes with different colors
+ */
+export interface TemplateTheme {
+  id: string;
+  name: string;
+  preview: string;  // Color hex or preview image URL
+  
+  // Layer color overrides
+  // Map of layerId -> color value
+  layerColors: Record<string, string>;
+}
+
+/**
+ * User-applied theme customizations
+ */
+export interface ThemeOverride {
+  layerId: string;
+  color?: string;
+  text?: string;
+}
+
+// ============================================
+// Editor State (NEW)
+// ============================================
+
+/**
+ * Current editor/preview state
+ */
+export type EditorState =
+  | 'editing'          // User is adding/changing photos
+  | 'preview_loading'  // Composed preview is being generated
+  | 'preview_ready'    // Full composed image ready to download
+  | 'downloading'      // Saving/sharing in progress
+  | 'error';
+
+/**
+ * Complete editor session state
+ */
+export interface EditorSession {
+  draftId: string;
+  templateId: string;
+  state: EditorState;
+  slotStates: SlotStates;
+  composedPreviewPath?: string;
+  selectedTheme: string;
+  errorMessage?: string;
+}
+
+// ============================================
+// Legacy Theme Interface (Backwards Compatibility)
+// ============================================
+
+/**
+ * @deprecated Use TemplateTheme instead
+ */
 export interface Theme {
   id: string;
   thumbnail: string;
   supports: ContentType[];
   isFavourite: boolean;
 }
+
+// ============================================
+// Slot & Template Types
+// ============================================
 
 // Legacy Image slot with dimensions, position, and placeholder
 // Kept for backwards compatibility - use Slot instead
@@ -79,6 +229,9 @@ export interface Template {
   
   // Source of truth for all layers - slots are extracted from this
   layersJson?: TemplatedLayer[];
+  
+  // Available themes for this template (future)
+  themes?: TemplateTheme[];
 }
 
 // Templated.io layer structure
@@ -132,7 +285,14 @@ export interface TemplateRow {
   layers_json: TemplatedLayer[] | null;
 }
 
-// Draft for save-for-later functionality
+// ============================================
+// Draft Types (Legacy Supabase - for migration)
+// ============================================
+
+/**
+ * @deprecated Use LocalDraft for new implementations
+ * Kept for migration from Supabase-based drafts
+ */
 export interface Draft {
   id: string;
   templateId: string;
@@ -158,6 +318,10 @@ export interface DraftRow {
   created_at: string;
   updated_at: string;
 }
+
+// ============================================
+// Media & Asset Types
+// ============================================
 
 export interface MediaAsset {
   uri: string;
@@ -188,14 +352,25 @@ export interface SavedAsset {
   thumbnailUri: string;
   outputUris: string[];
   createdAt: string;
-  creditCost: number;
+  /** @deprecated Credits removed - subscription model now */
+  creditCost?: number;
 }
 
+// ============================================
+// Credits (DEPRECATED - Subscription Model)
+// ============================================
+
+/**
+ * @deprecated Credits system removed - using subscription model
+ */
 export interface UserCredits {
   balance: number;
   history: CreditTransaction[];
 }
 
+/**
+ * @deprecated Credits system removed - using subscription model
+ */
 export interface CreditTransaction {
   id: string;
   amount: number;
@@ -204,9 +379,37 @@ export interface CreditTransaction {
   timestamp: string;
 }
 
+// ============================================
+// Brand Kit & User Preferences
+// ============================================
+
 export interface BrandKit {
   logoUri?: string;
   primaryColor?: string;
   applyLogoAutomatically: boolean;
   addDisclaimer: boolean;
+}
+
+// ============================================
+// Render Types
+// ============================================
+
+/**
+ * Result from render operation
+ */
+export interface RenderResult {
+  success: boolean;
+  localPath?: string;      // Local cached file path
+  renderUrl?: string;      // Original Templated.io URL
+  fromCache: boolean;      // Whether result came from cache
+  error?: string;
+}
+
+/**
+ * Progress update during render
+ */
+export interface RenderProgress {
+  stage: 'checking_cache' | 'uploading' | 'rendering' | 'downloading' | 'caching' | 'complete' | 'error';
+  progress?: number;  // 0-100
+  message?: string;
 }
