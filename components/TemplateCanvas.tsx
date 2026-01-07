@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, Dimensions, Text, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { Template, CapturedImages, SlotStates } from '@/types';
+import { Template } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
@@ -12,10 +12,7 @@ const MAX_CANVAS_WIDTH = SCREEN_WIDTH - CANVAS_PADDING * 2;
 
 interface TemplateCanvasProps {
   template: Template;
-  capturedImages: CapturedImages;
-  slotStates?: SlotStates;
   onSlotPress: (slotId: string) => void;
-  onSlotRetry?: (slotId: string) => void;
   /** Rendered preview from Templated.io (shown when photos are added) */
   renderedPreviewUri?: string | null;
   /** Whether a render is in progress */
@@ -23,26 +20,16 @@ interface TemplateCanvasProps {
 }
 
 /**
- * TemplateCanvas - Renders template preview with transparent slot regions
+ * TemplateCanvas - Renders template preview with invisible slot tap targets
  * 
- * Architecture:
- * 1. Empty state: Shows template preview (templatedPreviewUrl) with placeholder buttons
- *    - SlotRegions are transparent clickable zones
- *    - User sees the template's designed placeholder buttons
- * 
- * 2. Photos added: Shows rendered preview from Templated.io
- *    - Templated.io handles all layer ordering
- *    - Labels, decorations appear correctly on top of photos
- *    - SlotRegions remain as transparent tap targets for replacing photos
- * 
- * This removes the need for complex overlay/frame logic.
+ * Simple architecture:
+ * 1. Shows template preview initially (templatedPreviewUrl)
+ * 2. When photos are added, shows rendered preview from Templated.io
+ * 3. Slot regions are invisible tap targets - template design shows through
  */
 export function TemplateCanvas({
   template,
-  capturedImages,
-  slotStates = {},
   onSlotPress,
-  onSlotRetry,
   renderedPreviewUri,
   isRendering = false,
 }: TemplateCanvasProps) {
@@ -78,13 +65,8 @@ export function TemplateCanvas({
     );
   }, [template, displayWidth, displayHeight]);
 
-  // Determine which preview to show
-  // If we have a rendered preview from Templated.io, use it
-  // Otherwise show the template preview with placeholder buttons
+  // Preview priority: rendered preview > template preview > thumbnail
   const previewUrl = renderedPreviewUri || template.templatedPreviewUrl || template.thumbnail;
-
-  // Check if any photos have been added
-  const hasPhotos = Object.values(capturedImages).some(img => img?.uri);
 
   return (
     <View style={styles.wrapper}>
@@ -97,7 +79,7 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Template/Rendered Preview Image */}
+        {/* Preview Image */}
         <Image
           source={{ uri: previewUrl }}
           style={styles.previewImage}
@@ -105,33 +87,20 @@ export function TemplateCanvas({
           transition={200}
         />
 
-        {/* Transparent slot regions - clickable zones at slot positions */}
-        {/* These are invisible - the template's placeholder design shows through */}
-        {scaledSlots.map(slot => {
-          const slotState = slotStates[slot.layerId] || { state: 'empty' };
-          const capturedUri = capturedImages[slot.layerId]?.uri || null;
-          
-          return (
-            <SlotRegion
-              key={slot.layerId}
-              slot={slot}
-              state={slotState.state}
-              capturedUri={capturedUri}
-              onPress={() => onSlotPress(slot.layerId)}
-              onRetry={onSlotRetry ? () => onSlotRetry(slot.layerId) : undefined}
-              errorMessage={slotState.errorMessage}
-              progress={slotState.progress}
-              // Show as transparent when we have a rendered preview
-              isTransparent={!!renderedPreviewUri || hasPhotos}
-            />
-          );
-        })}
+        {/* Invisible slot tap targets */}
+        {scaledSlots.map(slot => (
+          <SlotRegion
+            key={slot.layerId}
+            slot={slot}
+            onPress={() => onSlotPress(slot.layerId)}
+          />
+        ))}
 
-        {/* Rendering Overlay */}
+        {/* Rendering Overlay - shown while Templated.io is processing */}
         {isRendering && (
           <View style={styles.renderingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
-            <Text style={styles.renderingText}>Generating preview...</Text>
+            <Text style={styles.renderingText}>Updating preview...</Text>
           </View>
         )}
       </View>
@@ -157,7 +126,7 @@ const styles = StyleSheet.create({
     // Glass UI border effect
     borderWidth: 1,
     borderColor: Colors.light.glassEdge,
-    // Shadow for depth with glass effect
+    // Shadow for depth
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -169,7 +138,7 @@ const styles = StyleSheet.create({
   },
   renderingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 100,

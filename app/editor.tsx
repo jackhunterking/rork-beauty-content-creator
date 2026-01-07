@@ -15,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack, useNavigation } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
 import { Save, Download, Share2 } from 'lucide-react-native';
@@ -24,7 +23,6 @@ import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
-import { SlotState, SlotStates } from '@/types';
 import { renderPreview, renderTemplate } from '@/services/renderService';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 
@@ -44,9 +42,6 @@ export default function EditorScreen() {
   // Track if we should allow navigation (after user confirms)
   const allowNavigationRef = useRef(false);
   
-  // Per-slot state tracking
-  const [slotStates, setSlotStates] = useState<SlotStates>({});
-  
   // Rendered preview state (from Templated.io)
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
@@ -63,28 +58,6 @@ export default function EditorScreen() {
     template ? extractSlots(template) : [], 
     [template]
   );
-  
-  // Initialize slot states
-  useEffect(() => {
-    if (slots.length > 0) {
-      const initialStates: SlotStates = {};
-      slots.forEach(slot => {
-        const hasCaptured = capturedImages[slot.layerId]?.uri;
-        initialStates[slot.layerId] = {
-          state: hasCaptured ? 'ready' : 'empty',
-        };
-      });
-      setSlotStates(initialStates);
-    }
-  }, [slots, capturedImages]);
-
-  // Set a specific slot's state
-  const setSlotState = useCallback((slotId: string, state: SlotState, errorMessage?: string, progress?: number) => {
-    setSlotStates(prev => ({
-      ...prev,
-      [slotId]: { state, errorMessage, progress },
-    }));
-  }, []);
 
   // Check if all slots have been captured
   const canDownload = useMemo(() => 
@@ -128,10 +101,21 @@ export default function EditorScreen() {
         setRenderedPreviewUri(result.renderUrl);
       } else {
         console.warn('Preview render failed:', result.error);
-        // Don't show error toast for preview - just show template
+        Toast.show({
+          type: 'error',
+          text1: 'Preview failed',
+          text2: result.error || 'Could not generate preview',
+          position: 'top',
+        });
       }
     } catch (error) {
       console.error('Preview render error:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Preview error',
+        text2: 'Something went wrong',
+        position: 'top',
+      });
     } finally {
       setIsRendering(false);
     }
@@ -265,9 +249,6 @@ export default function EditorScreen() {
         return;
       }
 
-      // Set processing state for this slot only
-      setSlotState(slotId, 'processing');
-
       try {
         const processed = await processImageForDimensions(
           uri, 
@@ -283,24 +264,12 @@ export default function EditorScreen() {
           height: processed.height,
         });
 
-        // Set ready state
-        setSlotState(slotId, 'ready');
-
-        Toast.show({
-          type: 'success',
-          text1: `${slot.label} image added`,
-          text2: `Generating preview...`,
-          position: 'top',
-          visibilityTime: 1500,
-        });
-
         // Trigger preview render after short delay to allow state update
         setTimeout(() => {
           triggerPreviewRender();
         }, 100);
       } catch (error) {
         console.error('Failed to process image:', error);
-        setSlotState(slotId, 'error', 'Processing failed');
         Toast.show({
           type: 'error',
           text1: 'Processing failed',
@@ -309,16 +278,15 @@ export default function EditorScreen() {
         });
       }
     },
-    [template, slots, setCapturedImage, setSlotState, triggerPreviewRender]
+    [template, slots, setCapturedImage, triggerPreviewRender]
   );
 
   // Navigate to camera screen for a slot
   const takePhoto = useCallback(
     (slotId: string) => {
-      setSlotState(slotId, 'capturing');
       router.push(`/capture/${slotId}`);
     },
-    [router, setSlotState]
+    [router]
   );
 
   // Choose from library for a slot
@@ -333,28 +301,21 @@ export default function EditorScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         await processImage(asset.uri, asset.width, asset.height, slotId);
-      } else {
-        // User cancelled, reset state if it was empty
-        const currentState = slotStates[slotId]?.state;
-        if (currentState === 'capturing') {
-          setSlotState(slotId, capturedImages[slotId]?.uri ? 'ready' : 'empty');
-        }
       }
     },
-    [processImage, slotStates, capturedImages, setSlotState]
+    [processImage]
   );
 
   // Show action sheet for slot
   const handleSlotPress = useCallback(
     (slotId: string) => {
-      const slot = getSlotById(slots, slotId);
-      const slotLabel = slot?.label || 'Photo';
-      const currentState = slotStates[slotId]?.state;
-      
-      // Don't allow interaction during loading states
-      if (['processing', 'uploading', 'rendering'].includes(currentState || '')) {
+      // Don't allow interaction while rendering
+      if (isRendering) {
         return;
       }
+
+      const slot = getSlotById(slots, slotId);
+      const slotLabel = slot?.label || 'Photo';
 
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
@@ -384,13 +345,8 @@ export default function EditorScreen() {
         );
       }
     },
-    [slots, slotStates, takePhoto, chooseFromLibrary]
+    [slots, isRendering, takePhoto, chooseFromLibrary]
   );
-
-  // Retry handler for error state
-  const handleRetry = useCallback((slotId: string) => {
-    handleSlotPress(slotId);
-  }, [handleSlotPress]);
 
   // Actually perform the save operation
   const performSaveDraft = useCallback(async () => {
@@ -677,10 +633,7 @@ export default function EditorScreen() {
           {/* Template Canvas with rendered preview from Templated.io */}
           <TemplateCanvas
             template={template}
-            capturedImages={capturedImages}
-            slotStates={slotStates}
             onSlotPress={handleSlotPress}
-            onSlotRetry={handleRetry}
             renderedPreviewUri={renderedPreviewUri}
             isRendering={isRendering}
           />
