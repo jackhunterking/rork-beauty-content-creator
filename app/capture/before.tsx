@@ -154,21 +154,34 @@ export default function BeforeScreen() {
   if (previewUri) {
     return (
       <View style={styles.container}>
+        {/* Use captured image as background (like camera view) */}
         <Image
           source={{ uri: previewUri }}
-          style={styles.fullPreview}
+          style={styles.camera}
           contentFit="cover"
         />
-        <SafeAreaView style={styles.previewOverlay} edges={['top', 'bottom']}>
-          <View style={styles.previewTopBar}>
+        
+        {/* Keep the same frame overlay */}
+        {beforeSlot && (
+          <FrameOverlay 
+            slot={beforeSlot} 
+            label={`Before: ${beforeSlot.width}x${beforeSlot.height}`}
+          />
+        )}
+        
+        {/* Same UI layout as camera view */}
+        <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
+          <View style={styles.topBar}>
             <TouchableOpacity style={styles.backButton} onPress={handleRetake}>
               <ChevronLeft size={24} color={Colors.light.surface} />
             </TouchableOpacity>
+            <Text style={styles.title}>Before</Text>
             <View style={styles.dimensionBadge}>
               <Text style={styles.dimensionText}>{imageSize.width}x{imageSize.height}</Text>
             </View>
           </View>
-          
+
+          {/* Retake/Continue buttons instead of capture button */}
           <View style={styles.previewActions}>
             <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
               <Text style={styles.retakeText}>Retake</Text>
@@ -332,24 +345,6 @@ const styles = StyleSheet.create({
     height: 62,
     borderRadius: 31,
     backgroundColor: Colors.light.surface,
-  },
-  fullPreview: {
-    flex: 1,
-  },
-  previewOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'space-between',
-  },
-  previewTopBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
   },
   dimensionBadge: {
     backgroundColor: 'rgba(0,0,0,0.5)',

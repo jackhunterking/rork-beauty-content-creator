@@ -73,28 +73,28 @@ export function FrameOverlay({ slot, label, showCorners = true }: FrameOverlayPr
             <View style={styles.frameBorder}>
               {showCorners && (
                 <>
-                  {/* Top-left corner */}
+                  {/* Top-left corner - bars point right and down */}
                   <View style={[styles.corner, styles.cornerTopLeft]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize }]} />
+                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, left: 0 }]} />
+                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, left: 0 }]} />
                   </View>
                   
-                  {/* Top-right corner */}
+                  {/* Top-right corner - bars point left and down */}
                   <View style={[styles.corner, styles.cornerTopRight]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize }]} />
+                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, right: 0 }]} />
+                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, right: 0 }]} />
                   </View>
                   
-                  {/* Bottom-left corner */}
+                  {/* Bottom-left corner - bars point right and up */}
                   <View style={[styles.corner, styles.cornerBottomLeft]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize }]} />
+                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, left: 0 }]} />
+                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, left: 0 }]} />
                   </View>
                   
-                  {/* Bottom-right corner */}
+                  {/* Bottom-right corner - bars point left and up */}
                   <View style={[styles.corner, styles.cornerBottomRight]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize }]} />
+                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, right: 0 }]} />
+                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, right: 0 }]} />
                   </View>
                 </>
               )}
