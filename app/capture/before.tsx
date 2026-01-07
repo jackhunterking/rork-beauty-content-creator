@@ -26,7 +26,7 @@ export default function BeforeScreen() {
 
   const handleContinue = useCallback((media: { uri: string; width: number; height: number }) => {
     setBeforeMedia(media);
-    router.push('/capture/after');
+    router.back();
   }, [setBeforeMedia, router]);
 
   const handleBack = useCallback(() => {

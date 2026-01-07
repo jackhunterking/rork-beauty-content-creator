@@ -26,7 +26,7 @@ export default function AfterScreen() {
 
   const handleContinue = useCallback((media: { uri: string; width: number; height: number }) => {
     setAfterMedia(media);
-    router.push('/generate');
+    router.back();
   }, [setAfterMedia, router]);
 
   const handleBack = useCallback(() => {
