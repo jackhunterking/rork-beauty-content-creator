@@ -13,11 +13,22 @@ interface FrameConstraints {
 }
 
 /**
- * Result of frame dimension calculation
+ * Result of frame dimension calculation including position for absolute positioning
  */
 export interface FrameCalculation {
+  // Frame dimensions
   width: number;
   height: number;
+  
+  // Frame position (for centering on screen)
+  top: number;    // Y position from screen top
+  left: number;   // X position from screen left
+  
+  // Screen dimensions used in calculation
+  screenWidth: number;
+  screenHeight: number;
+  
+  // Constraint information
   isConstrained: boolean;  // true if minimum dimensions were enforced
   constraintType: 'none' | 'width' | 'height'; // which dimension was constrained
 }
@@ -32,16 +43,17 @@ export const DEFAULT_FRAME_CONSTRAINTS: FrameConstraints = {
 };
 
 /**
- * Calculate frame dimensions that:
+ * Calculate frame dimensions and position that:
  * 1. Maintain the target aspect ratio from the slot
  * 2. Fit within maximum constraints
  * 3. Enforce minimum dimensions for usability with extreme aspect ratios
+ * 4. Center the frame on the screen
  * 
  * @param slot - The image slot with target dimensions
  * @param constraints - Optional custom constraints (defaults to DEFAULT_FRAME_CONSTRAINTS)
  * @param screenWidth - Optional screen width (defaults to device screen width)
  * @param screenHeight - Optional screen height (defaults to device screen height)
- * @returns Calculated frame dimensions and constraint information
+ * @returns Calculated frame dimensions, position, and constraint information
  */
 export function calculateFrameDimensions(
   slot: ImageSlot,
@@ -91,9 +103,21 @@ export function calculateFrameDimensions(
   frameWidth = Math.min(frameWidth, screenWidth * 0.95);
   frameHeight = Math.min(frameHeight, screenHeight * 0.85);
   
+  // Round dimensions
+  const finalWidth = Math.round(frameWidth);
+  const finalHeight = Math.round(frameHeight);
+  
+  // Calculate centered position
+  const top = Math.round((screenHeight - finalHeight) / 2);
+  const left = Math.round((screenWidth - finalWidth) / 2);
+  
   return {
-    width: Math.round(frameWidth),
-    height: Math.round(frameHeight),
+    width: finalWidth,
+    height: finalHeight,
+    top,
+    left,
+    screenWidth,
+    screenHeight,
     isConstrained,
     constraintType,
   };
@@ -134,4 +158,3 @@ export function getAspectRatioDescription(slot: ImageSlot): string {
   if (ratio > 1) return 'Landscape';
   return 'Portrait';
 }
-

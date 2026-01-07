@@ -161,32 +161,37 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     );
   }
 
-  // Main capture UI - single unified structure
+  // Main capture UI with proper z-index layering:
+  // Layer 1 (bottom): Camera - zIndex 1
+  // Layer 2 (middle): Frame Mask - zIndex 2
+  // Layer 3 (top): UI Controls - zIndex 3
   return (
     <View style={styles.container}>
-      {/* Background Layer - Camera only renders when not in preview mode */}
-      {/* This saves battery/processing and ensures no camera feed leaks through */}
+      {/* LAYER 1: Camera (z-index: 1) - only renders when not in preview mode */}
       {!previewUri && (
-        <CameraView 
-          ref={cameraRef} 
-          style={StyleSheet.absoluteFillObject} 
-          facing="back"
-        />
+        <View style={styles.cameraLayer}>
+          <CameraView 
+            ref={cameraRef} 
+            style={StyleSheet.absoluteFillObject} 
+            facing="back"
+          />
+        </View>
       )}
 
-      {/* Frame Overlay - handles both camera guide and preview display */}
-      {/* When previewUri is set, the captured image displays inside the frame */}
-      {/* The overlay becomes fully opaque to hide the camera behind it */}
+      {/* LAYER 2: Frame Mask Overlay (z-index: 2) */}
+      {/* Black mask around the frame, with camera/preview visible inside */}
       {slot && (
-        <FrameOverlay 
-          slot={slot} 
-          label={`${title}: ${slot.width}x${slot.height}`}
-          previewUri={previewUri || undefined}
-        />
+        <View style={styles.maskLayer}>
+          <FrameOverlay 
+            slot={slot} 
+            label={`${title}: ${slot.width}x${slot.height}`}
+            previewUri={previewUri || undefined}
+          />
+        </View>
       )}
 
-      {/* UI Controls Overlay */}
-      <SafeAreaView style={styles.overlay} edges={['top', 'bottom']}>
+      {/* LAYER 3: UI Controls (z-index: 3) - always on top */}
+      <SafeAreaView style={styles.controlsLayer} edges={['top', 'bottom']}>
         {/* Top Bar */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
@@ -230,7 +235,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
         )}
       </SafeAreaView>
 
-      {/* Processing Overlay */}
+      {/* Processing Overlay - highest z-index */}
       {isProcessing && (
         <View style={styles.processingOverlay}>
           <ActivityIndicator size="large" color={Colors.light.accent} />
@@ -244,13 +249,25 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.text,
+    backgroundColor: '#000000', // Black background so any gaps appear black
   },
   flex: {
     flex: 1,
   },
-  overlay: {
+  // Layer 1: Camera at the bottom
+  cameraLayer: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  // Layer 2: Frame mask in the middle
+  maskLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  // Layer 3: UI controls on top
+  controlsLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 3,
     justifyContent: 'space-between',
   },
   topBar: {
@@ -353,6 +370,7 @@ const styles = StyleSheet.create({
   },
   processingOverlay: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 10, // Highest z-index for processing overlay
     backgroundColor: 'rgba(0,0,0,0.7)',
     alignItems: 'center',
     justifyContent: 'center',

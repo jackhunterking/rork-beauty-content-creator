@@ -15,101 +15,143 @@ interface FrameOverlayProps {
  * FrameOverlay displays a visual guide over the camera preview
  * that matches the aspect ratio of the target image slot.
  * 
- * The overlay calculates the aspect ratio from pixel dimensions
- * and renders a centered frame guide for the user to align their shot.
+ * Uses absolute positioning for precise mask regions:
+ * - Top mask: covers from screen top to frame top
+ * - Bottom mask: covers from frame bottom to screen bottom
+ * - Left mask: covers from screen left to frame left (frame height only)
+ * - Right mask: covers from frame right to screen right (frame height only)
  * 
+ * The frame area itself is transparent to show camera/preview content.
  * When previewUri is provided, it displays the captured image inside
- * the same frame area, ensuring visual consistency between capture and preview.
+ * the frame area, ensuring visual consistency between capture and preview.
  */
 export function FrameOverlay({ slot, label, showCorners = true, previewUri }: FrameOverlayProps) {
-  // Calculate frame dimensions using the centralized calculator
-  // This handles dynamic aspect ratios and enforces minimum dimensions
-  const frameCalculation = useMemo(() => {
+  // Calculate frame dimensions and position using the centralized calculator
+  const frame = useMemo(() => {
     return calculateFrameDimensions(slot);
   }, [slot]);
 
-  const cornerSize = Math.min(frameCalculation.width, frameCalculation.height) * 0.08;
+  const cornerSize = Math.min(frame.width, frame.height) * 0.08;
   const cornerThickness = 3;
 
-  // Always fully black outside frame - frame acts as a window
-  const overlayOpacity = 1.0;
+  // Calculate mask region dimensions
+  const topMaskHeight = frame.top;
+  const bottomMaskHeight = frame.screenHeight - frame.top - frame.height;
+  const leftMaskWidth = frame.left;
+  const rightMaskWidth = frame.screenWidth - frame.left - frame.width;
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Semi-transparent (or opaque when preview) overlay around the frame */}
-      <View style={styles.overlayContainer}>
-        {/* Top dark area */}
-        <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
+      {/* TOP MASK - Full width, from screen top to frame top */}
+      <View 
+        style={[
+          styles.mask,
+          {
+            top: 0,
+            left: 0,
+            right: 0,
+            height: topMaskHeight,
+          }
+        ]} 
+      />
+
+      {/* BOTTOM MASK - Full width, from frame bottom to screen bottom */}
+      <View 
+        style={[
+          styles.mask,
+          {
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: bottomMaskHeight,
+          }
+        ]} 
+      />
+
+      {/* LEFT MASK - From screen left to frame left, frame height only */}
+      <View 
+        style={[
+          styles.mask,
+          {
+            top: frame.top,
+            left: 0,
+            width: leftMaskWidth,
+            height: frame.height,
+          }
+        ]} 
+      />
+
+      {/* RIGHT MASK - From frame right to screen right, frame height only */}
+      <View 
+        style={[
+          styles.mask,
+          {
+            top: frame.top,
+            right: 0,
+            width: rightMaskWidth,
+            height: frame.height,
+          }
+        ]} 
+      />
+
+      {/* FRAME AREA - The transparent window showing camera/preview */}
+      <View 
+        style={[
+          styles.frameArea, 
+          { 
+            top: frame.top,
+            left: frame.left,
+            width: frame.width, 
+            height: frame.height,
+          }
+        ]}
+      >
+        {/* Preview image inside frame (when captured) */}
+        {previewUri && (
+          <Image
+            source={{ uri: previewUri }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+          />
+        )}
         
-        {/* Middle row with frame */}
-        <View style={styles.middleRow}>
-          {/* Left dark area */}
-          <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
-          
-          {/* Frame area - shows either camera view or captured image */}
-          <View 
-            style={[
-              styles.frameArea, 
-              { 
-                width: frameCalculation.width, 
-                height: frameCalculation.height 
-              }
-            ]}
-          >
-            {/* Preview image inside frame (when captured) */}
-            {previewUri && (
-              <Image
-                source={{ uri: previewUri }}
-                style={StyleSheet.absoluteFillObject}
-                contentFit="cover"
-              />
-            )}
-            
-            {/* Frame border */}
-            <View style={[styles.frameBorder, previewUri && styles.frameBorderPreview]}>
-              {showCorners && (
-                <>
-                  {/* Top-left corner - bars point right and down */}
-                  <View style={[styles.corner, styles.cornerTopLeft]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, left: 0 }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, left: 0 }]} />
-                  </View>
-                  
-                  {/* Top-right corner - bars point left and down */}
-                  <View style={[styles.corner, styles.cornerTopRight]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, right: 0 }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, right: 0 }]} />
-                  </View>
-                  
-                  {/* Bottom-left corner - bars point right and up */}
-                  <View style={[styles.corner, styles.cornerBottomLeft]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, left: 0 }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, left: 0 }]} />
-                  </View>
-                  
-                  {/* Bottom-right corner - bars point left and up */}
-                  <View style={[styles.corner, styles.cornerBottomRight]}>
-                    <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, right: 0 }]} />
-                    <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, right: 0 }]} />
-                  </View>
-                </>
-              )}
-            </View>
-            
-            {/* Dimension label */}
-            {label && (
-              <View style={styles.labelContainer}>
-                <Text style={styles.labelText}>{label}</Text>
+        {/* Frame border and corners */}
+        <View style={[styles.frameBorder, previewUri && styles.frameBorderPreview]}>
+          {showCorners && (
+            <>
+              {/* Top-left corner */}
+              <View style={[styles.corner, styles.cornerTopLeft]}>
+                <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, left: 0 }]} />
+                <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, left: 0 }]} />
               </View>
-            )}
-          </View>
-          
-          {/* Right dark area */}
-          <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
+              
+              {/* Top-right corner */}
+              <View style={[styles.corner, styles.cornerTopRight]}>
+                <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, top: 0, right: 0 }]} />
+                <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, top: 0, right: 0 }]} />
+              </View>
+              
+              {/* Bottom-left corner */}
+              <View style={[styles.corner, styles.cornerBottomLeft]}>
+                <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, left: 0 }]} />
+                <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, left: 0 }]} />
+              </View>
+              
+              {/* Bottom-right corner */}
+              <View style={[styles.corner, styles.cornerBottomRight]}>
+                <View style={[styles.cornerHorizontal, { width: cornerSize, height: cornerThickness, bottom: 0, right: 0 }]} />
+                <View style={[styles.cornerVertical, { width: cornerThickness, height: cornerSize, bottom: 0, right: 0 }]} />
+              </View>
+            </>
+          )}
         </View>
         
-        {/* Bottom dark area */}
-        <View style={[styles.darkArea, { flex: 1, backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }]} />
+        {/* Dimension label below frame */}
+        {label && (
+          <View style={styles.labelContainer}>
+            <Text style={styles.labelText}>{label}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -118,20 +160,14 @@ export function FrameOverlay({ slot, label, showCorners = true, previewUri }: Fr
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 10,
+    // No zIndex here - let CaptureScreen control layering
   },
-  overlayContainer: {
-    flex: 1,
-  },
-  darkArea: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  middleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  mask: {
+    position: 'absolute',
+    backgroundColor: '#000000', // Solid black mask
   },
   frameArea: {
-    position: 'relative',
+    position: 'absolute',
     overflow: 'hidden',
     borderRadius: 4,
   },
