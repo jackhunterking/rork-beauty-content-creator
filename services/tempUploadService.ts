@@ -45,13 +45,16 @@ export function resetSession(): void {
 }
 
 /**
- * Upload a local image to Supabase temp storage
- * Returns the public URL that Templated.io can access
+ * Upload an image to Supabase temp storage for Templated.io to access
  * 
- * @param localUri - Local file URI (file:// or content://)
+ * If the URI is already a remote URL (http/https), it's returned directly
+ * since Templated.io can access public URLs without re-uploading.
+ * This handles the case when loading drafts with Supabase Storage URLs.
+ * 
+ * @param localUri - Local file URI (file://) or remote URL (http/https)
  * @param slotId - Slot identifier for the filename
  * @param sessionId - Optional session ID for grouping (uses current if not provided)
- * @returns Public URL of the uploaded image
+ * @returns Public URL of the image (uploaded or pass-through)
  */
 export async function uploadTempImage(
   localUri: string,
@@ -61,6 +64,13 @@ export async function uploadTempImage(
   // Validate URI before processing
   if (!localUri || typeof localUri !== 'string') {
     throw new Error(`Invalid URI for slot ${slotId}: URI is ${typeof localUri}`);
+  }
+  
+  // If URI is already a remote URL (e.g., Supabase Storage), return it directly
+  // Templated.io can access public URLs without re-uploading
+  if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
+    console.log(`[TempUpload] Using existing remote URL for ${slotId}`);
+    return localUri;
   }
   
   // Normalize URI - ensure it has file:// prefix for expo-file-system
