@@ -9,10 +9,10 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  BackHandler,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Stack, useNavigation } from 'expo-router';
+import { useRouter, Stack } from 'expo-router';
+import { usePreventRemove } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
@@ -28,7 +28,6 @@ import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 
 export default function EditorScreen() {
   const router = useRouter();
-  const navigation = useNavigation();
   const { 
     currentProject, 
     setCapturedImage, 
@@ -235,36 +234,14 @@ export default function EditorScreen() {
     );
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router]);
 
-  // Intercept back navigation (iOS gesture and header back button)
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e: any) => {
-      // Allow navigation if explicitly permitted or no unsaved changes
-      if (allowNavigationRef.current || !hasUnsavedChanges) {
-        return;
-      }
-
-      // Prevent default behavior (going back)
-      e.preventDefault();
-
-      // Show confirmation dialog
+  // Prevent back navigation when there are unsaved changes
+  // usePreventRemove works properly with native-stack navigators (Expo Router)
+  usePreventRemove(
+    hasUnsavedChanges && !allowNavigationRef.current,
+    ({ data }) => {
       showBackConfirmation();
-    });
-
-    return unsubscribe;
-  }, [navigation, hasUnsavedChanges, showBackConfirmation]);
-
-  // Handle Android hardware back button
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (hasUnsavedChanges && !allowNavigationRef.current) {
-        showBackConfirmation();
-        return true; // Prevent default back behavior
-      }
-      return false; // Allow default back behavior
-    });
-
-    return () => backHandler.remove();
-  }, [hasUnsavedChanges, showBackConfirmation]);
+    }
+  );
 
   const isEditingDraft = !!currentProject.draftId;
 

@@ -130,6 +130,7 @@ function RootLayoutNav() {
           headerShown: true,
           title: 'Editor',
           presentation: 'card',
+          headerBackButtonMenuEnabled: false,
         }} 
       />
       <Stack.Screen 

@@ -58,10 +58,20 @@ export async function uploadTempImage(
   slotId: string,
   sessionId?: string
 ): Promise<string> {
+  // Validate URI before processing
+  if (!localUri || typeof localUri !== 'string') {
+    throw new Error(`Invalid URI for slot ${slotId}: URI is ${typeof localUri}`);
+  }
+  
+  // Normalize URI - ensure it has file:// prefix for expo-file-system
+  const normalizedUri = localUri.startsWith('file://') 
+    ? localUri 
+    : `file://${localUri}`;
+  
   const session = sessionId || getSessionId();
   
   // Read file as base64
-  const file = new File(localUri);
+  const file = new File(normalizedUri);
   const base64Data = await file.base64();
 
   // Generate unique filename within session folder
