@@ -170,11 +170,20 @@ export async function renderPreview(
       layerPayload['watermark'] = { hide: true };
     }
     
+    // DEBUG: Log request details (mask most of API key for security)
+    const maskedKey = apiKey ? `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}` : 'EMPTY';
+    console.log('[renderService] Making API request to:', TEMPLATED_API_URL);
+    console.log('[renderService] Authorization header:', `Bearer ${maskedKey}`);
+    console.log('[renderService] API key length:', apiKey.length);
+    console.log('[renderService] API key has whitespace:', apiKey !== apiKey.trim());
+    console.log('[renderService] Template ID:', templateId);
+    console.log('[renderService] Layer payload keys:', Object.keys(layerPayload));
+    
     // Call Templated.io API
     const response = await fetch(TEMPLATED_API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${apiKey.trim()}`,  // Trim any whitespace
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -184,9 +193,12 @@ export async function renderPreview(
       }),
     });
     
+    console.log('[renderService] Response status:', response.status);
+    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Templated.io API error:', errorText);
+      console.error('[renderService] API Error Response:', errorText);
+      console.error('[renderService] Full API key for verification (REMOVE IN PRODUCTION):', apiKey);
       throw new Error(`Preview render failed: ${response.status}`);
     }
     
