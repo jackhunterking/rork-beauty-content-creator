@@ -16,6 +16,10 @@ function mapRowToDraft(row: DraftRow): Draft {
     capturedImageUrls: row.captured_image_urls || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Cached preview URL from Templated.io
+    renderedPreviewUrl: row.rendered_preview_url || undefined,
+    // Premium status when preview was rendered
+    wasRenderedAsPremium: row.was_rendered_as_premium ?? undefined,
   };
 }
 
@@ -117,6 +121,8 @@ export async function updateDraft(
     beforeImageUrl?: string | null;
     afterImageUrl?: string | null;
     capturedImageUrls?: Record<string, string> | null;
+    renderedPreviewUrl?: string | null;
+    wasRenderedAsPremium?: boolean | null;
   }
 ): Promise<Draft> {
   const updateData: Record<string, unknown> = {
@@ -131,6 +137,12 @@ export async function updateDraft(
   }
   if (updates.capturedImageUrls !== undefined) {
     updateData.captured_image_urls = updates.capturedImageUrls;
+  }
+  if (updates.renderedPreviewUrl !== undefined) {
+    updateData.rendered_preview_url = updates.renderedPreviewUrl;
+  }
+  if (updates.wasRenderedAsPremium !== undefined) {
+    updateData.was_rendered_as_premium = updates.wasRenderedAsPremium;
   }
 
   const { data, error } = await supabase
@@ -156,13 +168,17 @@ export async function updateDraft(
  * @param afterImageUri - Local URI of the after image (or null) - legacy format
  * @param existingDraftId - Optional existing draft ID to update
  * @param capturedImageUris - Optional map of slot ID to local URIs - new dynamic format
+ * @param renderedPreviewUrl - Optional cached Templated.io preview URL
+ * @param wasRenderedAsPremium - Optional premium status when preview was rendered
  */
 export async function saveDraftWithImages(
   templateId: string,
   beforeImageUri: string | null,
   afterImageUri: string | null,
   existingDraftId?: string,
-  capturedImageUris?: Record<string, string>
+  capturedImageUris?: Record<string, string>,
+  renderedPreviewUrl?: string | null,
+  wasRenderedAsPremium?: boolean
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -220,11 +236,13 @@ export async function saveDraftWithImages(
       }
     }
 
-    // Update the draft with the new URLs
+    // Update the draft with the new URLs including preview cache
     const updatedDraft = await updateDraft(draft.id, {
       beforeImageUrl,
       afterImageUrl,
       capturedImageUrls: Object.keys(capturedImageUrls).length > 0 ? capturedImageUrls : null,
+      renderedPreviewUrl: renderedPreviewUrl ?? draft.renderedPreviewUrl,
+      wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
     });
 
     return updatedDraft;

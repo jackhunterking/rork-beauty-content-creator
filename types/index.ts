@@ -304,6 +304,10 @@ export interface Draft {
   capturedImageUrls?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
+  // Cached preview URL from Templated.io (avoids re-rendering on draft load)
+  renderedPreviewUrl?: string | null;
+  // Premium status when preview was rendered (for cache invalidation)
+  wasRenderedAsPremium?: boolean | null;
 }
 
 // Database row type for drafts
@@ -317,6 +321,10 @@ export interface DraftRow {
   captured_image_urls: Record<string, string> | null;
   created_at: string;
   updated_at: string;
+  // Cached preview URL from Templated.io
+  rendered_preview_url: string | null;
+  // Premium status when preview was rendered
+  was_rendered_as_premium: boolean | null;
 }
 
 // ============================================

@@ -54,6 +54,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     beforeMedia: MediaAsset | null;
     afterMedia: MediaAsset | null;
     draftId: string | null;  // Track if we're editing an existing draft
+    // Cached preview URL from draft (avoids re-rendering on load)
+    cachedPreviewUrl: string | null;
+    // Premium status when the cached preview was rendered
+    wasRenderedAsPremium: boolean | null;
   }>({
     contentType: 'single',
     template: null,
@@ -61,6 +65,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     beforeMedia: null,
     afterMedia: null,
     draftId: null,
+    cachedPreviewUrl: null,
+    wasRenderedAsPremium: null,
   });
 
   // Initialize local storage on app start
@@ -174,18 +180,35 @@ export const [AppProvider, useApp] = createContextHook(() => {
       templateId, 
       beforeImageUri, 
       afterImageUri,
-      existingDraftId 
+      existingDraftId,
+      renderedPreviewUrl,
+      wasRenderedAsPremium,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
       afterImageUri: string | null;
       existingDraftId?: string;
+      renderedPreviewUrl?: string | null;
+      wasRenderedAsPremium?: boolean;
     }) => {
-      return saveDraftWithImages(templateId, beforeImageUri, afterImageUri, existingDraftId);
+      return saveDraftWithImages(
+        templateId, 
+        beforeImageUri, 
+        afterImageUri, 
+        existingDraftId,
+        undefined, // capturedImageUris
+        renderedPreviewUrl,
+        wasRenderedAsPremium
+      );
     },
     onSuccess: (savedDraft) => {
-      // Update current project with the draft ID
-      setCurrentProject(prev => ({ ...prev, draftId: savedDraft.id }));
+      // Update current project with the draft ID and cached preview
+      setCurrentProject(prev => ({ 
+        ...prev, 
+        draftId: savedDraft.id,
+        cachedPreviewUrl: savedDraft.renderedPreviewUrl || null,
+        wasRenderedAsPremium: savedDraft.wasRenderedAsPremium ?? null,
+      }));
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
     },
   });
@@ -245,6 +268,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeMedia: null,
       afterMedia: null,
       draftId: null,
+      cachedPreviewUrl: null,
+      wasRenderedAsPremium: null,
     }));
   }, []);
 
@@ -338,6 +363,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeMedia: null,
       afterMedia: null,
       draftId: null,
+      cachedPreviewUrl: null,
+      wasRenderedAsPremium: null,
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -410,6 +437,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } : null;
     
     setSlotStatesMap(slotStates);
+    // Don't clear composed preview - we might use cached one
     setComposedPreviewUri(null);
     
     setCurrentProject({
@@ -419,6 +447,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeMedia,
       afterMedia,
       draftId: draft.id,
+      // Set cached preview URL from draft for instant display
+      cachedPreviewUrl: draft.renderedPreviewUrl || null,
+      wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
     });
   }, []);
 
@@ -478,6 +509,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeImageUri: string | null; 
       afterImageUri: string | null;
       existingDraftId?: string;
+      renderedPreviewUrl?: string | null;
+      wasRenderedAsPremium?: boolean;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     loadDraft,

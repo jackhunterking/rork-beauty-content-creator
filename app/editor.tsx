@@ -45,6 +45,11 @@ export default function EditorScreen() {
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   
+  // Track if images have been modified by user since draft was loaded
+  // Used to skip unnecessary API calls when reopening drafts
+  const [imagesModifiedSinceLoad, setImagesModifiedSinceLoad] = useState(false);
+  const hasInitializedFromCacheRef = useRef(false);
+  
   // Download/share state
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -72,6 +77,36 @@ export default function EditorScreen() {
 
   // Track previous capturedImages to detect actual changes (not just reference changes)
   const prevCapturedImagesRef = useRef<Record<string, { uri: string } | null>>({});
+
+  // Initialize with cached preview URL when loading a draft
+  // This avoids an unnecessary Templated.io API call
+  useEffect(() => {
+    // Only run once when the draft is first loaded
+    if (hasInitializedFromCacheRef.current) return;
+    
+    const cachedPreviewUrl = currentProject.cachedPreviewUrl;
+    const wasRenderedAsPremium = currentProject.wasRenderedAsPremium;
+    
+    // Check if we have a cached preview and premium status matches
+    // If premium status changed, we need to re-render (watermark difference)
+    const premiumStatusMatch = wasRenderedAsPremium === null || wasRenderedAsPremium === isPremium;
+    
+    if (currentProject.draftId && cachedPreviewUrl && premiumStatusMatch) {
+      console.log('[Editor] Using cached preview URL from draft');
+      setRenderedPreviewUri(cachedPreviewUrl);
+      // Initialize prevCapturedImages with current state to prevent immediate re-render
+      prevCapturedImagesRef.current = { ...capturedImages };
+      hasInitializedFromCacheRef.current = true;
+    } else if (currentProject.draftId && cachedPreviewUrl && !premiumStatusMatch) {
+      console.log('[Editor] Premium status changed, will re-render preview');
+      // Mark as initialized but don't use cache - let the normal flow re-render
+      hasInitializedFromCacheRef.current = true;
+      setImagesModifiedSinceLoad(true);
+    } else if (currentProject.draftId) {
+      // Draft without cached preview - mark as initialized
+      hasInitializedFromCacheRef.current = true;
+    }
+  }, [currentProject.draftId, currentProject.cachedPreviewUrl, currentProject.wasRenderedAsPremium, isPremium, capturedImages]);
 
   // Trigger preview render when photos change
   const triggerPreviewRender = useCallback(async () => {
@@ -152,10 +187,20 @@ export default function EditorScreen() {
     
     // Only trigger if there's an actual new/changed image
     if (hasNewOrChangedImage) {
+      // If we have a cached preview and user hasn't modified images yet,
+      // skip the API call - we're just loading the draft
+      if (renderedPreviewUri && !imagesModifiedSinceLoad && currentProject.draftId) {
+        console.log('[Editor] Skipping render - using cached preview from draft');
+        return;
+      }
+      
+      // Mark that user has modified images (for future saves)
+      setImagesModifiedSinceLoad(true);
+      
       console.log('[Editor] Detected image change, triggering preview render');
       triggerPreviewRender();
     }
-  }, [capturedImages, template?.templatedId, triggerPreviewRender]);
+  }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
   // Redirect if no template selected
   useEffect(() => {
@@ -208,6 +253,10 @@ export default function EditorScreen() {
                 beforeImageUri: beforeUri || null,
                 afterImageUri: afterUri || null,
                 existingDraftId: currentProject.draftId || undefined,
+                // Save the current preview URL so it can be reused when reopening
+                renderedPreviewUrl: renderedPreviewUri,
+                // Track premium status at time of render for cache invalidation
+                wasRenderedAsPremium: isPremium,
               });
               Toast.show({
                 type: 'success',
@@ -232,7 +281,7 @@ export default function EditorScreen() {
       ],
       { cancelable: true }
     );
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium]);
 
   // Prevent back navigation when there are unsaved changes
   // usePreventRemove works properly with native-stack navigators (Expo Router)
@@ -358,6 +407,17 @@ export default function EditorScreen() {
     [slots, isRendering, takePhoto, chooseFromLibrary]
   );
 
+  // Handle cached preview failing to load (e.g., expired URL)
+  const handlePreviewError = useCallback(() => {
+    console.log('[Editor] Cached preview failed to load, triggering re-render');
+    // Clear the invalid cached preview
+    setRenderedPreviewUri(null);
+    // Mark that we need to re-render
+    setImagesModifiedSinceLoad(true);
+    // Trigger a fresh render
+    triggerPreviewRender();
+  }, [triggerPreviewRender]);
+
   // Actually perform the save operation
   const performSaveDraft = useCallback(async () => {
     if (!template) return;
@@ -374,6 +434,10 @@ export default function EditorScreen() {
         beforeImageUri: beforeUri || null,
         afterImageUri: afterUri || null,
         existingDraftId: currentProject.draftId || undefined,
+        // Save the current preview URL so it can be reused when reopening
+        renderedPreviewUrl: renderedPreviewUri,
+        // Track premium status at time of render for cache invalidation
+        wasRenderedAsPremium: isPremium,
       });
       
       Toast.show({
@@ -395,7 +459,7 @@ export default function EditorScreen() {
         position: 'top',
       });
     }
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium]);
 
   // Save draft - shows confirmation dialog first
   const handleSaveDraft = useCallback(() => {
@@ -646,6 +710,7 @@ export default function EditorScreen() {
             onSlotPress={handleSlotPress}
             renderedPreviewUri={renderedPreviewUri}
             isRendering={isRendering}
+            onPreviewError={handlePreviewError}
           />
 
           {/* Instructions */}

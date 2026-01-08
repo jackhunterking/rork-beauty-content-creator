@@ -15,6 +15,8 @@ interface TemplateCanvasProps {
   renderedPreviewUri?: string | null;
   /** Whether a render is in progress */
   isRendering?: boolean;
+  /** Called when the cached preview image fails to load (e.g., expired URL) */
+  onPreviewError?: () => void;
 }
 
 /**
@@ -30,6 +32,7 @@ export function TemplateCanvas({
   onSlotPress,
   renderedPreviewUri,
   isRendering = false,
+  onPreviewError,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
   const { width: screenWidth } = useWindowDimensions();
@@ -87,6 +90,14 @@ export function TemplateCanvas({
           style={styles.previewImage}
           contentFit="cover"
           transition={200}
+          onError={() => {
+            // If the rendered preview fails to load (e.g., expired URL),
+            // notify parent to trigger a fresh render
+            if (renderedPreviewUri && onPreviewError) {
+              console.warn('[TemplateCanvas] Cached preview failed to load, requesting re-render');
+              onPreviewError();
+            }
+          }}
         />
 
         {/* Invisible slot tap targets */}
