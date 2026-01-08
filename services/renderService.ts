@@ -26,7 +26,8 @@ import { getDraftSlotImagePath, fileExists } from './localStorageService';
  */
 
 // Templated.io API configuration
-const TEMPLATED_API_URL = 'https://api.templated.io/v2/renders';
+// Note: v1 API uses /v1/render (singular), v2 uses /v2/renders (plural) but requires different auth
+const TEMPLATED_API_URL = 'https://api.templated.io/v1/render';
 
 // Get API key from environment with detailed debugging
 const getTemplatedApiKey = (): string => {
