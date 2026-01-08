@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Plus, Star, FolderOpen, Settings } from "lucide-react-native";
+import { Plus, FileEdit, FolderOpen, Settings } from "lucide-react-native";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import Colors from "@/constants/colors";
@@ -27,10 +27,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="favourites"
+        name="drafts"
         options={{
-          title: "Favourites",
-          tabBarIcon: ({ color }) => <Star color={color} size={22} />,
+          title: "Drafts",
+          tabBarIcon: ({ color }) => <FileEdit color={color} size={22} />,
         }}
       />
       <Tabs.Screen

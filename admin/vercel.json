@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "name": "beauty-admin-template-sync",
+  "builds": [
+    {
+      "src": "template-sync.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/template-sync.html"
+    },
+    {
+      "src": "/template-sync",
+      "dest": "/template-sync.html"
+    }
+  ]
+}

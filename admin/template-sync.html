@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Template Sync</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#E91E63',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom styles for better form appearance */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+    /* Collapsible details styling */
+    details summary {
+      cursor: pointer;
+      user-select: none;
+    }
+    details summary::-webkit-details-marker {
+      display: none;
+    }
+    details summary::before {
+      content: '▶';
+      display: inline-block;
+      margin-right: 0.5rem;
+      transition: transform 0.2s;
+    }
+    details[open] summary::before {
+      transform: rotate(90deg);
+    }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
+  <div class="max-w-2xl mx-auto p-6">
+    <!-- Header -->
+    <div class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Template Sync</h1>
+      <p class="text-gray-600 dark:text-gray-400">Sync templates from Templated.io to your app</p>
+    </div>
+
+    <!-- Form -->
+    <form id="syncForm" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 space-y-6">
+      
+      <!-- Templated ID -->
+      <div>
+        <label for="templated_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Templated ID <span class="text-red-500">*</span>
+        </label>
+        <input 
+          type="text" 
+          id="templated_id" 
+          name="templated_id" 
+          required
+          placeholder="e.g., clx1234567890"
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition"
+        >
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Found in the Templated.io URL: app.templated.io/editor/<strong>[ID]</strong></p>
+      </div>
+
+      <!-- Template Name -->
+      <div>
+        <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Template Name <span class="text-red-500">*</span>
+        </label>
+        <input 
+          type="text" 
+          id="name" 
+          name="name" 
+          required
+          placeholder="e.g., Square Before/After"
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition"
+        >
+      </div>
+
+      <!-- Canvas Size Presets -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Canvas Size <span class="text-red-500">*</span>
+        </label>
+        <div class="grid grid-cols-3 gap-3 mb-3">
+          <button 
+            type="button" 
+            onclick="setPreset(1080, 1080, this)"
+            class="preset-btn active px-4 py-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium hover:bg-primary/20 transition"
+          >
+            <div class="text-sm font-semibold">Square</div>
+            <div class="text-xs opacity-75">1080 × 1080</div>
+          </button>
+          <button 
+            type="button" 
+            onclick="setPreset(1080, 1920, this)"
+            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
+          >
+            <div class="text-sm font-semibold">Story</div>
+            <div class="text-xs opacity-75">1080 × 1920</div>
+          </button>
+          <button 
+            type="button" 
+            onclick="setPreset(1080, 1350, this)"
+            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
+          >
+            <div class="text-sm font-semibold">Portrait</div>
+            <div class="text-xs opacity-75">1080 × 1350</div>
+          </button>
+        </div>
+        
+        <!-- Manual Size Inputs -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="canvas_width" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Width (px)</label>
+            <input 
+              type="number" 
+              id="canvas_width" 
+              name="canvas_width" 
+              required
+              value="1080"
+              min="100"
+              max="4096"
+              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent transition"
+            >
+          </div>
+          <div>
+            <label for="canvas_height" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Height (px)</label>
+            <input 
+              type="number" 
+              id="canvas_height" 
+              name="canvas_height" 
+              required
+              value="1080"
+              min="100"
+              max="4096"
+              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent transition"
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- Supports -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Supports
+        </label>
+        <div class="flex gap-4">
+          <label class="flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              id="supports_single" 
+              name="supports" 
+              value="single"
+              checked
+              class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+            >
+            <span class="ml-2 text-gray-700 dark:text-gray-300">Single</span>
+          </label>
+          <label class="flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              id="supports_carousel" 
+              name="supports" 
+              value="carousel"
+              class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+            >
+            <span class="ml-2 text-gray-700 dark:text-gray-300">Carousel</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Is Active -->
+      <div>
+        <label class="flex items-center cursor-pointer">
+          <input 
+            type="checkbox" 
+            id="is_active" 
+            name="is_active"
+            checked
+            class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
+          >
+          <span class="ml-2 text-gray-700 dark:text-gray-300 font-medium">Active</span>
+          <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">(Template will be visible in the app)</span>
+        </label>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="pt-4">
+        <button 
+          type="submit" 
+          id="submitBtn"
+          class="w-full py-4 px-6 rounded-xl bg-primary hover:bg-pink-600 text-white font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <span id="btnText">Sync Template</span>
+          <svg id="btnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+      </div>
+    </form>
+
+    <!-- Status Message -->
+    <div id="statusMessage" class="hidden mt-6"></div>
+
+    <!-- Sync History -->
+    <div id="recentSyncs" class="mt-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Sync History</h2>
+        <button 
+          onclick="loadHistory()" 
+          class="text-sm text-primary hover:text-pink-600 flex items-center gap-1"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Refresh
+        </button>
+      </div>
+      <div id="syncHistory" class="space-y-2">
+        <div class="flex items-center justify-center py-8 text-gray-500 dark:text-gray-400">
+          <svg class="animate-spin h-5 w-5 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Loading history...
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Summary -->
+    <div id="statsSummary" class="mt-6 grid grid-cols-3 gap-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-4 text-center">
+        <div id="totalSyncs" class="text-2xl font-bold text-gray-900 dark:text-white">-</div>
+        <div class="text-xs text-gray-500 dark:text-gray-400">Total Syncs</div>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-4 text-center">
+        <div id="successSyncs" class="text-2xl font-bold text-green-600">-</div>
+        <div class="text-xs text-gray-500 dark:text-gray-400">Successful</div>
+      </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-4 text-center">
+        <div id="errorSyncs" class="text-2xl font-bold text-red-600">-</div>
+        <div class="text-xs text-gray-500 dark:text-gray-400">Failed</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const WEBHOOK_URL = 'https://jackhunterking.app.n8n.cloud/webhook/sync-template';
+    const SUPABASE_URL = 'https://tmgjsrxdjbazrwvbdoed.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtZ2pzcnhkamJhenJ3dmJkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3NDE3MDcsImV4cCI6MjA4MzMxNzcwN30.krSbo9fqvKkbQrjFDnQo2s7JiaXwo1wydhvaontxtFE';
+
+    // Initialize Supabase client
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Set preset canvas size
+    function setPreset(width, height, button) {
+      document.getElementById('canvas_width').value = width;
+      document.getElementById('canvas_height').value = height;
+      
+      // Update active state on buttons
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.remove('active', 'border-primary', 'bg-primary/10', 'text-primary');
+        btn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
+      });
+      
+      button.classList.add('active', 'border-primary', 'bg-primary/10', 'text-primary');
+      button.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
+    }
+
+    // Show status message with detailed response
+    function showStatus(message, isSuccess, responseData = null) {
+      const statusEl = document.getElementById('statusMessage');
+      
+      let detailsHtml = '';
+      if (responseData) {
+        detailsHtml = `
+          <details class="mt-3">
+            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
+            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
+          </details>
+        `;
+      }
+      
+      statusEl.className = `mt-6 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
+      statusEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium">${isSuccess ? 'Success!' : 'Error'}</p>
+            <p class="text-sm mt-1">${message}</p>
+            ${detailsHtml}
+          </div>
+        </div>
+      `;
+      statusEl.classList.remove('hidden');
+      
+      // Scroll to status message
+      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Toggle loading state
+    function setLoading(isLoading) {
+      const btn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      const btnSpinner = document.getElementById('btnSpinner');
+      
+      btn.disabled = isLoading;
+      btnText.textContent = isLoading ? 'Syncing...' : 'Sync Template';
+      btnSpinner.classList.toggle('hidden', !isLoading);
+      btn.classList.toggle('opacity-75', isLoading);
+      btn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+
+    // Log sync result to Supabase
+    async function logSyncResult(data, success, errorMessage = null) {
+      try {
+        const { error } = await supabaseClient
+          .from('template_sync_logs')
+          .insert({
+            templated_id: data.templated_id,
+            name: data.name,
+            status: success ? 'success' : 'error',
+            error_message: errorMessage
+          });
+        
+        if (error) {
+          console.error('Failed to log sync result:', error);
+        }
+      } catch (err) {
+        console.error('Error logging to Supabase:', err);
+      }
+    }
+
+    // Load sync history from Supabase
+    async function loadHistory() {
+      const container = document.getElementById('syncHistory');
+      
+      try {
+        const { data, error } = await supabaseClient
+          .from('template_sync_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm text-center py-4">No sync history yet</p>';
+          updateStats(0, 0, 0);
+          return;
+        }
+        
+        // Calculate stats
+        const successCount = data.filter(item => item.status === 'success').length;
+        const errorCount = data.filter(item => item.status === 'error').length;
+        updateStats(data.length, successCount, errorCount);
+        
+        // Render history
+        container.innerHTML = data.map(item => `
+          <div class="flex items-start justify-between p-3 bg-gray-100 dark:bg-gray-700/50 rounded-lg">
+            <div class="flex items-start gap-3 min-w-0 flex-1">
+              <span class="flex-shrink-0 mt-0.5">${item.status === 'success' ? '✅' : '❌'}</span>
+              <div class="min-w-0 flex-1">
+                <p class="font-medium text-gray-900 dark:text-white text-sm truncate">${escapeHtml(item.name)}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">${escapeHtml(item.templated_id)}</p>
+                ${item.error_message ? `
+                  <details class="mt-1">
+                    <summary class="text-xs text-red-600 dark:text-red-400 cursor-pointer">View error</summary>
+                    <p class="text-xs text-red-600 dark:text-red-400 mt-1 break-all">${escapeHtml(item.error_message)}</p>
+                  </details>
+                ` : ''}
+              </div>
+            </div>
+            <span class="text-xs text-gray-400 flex-shrink-0 ml-2">${formatDate(item.created_at)}</span>
+          </div>
+        `).join('');
+        
+      } catch (err) {
+        console.error('Error loading history:', err);
+        container.innerHTML = `
+          <div class="text-center py-4">
+            <p class="text-red-500 dark:text-red-400 text-sm">Failed to load history</p>
+            <button onclick="loadHistory()" class="text-primary text-sm mt-2 hover:underline">Try again</button>
+          </div>
+        `;
+      }
+    }
+
+    // Update stats display
+    function updateStats(total, success, errors) {
+      document.getElementById('totalSyncs').textContent = total;
+      document.getElementById('successSyncs').textContent = success;
+      document.getElementById('errorSyncs').textContent = errors;
+    }
+
+    // Format date for display
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+      
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+      
+      return date.toLocaleDateString();
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Form submission
+    document.getElementById('syncForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Hide previous status
+      document.getElementById('statusMessage').classList.add('hidden');
+      
+      // Get form data
+      const formData = {
+        templated_id: document.getElementById('templated_id').value.trim(),
+        name: document.getElementById('name').value.trim(),
+        canvas_width: parseInt(document.getElementById('canvas_width').value),
+        canvas_height: parseInt(document.getElementById('canvas_height').value),
+        is_active: document.getElementById('is_active').checked,
+        supports: Array.from(document.querySelectorAll('input[name="supports"]:checked')).map(cb => cb.value)
+      };
+      
+      // Validate
+      if (!formData.templated_id || !formData.name) {
+        showStatus('Please fill in all required fields', false);
+        return;
+      }
+      
+      if (formData.supports.length === 0) {
+        formData.supports = ['single'];
+      }
+      
+      setLoading(true);
+      
+      let responseData = null;
+      let success = false;
+      let errorMessage = null;
+      
+      try {
+        const response = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        // Try to parse response as JSON
+        const responseText = await response.text();
+        try {
+          responseData = JSON.parse(responseText);
+        } catch {
+          // Response is not JSON
+          responseData = { raw: responseText };
+        }
+        
+        if (response.ok && responseData.success) {
+          success = true;
+          showStatus(
+            `Template "${formData.name}" synced successfully! It should appear in the app shortly.`,
+            true,
+            responseData
+          );
+          
+          // Clear form (except canvas size)
+          document.getElementById('templated_id').value = '';
+          document.getElementById('name').value = '';
+        } else {
+          errorMessage = responseData.error || responseData.message || `HTTP ${response.status}: ${response.statusText}`;
+          throw new Error(errorMessage);
+        }
+      } catch (error) {
+        console.error('Sync error:', error);
+        errorMessage = error.message || 'Failed to sync template. Check console for details.';
+        showStatus(errorMessage, false, responseData);
+      } finally {
+        // Log to Supabase
+        await logSyncResult(formData, success, errorMessage);
+        
+        // Refresh history
+        await loadHistory();
+        
+        setLoading(false);
+      }
+    });
+
+    // Detect system dark mode
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.classList.add('dark');
+    }
+
+    // Initialize: Load history on page load
+    loadHistory();
+  </script>
+</body>
+</html>

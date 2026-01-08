@@ -12,8 +12,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { useRouter, Stack } from 'expo-router';
-import { ChevronLeft, Trash2, FileEdit, ImageIcon, AlertCircle } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Trash2, FileEdit, ImageIcon, AlertCircle } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -30,7 +30,7 @@ const PLACEHOLDER_LOGO_URL: string | null = null;
 
 export default function DraftsScreen() {
   const router = useRouter();
-  const { drafts, templates, deleteDraft, loadDraft, isDraftsLoading, refreshDrafts } = useApp();
+  const { drafts, templates, deleteDraft, loadDraft, isDraftsLoading } = useApp();
 
   // Get template for a draft
   const getTemplateForDraft = useCallback(
@@ -180,138 +180,121 @@ export default function DraftsScreen() {
   );
 
   return (
-    <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerShown: false,
-        }}
-      />
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <ChevronLeft size={24} color={Colors.light.text} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Drafts</Text>
-          <View style={styles.headerSpacer} />
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Drafts</Text>
+      </View>
+
+      {isDraftsLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.light.accent} />
+          <Text style={styles.loadingText}>Loading drafts...</Text>
         </View>
-
-        {isDraftsLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.light.accent} />
-            <Text style={styles.loadingText}>Loading drafts...</Text>
+      ) : sortedDrafts.length === 0 ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIcon}>
+            <FileEdit size={48} color={Colors.light.textTertiary} />
           </View>
-        ) : sortedDrafts.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}>
-              <FileEdit size={48} color={Colors.light.textTertiary} />
-            </View>
-            <Text style={styles.emptyTitle}>No drafts yet</Text>
-            <Text style={styles.emptyText}>
-              Start creating and save your progress to continue later
-            </Text>
-            <TouchableOpacity
-              style={styles.emptyButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.emptyButtonText}>Start Creating</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            {sortedDrafts.map((draft) => {
-              const template = getTemplateForDraft(draft.templateId);
-              const isTemplateAvailable = !!template;
-              const status = getDraftStatus(draft);
-              const statusColor = getDraftStatusColor(draft);
+          <Text style={styles.emptyTitle}>No drafts yet</Text>
+          <Text style={styles.emptyText}>
+            Start creating and save your progress to continue later
+          </Text>
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+        >
+          {sortedDrafts.map((draft) => {
+            const template = getTemplateForDraft(draft.templateId);
+            const isTemplateAvailable = !!template;
+            const status = getDraftStatus(draft);
+            const statusColor = getDraftStatusColor(draft);
 
-              return (
-                <Pressable
-                  key={draft.id}
-                  style={[
-                    styles.draftCard,
-                    !isTemplateAvailable && styles.draftCardDisabled,
-                  ]}
-                  onPress={() => handleResumeDraft(draft)}
-                >
-                  {/* Preview section */}
-                  <View style={styles.previewSection}>
-                    {draft.renderedPreviewUrl ? (
-                      // Show the actual rendered preview (same as in editor)
-                      <View style={styles.renderedPreviewContainer}>
+            return (
+              <Pressable
+                key={draft.id}
+                style={[
+                  styles.draftCard,
+                  !isTemplateAvailable && styles.draftCardDisabled,
+                ]}
+                onPress={() => handleResumeDraft(draft)}
+              >
+                {/* Preview section */}
+                <View style={styles.previewSection}>
+                  {draft.renderedPreviewUrl ? (
+                    // Show the actual rendered preview (same as in editor)
+                    <View style={styles.renderedPreviewContainer}>
+                      <Image
+                        source={{ uri: draft.renderedPreviewUrl }}
+                        style={styles.renderedPreview}
+                        contentFit="contain"
+                        transition={200}
+                      />
+                    </View>
+                  ) : (
+                    // Fallback: Show placeholder with logo or icon
+                    <View style={styles.placeholderContainer}>
+                      {PLACEHOLDER_LOGO_URL ? (
                         <Image
-                          source={{ uri: draft.renderedPreviewUrl }}
-                          style={styles.renderedPreview}
+                          source={{ uri: PLACEHOLDER_LOGO_URL }}
+                          style={styles.placeholderLogo}
                           contentFit="contain"
-                          transition={200}
                         />
+                      ) : (
+                        <View style={styles.placeholderIconContainer}>
+                          <ImageIcon size={32} color={Colors.light.textTertiary} />
+                          <Text style={styles.placeholderText}>No preview yet</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                {/* Card footer */}
+                <View style={styles.cardFooter}>
+                  <View style={styles.cardInfo}>
+                    {!isTemplateAvailable && (
+                      <View style={styles.warningBadge}>
+                        <AlertCircle size={12} color={Colors.light.error} />
+                        <Text style={styles.warningText}>Template unavailable</Text>
                       </View>
-                    ) : (
-                      // Fallback: Show placeholder with logo or icon
-                      <View style={styles.placeholderContainer}>
-                        {PLACEHOLDER_LOGO_URL ? (
-                          <Image
-                            source={{ uri: PLACEHOLDER_LOGO_URL }}
-                            style={styles.placeholderLogo}
-                            contentFit="contain"
-                          />
-                        ) : (
-                          <View style={styles.placeholderIconContainer}>
-                            <ImageIcon size={32} color={Colors.light.textTertiary} />
-                            <Text style={styles.placeholderText}>No preview yet</Text>
-                          </View>
-                        )}
+                    )}
+                    {isTemplateAvailable && (
+                      <View style={styles.statusRow}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: statusColor },
+                          ]}
+                        />
+                        <Text style={[styles.statusText, { color: statusColor }]}>
+                          {status}
+                        </Text>
+                        <Text style={styles.dateText}>
+                          • {formatDate(draft.updatedAt)}
+                        </Text>
                       </View>
                     )}
                   </View>
 
-                  {/* Card footer */}
-                  <View style={styles.cardFooter}>
-                    <View style={styles.cardInfo}>
-                      {!isTemplateAvailable && (
-                        <View style={styles.warningBadge}>
-                          <AlertCircle size={12} color={Colors.light.error} />
-                          <Text style={styles.warningText}>Template unavailable</Text>
-                        </View>
-                      )}
-                      {isTemplateAvailable && (
-                        <View style={styles.statusRow}>
-                          <View
-                            style={[
-                              styles.statusDot,
-                              { backgroundColor: statusColor },
-                            ]}
-                          />
-                          <Text style={[styles.statusText, { color: statusColor }]}>
-                            {status}
-                          </Text>
-                          <Text style={styles.dateText}>
-                            • {formatDate(draft.updatedAt)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Delete button */}
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={(e) => handleDeleteDraft(e, draft)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Trash2 size={18} color={Colors.light.error} />
-                    </TouchableOpacity>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        )}
-      </SafeAreaView>
-    </View>
+                  {/* Delete button */}
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={(e) => handleDeleteDraft(e, draft)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Trash2 size={18} color={Colors.light.error} />
+                  </TouchableOpacity>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -320,31 +303,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.light.background,
   },
-  safeArea: {
-    flex: 1,
-  },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: GRID_PADDING,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   title: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 32,
+    fontWeight: '700' as const,
     color: Colors.light.text,
-  },
-  headerSpacer: {
-    width: 40,
+    letterSpacing: -0.5,
   },
   loadingContainer: {
     flex: 1,
@@ -373,7 +341,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: Colors.light.text,
     marginBottom: 8,
   },
@@ -382,18 +350,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 24,
-  },
-  emptyButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    backgroundColor: Colors.light.text,
-    borderRadius: 12,
-  },
-  emptyButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.light.surface,
   },
   content: {
     flex: 1,
@@ -504,4 +460,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-

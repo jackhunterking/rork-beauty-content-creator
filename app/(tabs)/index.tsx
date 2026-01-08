@@ -2,7 +2,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Press
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, FileEdit, Square, RectangleVertical } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical } from "lucide-react-native";
 import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
@@ -50,12 +50,12 @@ const formatFilters: { format: TemplateFormat | 'all'; icon: (active: boolean) =
 
 export default function CreateScreen() {
   const router = useRouter();
-  const { filteredTemplates, currentProject, setContentType, setFormat, selectedFormat, selectTemplate, toggleFavourite, isLoading, drafts } = useApp();
+  const { filteredTemplates, currentProject, setContentType, setFormat, selectedFormat, selectTemplate, toggleFavourite, isLoading, favouriteTemplates } = useApp();
 
-  const draftCount = drafts.length;
+  const favouriteCount = favouriteTemplates.length;
 
-  const handleDraftsPress = useCallback(() => {
-    router.push('/drafts');
+  const handleFavouritesPress = useCallback(() => {
+    router.push('/favourites');
   }, [router]);
 
   const handleContentTypeSelect = useCallback((type: ContentType) => {
@@ -82,15 +82,15 @@ export default function CreateScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Create</Text>
         <TouchableOpacity 
-          style={styles.draftsButton} 
-          onPress={handleDraftsPress}
+          style={styles.favouritesButton} 
+          onPress={handleFavouritesPress}
           activeOpacity={0.7}
         >
-          <FileEdit size={20} color={Colors.light.text} />
-          <Text style={styles.draftsButtonText}>Drafts</Text>
-          {draftCount > 0 && (
-            <View style={styles.draftsBadge}>
-              <Text style={styles.draftsBadgeText}>{draftCount > 9 ? '9+' : draftCount}</Text>
+          <Star size={20} color={Colors.light.text} />
+          <Text style={styles.favouritesButtonText}>Favourites</Text>
+          {favouriteCount > 0 && (
+            <View style={styles.favouritesBadge}>
+              <Text style={styles.favouritesBadgeText}>{favouriteCount > 9 ? '9+' : favouriteCount}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -218,7 +218,7 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     letterSpacing: -0.5,
   },
-  draftsButton: {
+  favouritesButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -227,12 +227,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.surfaceSecondary,
     borderRadius: 20,
   },
-  draftsButtonText: {
+  favouritesButtonText: {
     fontSize: 14,
     fontWeight: '600' as const,
     color: Colors.light.text,
   },
-  draftsBadge: {
+  favouritesBadge: {
     minWidth: 18,
     height: 18,
     borderRadius: 9,
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 5,
   },
-  draftsBadgeText: {
+  favouritesBadgeText: {
     fontSize: 11,
     fontWeight: '700' as const,
     color: Colors.light.surface,
