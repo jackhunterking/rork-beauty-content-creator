@@ -38,22 +38,28 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
 
   // Handle real-time INSERT event
   const handleInsert = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
+    console.log('[Realtime] INSERT received:', payload.new);
     const newRow = payload.new as TemplateRow;
     // Only add if it's active
     if (newRow.is_active) {
       const newTemplate = mapRowToTemplate(newRow);
+      console.log('[Realtime] Adding new template:', newTemplate.name);
       setTemplates(prev => [...prev, newTemplate]);
     }
   }, []);
 
   // Handle real-time UPDATE event
   const handleUpdate = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
+    console.log('[Realtime] UPDATE received:', payload.new);
     const updatedRow = payload.new as TemplateRow;
     const updatedTemplate = mapRowToTemplate(updatedRow);
+    
+    console.log('[Realtime] Updating template:', updatedTemplate.name, 'thumbnail:', updatedTemplate.thumbnail);
     
     setTemplates(prev => {
       // If template became inactive, remove it
       if (!updatedRow.is_active) {
+        console.log('[Realtime] Template became inactive, removing:', updatedTemplate.name);
         return prev.filter(t => t.id !== updatedTemplate.id);
       }
       
@@ -62,11 +68,13 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
       
       if (existingIndex >= 0) {
         // Update existing template
+        console.log('[Realtime] Updating existing template at index:', existingIndex);
         const updated = [...prev];
         updated[existingIndex] = updatedTemplate;
         return updated;
       } else {
         // Template became active, add it
+        console.log('[Realtime] Template became active, adding:', updatedTemplate.name);
         return [...prev, updatedTemplate];
       }
     });
@@ -74,7 +82,9 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
 
   // Handle real-time DELETE event
   const handleDelete = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
+    console.log('[Realtime] DELETE received:', payload.old);
     const deletedRow = payload.old as TemplateRow;
+    console.log('[Realtime] Removing template:', deletedRow.id);
     setTemplates(prev => prev.filter(t => t.id !== deletedRow.id));
   }, []);
 
@@ -113,12 +123,17 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
         },
         handleDelete
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
+        console.log('[Realtime] Subscription status:', status, err ? `Error: ${err.message}` : '');
         if (status === 'SUBSCRIBED') {
-          console.log('Real-time subscription active for templates');
+          console.log('[Realtime] ✓ Subscription active for templates table');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('Real-time channel error');
+          console.error('[Realtime] ✗ Channel error:', err);
           setError(new Error('Real-time subscription failed'));
+        } else if (status === 'TIMED_OUT') {
+          console.error('[Realtime] ✗ Subscription timed out');
+        } else if (status === 'CLOSED') {
+          console.log('[Realtime] Channel closed');
         }
       });
 
