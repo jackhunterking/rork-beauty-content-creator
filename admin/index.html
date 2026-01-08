@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resulta - Before & After Content Creator</title>
+  <meta name="description" content="Create stunning before & after content for your beauty business in seconds.">
+  <link rel="icon" type="image/png" href="https://tmgjsrxdjbazrwvbdoed.supabase.co/storage/v1/object/public/assets/favicon.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#E91E63',
+            dark: '#1a1a1a',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', system-ui, sans-serif; }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #E91E63 0%, #FF6B6B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .phone-mockup {
+      background: linear-gradient(145deg, #2a2a2a 0%, #1a1a1a 100%);
+      border-radius: 40px;
+      padding: 12px;
+      box-shadow: 0 50px 100px -20px rgba(0,0,0,0.5), 0 30px 60px -30px rgba(0,0,0,0.6);
+    }
+    
+    .phone-screen {
+      background: #f5f5f0;
+      border-radius: 32px;
+      overflow: hidden;
+    }
+    
+    .step-number {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #E91E63 0%, #FF6B6B 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      font-weight: 800;
+      color: white;
+      flex-shrink: 0;
+    }
+    
+    .feature-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-20px); }
+    }
+    
+    .float-animation {
+      animation: float 6s ease-in-out infinite;
+    }
+    
+    .float-animation-delayed {
+      animation: float 6s ease-in-out infinite;
+      animation-delay: -3s;
+    }
+  </style>
+</head>
+<body class="bg-dark text-white overflow-x-hidden">
+  
+  <!-- Hero Section -->
+  <section class="min-h-screen flex flex-col justify-center relative px-6 py-20">
+    <!-- Background gradient -->
+    <div class="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-transparent"></div>
+    <div class="absolute top-1/4 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
+    
+    <div class="max-w-7xl mx-auto w-full relative z-10">
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        
+        <!-- Left: Text Content -->
+        <div class="text-center lg:text-left">
+          <h1 class="text-5xl md:text-7xl lg:text-8xl font-extrabold leading-tight mb-8">
+            Show Your
+            <span class="gradient-text block">Results</span>
+          </h1>
+          <p class="text-xl md:text-2xl text-gray-400 mb-12 max-w-lg mx-auto lg:mx-0">
+            Create stunning before & after content in seconds.
+          </p>
+          
+          <!-- App Store Buttons -->
+          <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+            <a href="#" class="inline-flex items-center justify-center gap-3 bg-white text-black px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-gray-100 transition-all hover:scale-105">
+              <svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+              </svg>
+              App Store
+            </a>
+            <a href="#" class="inline-flex items-center justify-center gap-3 bg-white/10 border border-white/20 px-8 py-4 rounded-2xl font-semibold text-lg hover:bg-white/20 transition-all hover:scale-105">
+              <svg class="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/>
+              </svg>
+              Google Play
+            </a>
+          </div>
+        </div>
+        
+        <!-- Right: Phone Mockups -->
+        <div class="relative flex justify-center lg:justify-end">
+          <div class="relative">
+            <!-- Back phone -->
+            <div class="phone-mockup w-64 md:w-72 absolute -left-20 top-10 opacity-60 scale-90 float-animation-delayed">
+              <div class="phone-screen aspect-[9/19.5]">
+                <img 
+                  src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400&h=800&fit=crop" 
+                  alt="Template selection" 
+                  class="w-full h-full object-cover"
+                >
+              </div>
+            </div>
+            
+            <!-- Front phone -->
+            <div class="phone-mockup w-72 md:w-80 relative z-10 float-animation">
+              <div class="phone-screen aspect-[9/19.5] flex flex-col">
+                <!-- Status bar -->
+                <div class="bg-[#f5f5f0] px-6 py-3 flex justify-between items-center text-black text-sm font-semibold">
+                  <span>9:41</span>
+                  <div class="flex gap-1">
+                    <div class="w-4 h-2 bg-black rounded-sm"></div>
+                  </div>
+                </div>
+                
+                <!-- App content preview -->
+                <div class="flex-1 bg-[#f5f5f0] p-4">
+                  <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+                    <!-- Before image -->
+                    <div class="relative">
+                      <img 
+                        src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=400&h=300&fit=crop" 
+                        alt="Before" 
+                        class="w-full h-40 object-cover"
+                      >
+                      <div class="absolute top-3 left-3 bg-black text-white px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2">
+                        before <span>→</span>
+                      </div>
+                    </div>
+                    <!-- After image -->
+                    <div class="relative">
+                      <img 
+                        src="https://images.unsplash.com/photo-1596704017254-9b121068fb31?w=400&h=300&fit=crop" 
+                        alt="After" 
+                        class="w-full h-40 object-cover"
+                      >
+                      <div class="absolute bottom-3 right-3 bg-white text-black px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 border border-black">
+                        <span>←</span> after
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Buttons -->
+                  <div class="flex gap-3 mt-4">
+                    <div class="flex-1 bg-[#d4d4c8] rounded-xl py-3 text-center text-gray-600 font-medium text-sm">
+                      Download
+                    </div>
+                    <div class="flex-1 bg-[#d4d4c8] rounded-xl py-3 text-center text-gray-600 font-medium text-sm">
+                      Share
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Scroll indicator -->
+    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-gray-500">
+      <span class="text-sm">How it works</span>
+      <svg class="w-6 h-6 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path>
+      </svg>
+    </div>
+  </section>
+  
+  <!-- How It Works Section -->
+  <section class="py-32 px-6 relative">
+    <div class="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent"></div>
+    
+    <div class="max-w-6xl mx-auto relative z-10">
+      <h2 class="text-4xl md:text-6xl font-extrabold text-center mb-24">
+        Three Simple Steps
+      </h2>
+      
+      <div class="space-y-32">
+        
+        <!-- Step 1 -->
+        <div class="flex flex-col md:flex-row items-center gap-12 md:gap-20">
+          <div class="step-number">1</div>
+          <div class="flex-1 text-center md:text-left">
+            <h3 class="text-3xl md:text-4xl font-bold mb-4">Choose a Template</h3>
+            <p class="text-xl text-gray-400">Pick from beautiful, professionally designed layouts.</p>
+          </div>
+          <div class="w-64 h-64 bg-gradient-to-br from-primary/20 to-primary/5 rounded-3xl flex items-center justify-center">
+            <svg class="w-24 h-24 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
+            </svg>
+          </div>
+        </div>
+        
+        <!-- Step 2 -->
+        <div class="flex flex-col md:flex-row-reverse items-center gap-12 md:gap-20">
+          <div class="step-number">2</div>
+          <div class="flex-1 text-center md:text-right">
+            <h3 class="text-3xl md:text-4xl font-bold mb-4">Add Your Photos</h3>
+            <p class="text-xl text-gray-400">Tap each slot to capture or select your before & after shots.</p>
+          </div>
+          <div class="w-64 h-64 bg-gradient-to-br from-primary/20 to-primary/5 rounded-3xl flex items-center justify-center">
+            <svg class="w-24 h-24 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+          </div>
+        </div>
+        
+        <!-- Step 3 -->
+        <div class="flex flex-col md:flex-row items-center gap-12 md:gap-20">
+          <div class="step-number">3</div>
+          <div class="flex-1 text-center md:text-left">
+            <h3 class="text-3xl md:text-4xl font-bold mb-4">Share Everywhere</h3>
+            <p class="text-xl text-gray-400">Download or share directly to Instagram, TikTok, and more.</p>
+          </div>
+          <div class="w-64 h-64 bg-gradient-to-br from-primary/20 to-primary/5 rounded-3xl flex items-center justify-center">
+            <svg class="w-24 h-24 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path>
+            </svg>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  </section>
+  
+  <!-- CTA Section -->
+  <section class="py-32 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <h2 class="text-4xl md:text-6xl font-extrabold mb-8">
+        Ready to Show Your <span class="gradient-text">Results?</span>
+      </h2>
+      <p class="text-xl text-gray-400 mb-12">
+        Join thousands of beauty professionals creating stunning content.
+      </p>
+      
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#" class="inline-flex items-center justify-center gap-3 bg-primary hover:bg-pink-600 px-10 py-5 rounded-2xl font-semibold text-xl transition-all hover:scale-105 shadow-lg shadow-primary/30">
+          Download Free
+        </a>
+      </div>
+    </div>
+  </section>
+  
+  <!-- Footer -->
+  <footer class="py-12 px-6 border-t border-white/10">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+      <div class="text-2xl font-bold gradient-text">Resulta</div>
+      <div class="flex gap-8 text-gray-400">
+        <a href="/admin" class="hover:text-white transition">Admin</a>
+        <a href="#" class="hover:text-white transition">Privacy</a>
+        <a href="#" class="hover:text-white transition">Terms</a>
+      </div>
+      <div class="text-gray-500 text-sm">
+        © 2026 Resulta. All rights reserved.
+      </div>
+    </div>
+  </footer>
+  
+</body>
+</html>

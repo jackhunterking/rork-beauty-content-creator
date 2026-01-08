@@ -862,7 +862,7 @@ export default function EditorScreen() {
           {/* Premium upsell hint - only show when ready */}
           {!isPremium && canDownload && (
             <Text style={styles.watermarkHint}>
-              Includes "Made with BeautyApp" watermark
+              Includes "Made with Resulta" watermark
             </Text>
           )}
         </View>

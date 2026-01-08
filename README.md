@@ -1,4 +1,11 @@
-# Welcome to your Rork app
+# Resulta
+
+Before & After content creation app for beauty professionals.
+
+## Links
+
+- **Website**: [resulta.app](https://resulta.app)
+- **Admin Panel**: [resulta.app/admin](https://resulta.app/admin) - Template sync management
 
 ## Project info
 

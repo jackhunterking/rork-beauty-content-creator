@@ -3,12 +3,12 @@ const templatedApiKey = process.env.EXPO_PUBLIC_TEMPLATED_API_KEY || process.env
 
 export default {
   expo: {
-    name: "Beauty Content Creator",
-    slug: "beauty-content-creator",
+    name: "Resulta",
+    slug: "resulta",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
-    scheme: "rork-app",
+    scheme: "resulta",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     splash: {
@@ -18,7 +18,7 @@ export default {
     },
     ios: {
       supportsTablet: false,
-      bundleIdentifier: "app.rork.beauty-content-creator",
+      bundleIdentifier: "app.resulta.ios",
       infoPlist: {
         NSPhotoLibraryUsageDescription: "Allow $(PRODUCT_NAME) to access your photos",
         NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access your camera",
@@ -30,7 +30,7 @@ export default {
         foregroundImage: "./assets/images/adaptive-icon.png",
         backgroundColor: "#ffffff",
       },
-      package: "app.rork.beauty_content_creator",
+      package: "app.resulta.android",
       permissions: [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -47,7 +47,7 @@ export default {
       [
         "expo-router",
         {
-          origin: "https://rork.com/",
+          origin: "https://resulta.app/",
         },
       ],
       "expo-font",

@@ -1,6 +1,6 @@
 # Admin Template Guide
 
-A complete guide for creating, naming, and syncing templates from Templated.io to the Beauty Content Creator app.
+A complete guide for creating, naming, and syncing templates from Templated.io to the Resulta app.
 
 ---
 
@@ -35,7 +35,7 @@ A complete guide for creating, naming, and syncing templates from Templated.io t
 
 - **No pre-rendered previews needed** - The app renders everything via Templated.io API
 - **Slot layers** - Where user photos go (identified by `slot` in name)
-- **Watermark layer** - "Made with BeautyApp" branding (hidden for premium users)
+- **Watermark layer** - "Made with Resulta" branding (hidden for premium users)
 - **All other layers** - Labels, decorations, backgrounds (rendered automatically)
 
 ---
@@ -57,7 +57,7 @@ These are image layers where users will add their before/after photos.
 
 ### Watermark Layer (Branding)
 
-A text or image layer that shows "Made with BeautyApp" for free users.
+A text or image layer that shows "Made with Resulta" for free users.
 
 **Rule**: Layer name must contain `watermark`
 
@@ -125,7 +125,7 @@ Everything else becomes part of the template design (labels, arrows, backgrounds
 ### Step 5: Add Watermark Layer
 
 1. Add a text layer in a corner (bottom-right recommended)
-2. Set text to: `Made with BeautyApp`
+2. Set text to: `Made with Resulta`
 3. **Rename layer to `watermark`**
 4. Style it subtly:
    - Small font size (12-16px)
@@ -154,10 +154,17 @@ In Templated.io, check the layer panel:
 
 ## Syncing Template to App
 
-### Webhook URL
+### Admin Panel (Recommended)
+
+Use the Resulta Admin Panel for easy template syncing:
+```
+https://resulta.app/admin
+```
+
+### Webhook URL (Alternative)
 
 ```
-https://your-n8n-instance.com/webhook/sync-template
+https://jackhunterking.app.n8n.cloud/webhook/sync-template
 ```
 
 ### Request Format
@@ -189,7 +196,7 @@ https://your-n8n-instance.com/webhook/sync-template
 ### Example Sync Command
 
 ```bash
-curl -X POST "https://your-n8n.com/webhook/sync-template" \
+curl -X POST "https://jackhunterking.app.n8n.cloud/webhook/sync-template" \
   -H "Content-Type: application/json" \
   -d '{
     "templated_id": "clx1234567890",
@@ -221,7 +228,7 @@ curl -X POST "https://your-n8n.com/webhook/sync-template" \
 
 ### Setting Up Watermark in Template
 
-1. Create a text layer with content: `Made with BeautyApp`
+1. Create a text layer with content: `Made with Resulta`
 2. **Name the layer `watermark`** (this is important!)
 3. Position in a corner:
    - Bottom-right (recommended)
@@ -246,7 +253,7 @@ Position: 20px from bottom-right corner
 
 **Style 2: With Background**
 ```
-Text: Made with BeautyApp
+Text: Made with Resulta
 Background: Black pill shape, 40% opacity
 Position: Bottom-right corner with 15px padding
 ```
@@ -358,6 +365,7 @@ When rendering, the app sends:
 
 ## Support
 
+- **Resulta Admin Panel**: https://resulta.app/admin
 - **Templated.io Docs**: https://docs.templated.io
 - **Supabase Dashboard**: https://supabase.com/dashboard/project/tmgjsrxdjbazrwvbdoed
-- **N8n Workflow**: Check your N8n instance for "Sync Template (Lean)"
+- **N8n Workflow**: Check your N8n instance for "Admin Template Sync"
