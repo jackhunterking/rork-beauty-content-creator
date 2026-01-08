@@ -89,6 +89,7 @@ export default function FavouritesScreen() {
                     style={styles.templateThumbnail}
                     contentFit="cover"
                     transition={200}
+                    cacheKey={`${template.id}-${template.updatedAt}`}
                   />
                   <TouchableOpacity
                     style={[styles.favouriteButton, styles.favouriteButtonActive]}

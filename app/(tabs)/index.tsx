@@ -178,6 +178,7 @@ export default function CreateScreen() {
                   style={styles.templateThumbnail}
                   contentFit="cover"
                   transition={200}
+                  cacheKey={`${template.id}-${template.updatedAt}`}
                 />
                 <TouchableOpacity
                   style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}

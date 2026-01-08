@@ -90,6 +90,7 @@ export function TemplateCanvas({
           style={styles.previewImage}
           contentFit="cover"
           transition={200}
+          cacheKey={`${template.id}-${template.updatedAt}-${renderedPreviewUri || 'default'}`}
           onError={() => {
             // If the rendered preview fails to load (e.g., expired URL),
             // notify parent to trigger a fresh render

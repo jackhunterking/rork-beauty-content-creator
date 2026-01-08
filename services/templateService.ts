@@ -38,6 +38,7 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     isActive: row.is_active,
     format: (row.format || 'square') as TemplateFormat,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
     templatedPreviewUrl: row.templated_preview_url || undefined,

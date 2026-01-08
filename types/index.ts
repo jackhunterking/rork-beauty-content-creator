@@ -218,6 +218,7 @@ export interface Template {
   format: TemplateFormat;
   
   createdAt: string;
+  updatedAt: string;
   
   // Templated.io integration fields
   templatedId?: string;
@@ -276,6 +277,7 @@ export interface TemplateRow {
   is_favourite: boolean;
   format: string;
   created_at: string;
+  updated_at: string;
   // Templated.io integration fields
   templated_id: string | null;
   templated_preview_url: string | null;
