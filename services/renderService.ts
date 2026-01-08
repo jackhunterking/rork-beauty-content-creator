@@ -29,48 +29,14 @@ import { getDraftSlotImagePath, fileExists } from './localStorageService';
 // Note: v1 API uses /v1/render (singular), v2 uses /v2/renders (plural) but requires different auth
 const TEMPLATED_API_URL = 'https://api.templated.io/v1/render';
 
-// Get API key from environment with detailed debugging
+// Get API key from environment
 const getTemplatedApiKey = (): string => {
-  // ============================================
-  // DEBUG: Log all possible sources of the API key
-  // ============================================
-  console.log('\n========== Templated API Key Debug ==========');
-  
-  // Source 1: Constants.expoConfig.extra (from app.config.js)
-  const fromExpoConfig = Constants.expoConfig?.extra?.templatedApiKey;
-  console.log('[renderService] Constants.expoConfig?.extra?.templatedApiKey:', 
-    fromExpoConfig ? `SET (length: ${fromExpoConfig.length}, starts with: ${fromExpoConfig.substring(0, 8)}...)` : 'NOT SET'
-  );
-  
-  // Source 2: Direct process.env (runtime)
-  const fromEnvPublic = process.env.EXPO_PUBLIC_TEMPLATED_API_KEY;
-  console.log('[renderService] process.env.EXPO_PUBLIC_TEMPLATED_API_KEY:', 
-    fromEnvPublic ? `SET (length: ${fromEnvPublic.length})` : 'NOT SET'
-  );
-  
-  // Debug: Show what's in Constants.expoConfig.extra
-  console.log('[renderService] Constants.expoConfig?.extra keys:', 
-    Constants.expoConfig?.extra ? Object.keys(Constants.expoConfig.extra) : 'extra is undefined'
-  );
-  
-  // Debug: Show configLoadedAt to verify config was loaded
-  console.log('[renderService] Config loaded at:', 
-    Constants.expoConfig?.extra?.configLoadedAt || 'NOT SET'
-  );
-  
-  console.log('==============================================\n');
-  
-  // Resolve API key - prioritize expoConfig.extra (from app.config.js)
-  const apiKey = fromExpoConfig || fromEnvPublic || '';
+  const apiKey = Constants.expoConfig?.extra?.templatedApiKey || 
+                 process.env.EXPO_PUBLIC_TEMPLATED_API_KEY ||
+                 '';
   
   if (!apiKey) {
-    console.error('[renderService] ERROR: Templated.io API key not configured!');
-    console.error('[renderService] Please ensure EXPO_PUBLIC_TEMPLATED_API_KEY is set in your .env file');
-    console.error('[renderService] Then restart with: npx expo start --clear');
-  } else {
-    console.log('[renderService] API key resolved successfully from:', 
-      fromExpoConfig ? 'Constants.expoConfig.extra' : 'process.env'
-    );
+    console.warn('Templated.io API key not configured');
   }
   
   return apiKey;
@@ -171,35 +137,23 @@ export async function renderPreview(
       layerPayload['watermark'] = { hide: true };
     }
     
-    // DEBUG: Log request details (mask most of API key for security)
-    const maskedKey = apiKey ? `${apiKey.substring(0, 8)}...${apiKey.substring(apiKey.length - 4)}` : 'EMPTY';
-    console.log('[renderService] Making API request to:', TEMPLATED_API_URL);
-    console.log('[renderService] Authorization header:', `Bearer ${maskedKey}`);
-    console.log('[renderService] API key length:', apiKey.length);
-    console.log('[renderService] API key has whitespace:', apiKey !== apiKey.trim());
-    console.log('[renderService] Template ID:', templateId);
-    console.log('[renderService] Layer payload keys:', Object.keys(layerPayload));
-    
     // Call Templated.io API
     const response = await fetch(TEMPLATED_API_URL, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,  // Trim any whitespace
+        'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         template: templateId,
-        format: 'jpeg',  // JPEG for faster rendering
+        format: 'jpeg',
         layers: layerPayload,
       }),
     });
     
-    console.log('[renderService] Response status:', response.status);
-    
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[renderService] API Error Response:', errorText);
-      console.error('[renderService] Full API key for verification (REMOVE IN PRODUCTION):', apiKey);
+      console.error('Templated.io API error:', errorText);
       throw new Error(`Preview render failed: ${response.status}`);
     }
     
