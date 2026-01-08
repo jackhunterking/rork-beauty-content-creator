@@ -50,6 +50,14 @@ export default function EditorScreen() {
   const [imagesModifiedSinceLoad, setImagesModifiedSinceLoad] = useState(false);
   const hasInitializedFromCacheRef = useRef(false);
   
+  // Track the initial state of captured images when draft/template loads
+  // Used to determine if user made actual changes (for back button prompt)
+  const initialCapturedImagesRef = useRef<Record<string, string | null>>({});
+  const hasSetInitialStateRef = useRef(false);
+  
+  // Track current template ID to detect template changes
+  const currentTemplateIdRef = useRef<string | null>(null);
+  
   // Download/share state
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -77,6 +85,52 @@ export default function EditorScreen() {
 
   // Track previous capturedImages to detect actual changes (not just reference changes)
   const prevCapturedImagesRef = useRef<Record<string, { uri: string } | null>>({});
+
+  // Reset all refs when template changes (handles navigating from Create page)
+  // This ensures clicking a new template always starts with fresh state
+  useEffect(() => {
+    const newTemplateId = template?.id || null;
+    
+    // If template ID changed, reset all refs
+    if (currentTemplateIdRef.current !== newTemplateId) {
+      console.log('[Editor] Template changed, resetting all refs');
+      
+      // Reset all tracking refs
+      hasInitializedFromCacheRef.current = false;
+      hasSetInitialStateRef.current = false;
+      prevCapturedImagesRef.current = {};
+      initialCapturedImagesRef.current = {};
+      allowNavigationRef.current = false;
+      
+      // Reset state
+      setRenderedPreviewUri(null);
+      setImagesModifiedSinceLoad(false);
+      
+      // Update tracked template ID
+      currentTemplateIdRef.current = newTemplateId;
+    }
+  }, [template?.id]);
+
+  // Capture initial state when draft/template first loads
+  // This is used to determine if user made actual changes
+  useEffect(() => {
+    // Only set initial state once per template session
+    if (hasSetInitialStateRef.current) return;
+    
+    // Wait until we have a template
+    if (!template) return;
+    
+    // Capture the initial state of captured images
+    const initialState: Record<string, string | null> = {};
+    for (const [slotId, media] of Object.entries(capturedImages)) {
+      initialState[slotId] = media?.uri || null;
+    }
+    
+    initialCapturedImagesRef.current = initialState;
+    hasSetInitialStateRef.current = true;
+    
+    console.log('[Editor] Captured initial state:', Object.keys(initialState).length, 'images');
+  }, [template, capturedImages]);
 
   // Initialize with cached preview URL when loading a draft
   // This avoids an unnecessary Templated.io API call
@@ -215,8 +269,41 @@ export default function EditorScreen() {
     }
   }, [template, router]);
 
-  // Check if user has made any changes (unsaved work)
-  const hasUnsavedChanges = capturedCount > 0;
+  // Check if user has made any ACTUAL changes since opening
+  // Compare current captured images to initial state
+  const hasUnsavedChanges = useMemo(() => {
+    // If no images at all, no changes
+    if (capturedCount === 0) return false;
+    
+    // If initial state hasn't been set yet, assume no changes
+    if (!hasSetInitialStateRef.current) return false;
+    
+    const initialState = initialCapturedImagesRef.current;
+    
+    // Check if any slot has changed from initial state
+    // Case 1: New image added (wasn't in initial state)
+    // Case 2: Image changed (different URI than initial)
+    // Case 3: Image removed (was in initial but not now)
+    
+    // Get all slot IDs from both current and initial
+    const allSlotIds = new Set([
+      ...Object.keys(capturedImages),
+      ...Object.keys(initialState),
+    ]);
+    
+    for (const slotId of allSlotIds) {
+      const currentUri = capturedImages[slotId]?.uri || null;
+      const initialUri = initialState[slotId] || null;
+      
+      if (currentUri !== initialUri) {
+        // Found a change
+        return true;
+      }
+    }
+    
+    // No changes detected
+    return false;
+  }, [capturedImages, capturedCount]);
 
   // Handle back navigation confirmation
   const showBackConfirmation = useCallback(() => {

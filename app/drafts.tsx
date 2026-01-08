@@ -24,6 +24,10 @@ const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const CARD_WIDTH = width - GRID_PADDING * 2;
 
+// Placeholder logo URL - update this when you have a logo
+// This will be shown when no rendered preview is available
+const PLACEHOLDER_LOGO_URL: string | null = null;
+
 export default function DraftsScreen() {
   const router = useRouter();
   const { drafts, templates, deleteDraft, loadDraft, isDraftsLoading, refreshDrafts } = useApp();
@@ -36,6 +40,13 @@ export default function DraftsScreen() {
 
   // Get draft status text
   const getDraftStatus = useCallback((draft: Draft) => {
+    // If we have a rendered preview, it's ready
+    if (draft.renderedPreviewUrl) {
+      if (draft.beforeImageUrl && draft.afterImageUrl) {
+        return 'Ready to download';
+      }
+      return 'In progress';
+    }
     if (draft.beforeImageUrl && draft.afterImageUrl) {
       return 'Ready to generate';
     }
@@ -47,6 +58,9 @@ export default function DraftsScreen() {
 
   // Get draft status color
   const getDraftStatusColor = useCallback((draft: Draft) => {
+    if (draft.renderedPreviewUrl && draft.beforeImageUrl && draft.afterImageUrl) {
+      return Colors.light.success;
+    }
     if (draft.beforeImageUrl && draft.afterImageUrl) {
       return Colors.light.success;
     }
@@ -224,45 +238,35 @@ export default function DraftsScreen() {
                   ]}
                   onPress={() => handleResumeDraft(draft)}
                 >
-                  {/* Preview images row */}
-                  <View style={styles.previewRow}>
-                    {/* Before image */}
-                    <View style={styles.previewSlot}>
-                      <Text style={styles.previewLabel}>BEFORE</Text>
-                      <View style={styles.previewImageContainer}>
-                        {draft.beforeImageUrl ? (
+                  {/* Preview section */}
+                  <View style={styles.previewSection}>
+                    {draft.renderedPreviewUrl ? (
+                      // Show the actual rendered preview (same as in editor)
+                      <View style={styles.renderedPreviewContainer}>
+                        <Image
+                          source={{ uri: draft.renderedPreviewUrl }}
+                          style={styles.renderedPreview}
+                          contentFit="contain"
+                          transition={200}
+                        />
+                      </View>
+                    ) : (
+                      // Fallback: Show placeholder with logo or icon
+                      <View style={styles.placeholderContainer}>
+                        {PLACEHOLDER_LOGO_URL ? (
                           <Image
-                            source={{ uri: draft.beforeImageUrl }}
-                            style={styles.previewImage}
-                            contentFit="cover"
-                            transition={200}
+                            source={{ uri: PLACEHOLDER_LOGO_URL }}
+                            style={styles.placeholderLogo}
+                            contentFit="contain"
                           />
                         ) : (
-                          <View style={styles.emptyPreview}>
-                            <ImageIcon size={20} color={Colors.light.textTertiary} />
+                          <View style={styles.placeholderIconContainer}>
+                            <ImageIcon size={32} color={Colors.light.textTertiary} />
+                            <Text style={styles.placeholderText}>No preview yet</Text>
                           </View>
                         )}
                       </View>
-                    </View>
-
-                    {/* After image */}
-                    <View style={styles.previewSlot}>
-                      <Text style={styles.previewLabel}>AFTER</Text>
-                      <View style={styles.previewImageContainer}>
-                        {draft.afterImageUrl ? (
-                          <Image
-                            source={{ uri: draft.afterImageUrl }}
-                            style={styles.previewImage}
-                            contentFit="cover"
-                            transition={200}
-                          />
-                        ) : (
-                          <View style={styles.emptyPreview}>
-                            <ImageIcon size={20} color={Colors.light.textTertiary} />
-                          </View>
-                        )}
-                      </View>
-                    </View>
+                    )}
                   </View>
 
                   {/* Card footer */}
@@ -411,37 +415,43 @@ const styles = StyleSheet.create({
   draftCardDisabled: {
     opacity: 0.7,
   },
-  previewRow: {
-    flexDirection: 'row',
-    gap: 2,
+  previewSection: {
     padding: 12,
     paddingBottom: 8,
   },
-  previewSlot: {
-    flex: 1,
-  },
-  previewLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: Colors.light.textTertiary,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  previewImageContainer: {
-    aspectRatio: 3 / 4,
+  renderedPreviewContainer: {
+    aspectRatio: 1, // Square by default, image will fit within
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  previewImage: {
+  renderedPreview: {
     width: '100%',
     height: '100%',
   },
-  emptyPreview: {
-    flex: 1,
+  placeholderContainer: {
+    aspectRatio: 1,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: Colors.light.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  placeholderLogo: {
+    width: '50%',
+    height: '50%',
+  },
+  placeholderIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  placeholderText: {
+    fontSize: 13,
+    color: Colors.light.textTertiary,
+    fontWeight: '500',
   },
   cardFooter: {
     flexDirection: 'row',
