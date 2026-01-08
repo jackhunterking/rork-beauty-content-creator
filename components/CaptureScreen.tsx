@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Dimensions } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,8 +16,6 @@ import { AvailableArea } from "@/utils/frameCalculator";
 const TOP_BAR_HEIGHT = 60; // Back button + title + padding
 const BOTTOM_CONTROLS_HEIGHT = 140; // Capture button area + padding
 const FRAME_VERTICAL_PADDING = 16; // Extra breathing room above/below frame
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface CapturedMedia {
   uri: string;
@@ -44,22 +42,25 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   // Get safe area insets for proper positioning
   const insets = useSafeAreaInsets();
   
+  // Use reactive window dimensions to handle Dynamic Island and screen rotation
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  
   // Calculate the available area for the frame
   // This is the space between the top bar and bottom controls
   const availableArea: AvailableArea = useMemo(() => {
     // Top of available area: safe area top + top bar height + padding
     const top = insets.top + TOP_BAR_HEIGHT + FRAME_VERTICAL_PADDING;
     // Bottom of available area: screen height - safe area bottom - bottom controls - padding
-    const bottom = SCREEN_HEIGHT - insets.bottom - BOTTOM_CONTROLS_HEIGHT - FRAME_VERTICAL_PADDING;
+    const bottom = screenHeight - insets.bottom - BOTTOM_CONTROLS_HEIGHT - FRAME_VERTICAL_PADDING;
     
     return {
       top,
       bottom,
-      screenWidth: SCREEN_WIDTH,
-      screenHeight: SCREEN_HEIGHT,
+      screenWidth: screenWidth,
+      screenHeight: screenHeight,
       horizontalPadding: 16, // Small horizontal padding for aesthetics
     };
-  }, [insets.top, insets.bottom]);
+  }, [insets.top, insets.bottom, screenWidth, screenHeight]);
 
   useEffect(() => {
     isMountedRef.current = true;

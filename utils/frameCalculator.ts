@@ -1,7 +1,4 @@
-import { Dimensions } from 'react-native';
 import { ImageSlot } from '@/types';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
  * Configuration for frame dimension constraints
@@ -67,16 +64,16 @@ export const DEFAULT_FRAME_CONSTRAINTS: FrameConstraints = {
  * 4. Center the frame on the screen
  * 
  * @param slot - The image slot with target dimensions
+ * @param screenWidth - Screen width in pixels (required)
+ * @param screenHeight - Screen height in pixels (required)
  * @param constraints - Optional custom constraints (defaults to DEFAULT_FRAME_CONSTRAINTS)
- * @param screenWidth - Optional screen width (defaults to device screen width)
- * @param screenHeight - Optional screen height (defaults to device screen height)
  * @returns Calculated frame dimensions, position, and constraint information
  */
 export function calculateFrameDimensions(
   slot: ImageSlot,
-  constraints: FrameConstraints = DEFAULT_FRAME_CONSTRAINTS,
-  screenWidth: number = SCREEN_WIDTH,
-  screenHeight: number = SCREEN_HEIGHT
+  screenWidth: number,
+  screenHeight: number,
+  constraints: FrameConstraints = DEFAULT_FRAME_CONSTRAINTS
 ): FrameCalculation {
   const aspectRatio = slot.width / slot.height;
   
@@ -213,12 +210,19 @@ export function getAspectRatio(slot: ImageSlot): number {
 /**
  * Determine if an aspect ratio is considered "extreme"
  * Extreme ratios are those that would result in constrained frames
+ * 
+ * @param slot - The image slot with target dimensions
+ * @param screenWidth - Screen width in pixels (required)
+ * @param screenHeight - Screen height in pixels (required)
+ * @param constraints - Optional custom constraints (defaults to DEFAULT_FRAME_CONSTRAINTS)
  */
 export function isExtremeAspectRatio(
   slot: ImageSlot,
+  screenWidth: number,
+  screenHeight: number,
   constraints: FrameConstraints = DEFAULT_FRAME_CONSTRAINTS
 ): boolean {
-  const result = calculateFrameDimensions(slot, constraints);
+  const result = calculateFrameDimensions(slot, screenWidth, screenHeight, constraints);
   return result.isConstrained;
 }
 

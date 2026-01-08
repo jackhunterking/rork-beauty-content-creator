@@ -140,27 +140,6 @@ function RootLayoutNav() {
         }} 
       />
       <Stack.Screen 
-        name="capture/before" 
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
-        name="capture/after" 
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
-        name="capture/adjust" 
-        options={{ 
-          headerShown: false,
-          presentation: 'modal',
-        }} 
-      />
-      <Stack.Screen 
         name="capture/[slotId]" 
         options={{ 
           headerShown: false,

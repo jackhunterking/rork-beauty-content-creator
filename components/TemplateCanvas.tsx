@@ -1,14 +1,12 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, Dimensions, Text, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Template } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CANVAS_PADDING = 20;
-const MAX_CANVAS_WIDTH = SCREEN_WIDTH - CANVAS_PADDING * 2;
 
 interface TemplateCanvasProps {
   template: Template;
@@ -33,15 +31,19 @@ export function TemplateCanvas({
   renderedPreviewUri,
   isRendering = false,
 }: TemplateCanvasProps) {
+  // Use reactive window dimensions to handle screen rotation and dynamic updates
+  const { width: screenWidth } = useWindowDimensions();
+  const maxCanvasWidth = screenWidth - CANVAS_PADDING * 2;
+
   // Calculate display dimensions to fit canvas on screen
   const { displayWidth, displayHeight } = useMemo(() => {
     const aspectRatio = template.canvasWidth / template.canvasHeight;
     
-    let width = MAX_CANVAS_WIDTH;
+    let width = maxCanvasWidth;
     let height = width / aspectRatio;
     
     // If too tall, constrain by height instead
-    const maxHeight = SCREEN_WIDTH * 1.2; // Max height is 120% of screen width
+    const maxHeight = screenWidth * 1.2; // Max height is 120% of screen width
     if (height > maxHeight) {
       height = maxHeight;
       width = height * aspectRatio;
@@ -51,7 +53,7 @@ export function TemplateCanvas({
       displayWidth: width,
       displayHeight: height,
     };
-  }, [template.canvasWidth, template.canvasHeight]);
+  }, [template.canvasWidth, template.canvasHeight, maxCanvasWidth, screenWidth]);
 
   // Extract slots from template and scale to display dimensions
   const scaledSlots = useMemo(() => {
