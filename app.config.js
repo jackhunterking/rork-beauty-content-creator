@@ -1,3 +1,26 @@
+// ============================================
+// DEBUG: Log environment variables at config evaluation time
+// This runs when Expo loads the config (at build/start time)
+// ============================================
+console.log('\n========== app.config.js Environment Debug ==========');
+console.log('[app.config.js] EXPO_PUBLIC_TEMPLATED_API_KEY:', 
+  process.env.EXPO_PUBLIC_TEMPLATED_API_KEY ? `SET (length: ${process.env.EXPO_PUBLIC_TEMPLATED_API_KEY.length})` : 'NOT SET'
+);
+console.log('[app.config.js] TEMPLATED_API_KEY:', 
+  process.env.TEMPLATED_API_KEY ? `SET (length: ${process.env.TEMPLATED_API_KEY.length})` : 'NOT SET'
+);
+console.log('======================================================\n');
+
+// Resolve the API key - prioritize EXPO_PUBLIC_ prefix (Expo standard)
+const templatedApiKey = process.env.EXPO_PUBLIC_TEMPLATED_API_KEY || process.env.TEMPLATED_API_KEY || "";
+
+if (!templatedApiKey) {
+  console.warn('[app.config.js] WARNING: No Templated.io API key found in environment variables!');
+  console.warn('[app.config.js] Please set EXPO_PUBLIC_TEMPLATED_API_KEY in your .env file');
+} else {
+  console.log('[app.config.js] Templated API key resolved successfully');
+}
+
 export default {
   expo: {
     name: "Beauty Content Creator",
@@ -68,9 +91,11 @@ export default {
       typedRoutes: true,
     },
     // Environment variables injected at build time
-    // Works with both local .env and Rork's environment variables
+    // Prioritizes EXPO_PUBLIC_ prefix (Expo standard)
     extra: {
-      templatedApiKey: process.env.TEMPLATED_API_KEY || process.env.EXPO_PUBLIC_TEMPLATED_API_KEY || "",
+      templatedApiKey: templatedApiKey,
+      // Debug flag to verify config is loaded
+      configLoadedAt: new Date().toISOString(),
     },
   },
 };

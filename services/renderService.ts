@@ -28,14 +28,48 @@ import { getDraftSlotImagePath, fileExists } from './localStorageService';
 // Templated.io API configuration
 const TEMPLATED_API_URL = 'https://api.templated.io/v2/renders';
 
-// Get API key from environment
+// Get API key from environment with detailed debugging
 const getTemplatedApiKey = (): string => {
-  const apiKey = Constants.expoConfig?.extra?.templatedApiKey || 
-                 process.env.EXPO_PUBLIC_TEMPLATED_API_KEY ||
-                 '';
+  // ============================================
+  // DEBUG: Log all possible sources of the API key
+  // ============================================
+  console.log('\n========== Templated API Key Debug ==========');
+  
+  // Source 1: Constants.expoConfig.extra (from app.config.js)
+  const fromExpoConfig = Constants.expoConfig?.extra?.templatedApiKey;
+  console.log('[renderService] Constants.expoConfig?.extra?.templatedApiKey:', 
+    fromExpoConfig ? `SET (length: ${fromExpoConfig.length}, starts with: ${fromExpoConfig.substring(0, 8)}...)` : 'NOT SET'
+  );
+  
+  // Source 2: Direct process.env (runtime)
+  const fromEnvPublic = process.env.EXPO_PUBLIC_TEMPLATED_API_KEY;
+  console.log('[renderService] process.env.EXPO_PUBLIC_TEMPLATED_API_KEY:', 
+    fromEnvPublic ? `SET (length: ${fromEnvPublic.length})` : 'NOT SET'
+  );
+  
+  // Debug: Show what's in Constants.expoConfig.extra
+  console.log('[renderService] Constants.expoConfig?.extra keys:', 
+    Constants.expoConfig?.extra ? Object.keys(Constants.expoConfig.extra) : 'extra is undefined'
+  );
+  
+  // Debug: Show configLoadedAt to verify config was loaded
+  console.log('[renderService] Config loaded at:', 
+    Constants.expoConfig?.extra?.configLoadedAt || 'NOT SET'
+  );
+  
+  console.log('==============================================\n');
+  
+  // Resolve API key - prioritize expoConfig.extra (from app.config.js)
+  const apiKey = fromExpoConfig || fromEnvPublic || '';
   
   if (!apiKey) {
-    console.warn('Templated.io API key not configured');
+    console.error('[renderService] ERROR: Templated.io API key not configured!');
+    console.error('[renderService] Please ensure EXPO_PUBLIC_TEMPLATED_API_KEY is set in your .env file');
+    console.error('[renderService] Then restart with: npx expo start --clear');
+  } else {
+    console.log('[renderService] API key resolved successfully from:', 
+      fromExpoConfig ? 'Constants.expoConfig.extra' : 'process.env'
+    );
   }
   
   return apiKey;
