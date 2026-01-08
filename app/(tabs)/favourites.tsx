@@ -6,13 +6,23 @@ import { Star, Heart } from "lucide-react-native";
 import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
-import { Template } from "@/types";
+import { Template, TemplateFormat } from "@/types";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
-const TILE_HEIGHT = TILE_WIDTH * 1.3;
+
+// Dynamic tile height based on format
+const getTileHeight = (format: TemplateFormat) => {
+  switch (format) {
+    case 'vertical':
+      return TILE_WIDTH * 1.78; // 9:16 ratio
+    case 'square':
+    default:
+      return TILE_WIDTH; // 1:1 ratio
+  }
+};
 
 export default function FavouritesScreen() {
   const router = useRouter();
@@ -54,7 +64,7 @@ export default function FavouritesScreen() {
             {favouriteTemplates.map((template) => (
               <Pressable
                 key={template.id}
-                style={styles.templateTile}
+                style={[styles.templateTile, { height: getTileHeight(template.format) }]}
                 onPress={() => handleTemplateSelect(template)}
               >
                 <Image
@@ -63,12 +73,6 @@ export default function FavouritesScreen() {
                   contentFit="cover"
                   transition={200}
                 />
-                {/* Template info badge */}
-                <View style={styles.templateInfoBadge}>
-                  <Text style={styles.templateInfoText}>
-                    {template.canvasWidth}x{template.canvasHeight}
-                  </Text>
-                </View>
                 <TouchableOpacity
                   style={[styles.favouriteButton, styles.favouriteButtonActive]}
                   onPress={(e) => handleToggleFavourite(e, template.id)}
@@ -146,28 +150,22 @@ const styles = StyleSheet.create({
   },
   templateTile: {
     width: TILE_WIDTH,
-    height: TILE_HEIGHT,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
+    // Glass UI border effect
+    borderWidth: 1,
+    borderColor: Colors.light.glassEdge,
+    // Subtle shadow for glass depth
+    shadowColor: Colors.light.glassShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   templateThumbnail: {
     width: '100%',
     height: '100%',
-  },
-  templateInfoBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  templateInfoText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
   },
   favouriteButton: {
     position: 'absolute',
