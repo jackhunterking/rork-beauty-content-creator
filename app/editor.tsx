@@ -71,6 +71,9 @@ export default function EditorScreen() {
     [slots, capturedImages]
   );
 
+  // Track previous capturedImages to detect actual changes (not just reference changes)
+  const prevCapturedImagesRef = useRef<Record<string, { uri: string } | null>>({});
+
   // Trigger preview render when photos change
   const triggerPreviewRender = useCallback(async () => {
     if (!template?.templatedId) return;
@@ -120,6 +123,40 @@ export default function EditorScreen() {
       setIsRendering(false);
     }
   }, [template?.templatedId, capturedImages, isPremium]);
+
+  // REACTIVE PREVIEW RENDERING
+  // Automatically trigger preview render when capturedImages changes
+  // This handles BOTH paths: camera capture return AND library pick
+  useEffect(() => {
+    // Skip if no template configured for rendering
+    if (!template?.templatedId) return;
+    
+    // Compare current images to previous to detect actual changes
+    const prevImages = prevCapturedImagesRef.current;
+    const currentImages = capturedImages;
+    
+    // Check if any slot has a NEW or CHANGED image
+    let hasNewOrChangedImage = false;
+    for (const slotId of Object.keys(currentImages)) {
+      const currentUri = currentImages[slotId]?.uri;
+      const prevUri = prevImages[slotId]?.uri;
+      
+      // New image added or image changed
+      if (currentUri && currentUri !== prevUri) {
+        hasNewOrChangedImage = true;
+        break;
+      }
+    }
+    
+    // Update ref BEFORE triggering render to prevent loops
+    prevCapturedImagesRef.current = { ...currentImages };
+    
+    // Only trigger if there's an actual new/changed image
+    if (hasNewOrChangedImage) {
+      console.log('[Editor] Detected image change, triggering preview render');
+      triggerPreviewRender();
+    }
+  }, [capturedImages, template?.templatedId, triggerPreviewRender]);
 
   // Redirect if no template selected
   useEffect(() => {
@@ -263,11 +300,7 @@ export default function EditorScreen() {
           width: processed.width,
           height: processed.height,
         });
-
-        // Trigger preview render after short delay to allow state update
-        setTimeout(() => {
-          triggerPreviewRender();
-        }, 100);
+        // useEffect will automatically trigger preview render when capturedImages changes
       } catch (error) {
         console.error('Failed to process image:', error);
         Toast.show({
@@ -278,7 +311,7 @@ export default function EditorScreen() {
         });
       }
     },
-    [template, slots, setCapturedImage, triggerPreviewRender]
+    [template, slots, setCapturedImage]
   );
 
   // Navigate to camera screen for a slot
