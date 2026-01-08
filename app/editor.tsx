@@ -14,16 +14,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
-import { Save, Download, Share2 } from 'lucide-react-native';
+import { Save, Download, Share2, RefreshCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
-import { renderPreview, renderTemplate } from '@/services/renderService';
+import { renderPreview } from '@/services/renderService';
+import { downloadAndSaveToGallery } from '@/services/downloadService';
+import { downloadAndShare } from '@/services/shareService';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 
 export default function EditorScreen() {
@@ -44,6 +45,7 @@ export default function EditorScreen() {
   // Rendered preview state (from Templated.io)
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   
   // Track if images have been modified by user since draft was loaded
   // Used to skip unnecessary API calls when reopening drafts
@@ -71,8 +73,21 @@ export default function EditorScreen() {
     [template]
   );
 
-  // Check if all slots have been captured
+  // Check if ready to download/share:
+  // 1. All slots must have images
+  // 2. Preview must be rendered (renderedPreviewUri exists)
+  // 3. Not currently rendering
+  // 4. No preview error
   const canDownload = useMemo(() => 
+    allSlotsCaptured(slots, capturedImages) && 
+    !!renderedPreviewUri && 
+    !isRendering && 
+    !previewError,
+    [slots, capturedImages, renderedPreviewUri, isRendering, previewError]
+  );
+  
+  // Check if all slots are filled (separate from canDownload for UI messaging)
+  const allSlotsFilled = useMemo(() => 
     allSlotsCaptured(slots, capturedImages),
     [slots, capturedImages]
   );
@@ -176,10 +191,12 @@ export default function EditorScreen() {
     
     if (Object.keys(photosToRender).length === 0) {
       setRenderedPreviewUri(null);
+      setPreviewError(null);
       return;
     }
     
     setIsRendering(true);
+    setPreviewError(null); // Clear any previous error
     
     try {
       const result = await renderPreview({
@@ -190,21 +207,25 @@ export default function EditorScreen() {
       
       if (result.success && result.renderUrl) {
         setRenderedPreviewUri(result.renderUrl);
+        setPreviewError(null); // Clear error on success
       } else {
         console.warn('Preview render failed:', result.error);
+        setPreviewError(result.error || 'Could not generate preview');
         Toast.show({
           type: 'error',
           text1: 'Preview failed',
-          text2: result.error || 'Could not generate preview',
+          text2: 'Tap Retry to try again',
           position: 'top',
         });
       }
     } catch (error) {
       console.error('Preview render error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Something went wrong';
+      setPreviewError(errorMessage);
       Toast.show({
         type: 'error',
         text1: 'Preview error',
-        text2: 'Something went wrong',
+        text2: 'Tap Retry to try again',
         position: 'top',
       });
     } finally {
@@ -499,9 +520,17 @@ export default function EditorScreen() {
     console.log('[Editor] Cached preview failed to load, triggering re-render');
     // Clear the invalid cached preview
     setRenderedPreviewUri(null);
+    setPreviewError('Preview expired');
     // Mark that we need to re-render
     setImagesModifiedSinceLoad(true);
     // Trigger a fresh render
+    triggerPreviewRender();
+  }, [triggerPreviewRender]);
+
+  // Handle retry button press when preview fails
+  const handleRetryPreview = useCallback(() => {
+    console.log('[Editor] User requested preview retry');
+    setPreviewError(null);
     triggerPreviewRender();
   }, [triggerPreviewRender]);
 
@@ -582,15 +611,14 @@ export default function EditorScreen() {
     );
   }, [template, capturedCount, performSaveDraft]);
 
-  // Handle download - render and save to camera roll
+  // Handle download - use already rendered preview URL and save to camera roll
   const handleDownload = useCallback(async () => {
-    if (!canDownload || !template?.templatedId) {
+    // Guard: Check if we have a rendered preview ready
+    if (!renderedPreviewUri) {
       Toast.show({
         type: 'info',
         text1: 'Not ready',
-        text2: template?.templatedId 
-          ? 'Add all images first' 
-          : 'Template not configured for rendering',
+        text2: 'Please wait for preview to complete',
         position: 'top',
       });
       return;
@@ -599,48 +627,20 @@ export default function EditorScreen() {
     setIsDownloading(true);
     
     try {
-      // Request permissions
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Toast.show({
-          type: 'error',
-          text1: 'Permission denied',
-          text2: 'Please allow access to save photos',
-          position: 'top',
-        });
-        return;
-      }
-      
-      // Build slot images map
-      const slotImages: Record<string, string> = {};
-      for (const [slotId, media] of Object.entries(capturedImages)) {
-        if (media?.uri) {
-          slotImages[slotId] = media.uri;
-        }
-      }
-      
-      // Render the template
       Toast.show({
         type: 'info',
-        text1: 'Rendering...',
-        text2: 'Please wait while we generate your image',
+        text1: 'Saving...',
+        text2: 'Downloading your image',
         position: 'top',
-        visibilityTime: 3000,
+        visibilityTime: 2000,
       });
       
-      const result = await renderTemplate({
-        draftId: currentProject.draftId || `temp_${Date.now()}`,
-        templateId: template.templatedId,
-        slotImages,
-        hideWatermark: isPremium,
-      });
+      // Download from the already-rendered preview URL and save to gallery
+      const result = await downloadAndSaveToGallery(renderedPreviewUri);
       
-      if (!result.success || !result.localPath) {
-        throw new Error(result.error || 'Render failed');
+      if (!result.success) {
+        throw new Error(result.error || 'Download failed');
       }
-      
-      // Save to camera roll
-      await MediaLibrary.saveToLibraryAsync(result.localPath);
       
       Toast.show({
         type: 'success',
@@ -654,21 +654,22 @@ export default function EditorScreen() {
       Toast.show({
         type: 'error',
         text1: 'Download failed',
-        text2: error instanceof Error ? error.message : 'Please try again',
+        text2: 'Try changing an image to refresh the preview',
         position: 'top',
       });
     } finally {
       setIsDownloading(false);
     }
-  }, [canDownload, template, capturedImages, currentProject.draftId, isPremium]);
+  }, [renderedPreviewUri]);
 
-  // Handle share - render and open share sheet
+  // Handle share - use already rendered preview URL and open share sheet
   const handleShare = useCallback(async () => {
-    if (!canDownload || !template?.templatedId) {
+    // Guard: Check if we have a rendered preview ready
+    if (!renderedPreviewUri) {
       Toast.show({
         type: 'info',
         text1: 'Not ready',
-        text2: 'Add all images first',
+        text2: 'Please wait for preview to complete',
         position: 'top',
       });
       return;
@@ -689,52 +690,36 @@ export default function EditorScreen() {
     setIsSharing(true);
     
     try {
-      // Build slot images map
-      const slotImages: Record<string, string> = {};
-      for (const [slotId, media] of Object.entries(capturedImages)) {
-        if (media?.uri) {
-          slotImages[slotId] = media.uri;
-        }
-      }
-      
-      // Render the template
       Toast.show({
         type: 'info',
         text1: 'Preparing...',
-        text2: 'Please wait while we generate your image',
+        text2: 'Getting your image ready to share',
         position: 'top',
-        visibilityTime: 3000,
+        visibilityTime: 2000,
       });
       
-      const result = await renderTemplate({
-        draftId: currentProject.draftId || `temp_${Date.now()}`,
-        templateId: template.templatedId,
-        slotImages,
-        hideWatermark: isPremium,
-      });
-      
-      if (!result.success || !result.localPath) {
-        throw new Error(result.error || 'Render failed');
-      }
-      
-      // Open share sheet
-      await Sharing.shareAsync(result.localPath, {
+      // Download from the already-rendered preview URL and share
+      const result = await downloadAndShare(renderedPreviewUri, undefined, {
         mimeType: 'image/jpeg',
         dialogTitle: 'Share your creation',
       });
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Share failed');
+      }
       
     } catch (error) {
       console.error('Share failed:', error);
       Toast.show({
         type: 'error',
         text1: 'Share failed',
-        text2: error instanceof Error ? error.message : 'Please try again',
+        text2: 'Try changing an image to refresh the preview',
         position: 'top',
       });
     } finally {
       setIsSharing(false);
     }
-  }, [canDownload, template, capturedImages, currentProject.draftId, isPremium]);
+  }, [renderedPreviewUri]);
 
   if (!template) {
     return null;
@@ -810,6 +795,21 @@ export default function EditorScreen() {
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
+          {/* Preview Error with Retry Button */}
+          {previewError && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>Preview failed</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={handleRetryPreview}
+                activeOpacity={0.8}
+              >
+                <RefreshCw size={16} color={Colors.light.surface} />
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.actionRow}>
             {/* Download Button */}
             <TouchableOpacity
@@ -846,13 +846,20 @@ export default function EditorScreen() {
             </TouchableOpacity>
           </View>
 
-          {!canDownload && (
+          {/* Helper text - shows different messages based on state */}
+          {!allSlotsFilled && !isRendering && (
             <Text style={styles.helperText}>
-              Add all {slots.length} images to download or share
+              Complete all slots to continue
             </Text>
           )}
           
-          {/* Premium upsell hint */}
+          {allSlotsFilled && isRendering && (
+            <Text style={styles.helperText}>
+              Generating preview...
+            </Text>
+          )}
+          
+          {/* Premium upsell hint - only show when ready */}
           {!isPremium && canDownload && (
             <Text style={styles.watermarkHint}>
               Includes "Made with BeautyApp" watermark
@@ -968,5 +975,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: '#FEE8E8',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.light.error,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.light.error,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.surface,
   },
 });

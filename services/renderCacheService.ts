@@ -13,15 +13,20 @@ import {
 } from './localStorageService';
 
 /**
- * Render Cache Service
+ * @deprecated Since Jan 2026 - This entire service is deprecated.
  * 
- * Manages caching of Templated.io rendered images to minimize API calls.
+ * Render Cache Service (DEPRECATED)
  * 
- * Key features:
- * - Cache key generation based on template + images + theme
- * - Local file system caching
- * - Cache invalidation when inputs change
- * - Cache lookup before rendering
+ * Previously managed caching of Templated.io rendered images to minimize API calls.
+ * 
+ * WHY DEPRECATED:
+ * The new architecture uses the Templated.io preview URL directly for download/share.
+ * The preview URL serves as the "cache" - no local file system caching needed.
+ * 
+ * The draft's `cachedPreviewUrl` field now stores the Templated.io URL, which is
+ * reused when reopening drafts without requiring a new API call.
+ * 
+ * All functions in this file are no longer used by the main app flow.
  */
 
 export interface RenderCacheEntry {

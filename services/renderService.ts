@@ -12,17 +12,26 @@ import {
 import { getDraftSlotImagePath, fileExists } from './localStorageService';
 
 /**
- * Render Service (Refactored for Templated.io-First Architecture)
+ * Render Service - Templated.io Integration
  * 
- * Key changes:
- * - Preview renders: Quick renders for editor preview after photo capture
- * - Final renders: Full quality for download/share
- * - Watermark control: Visible for free users, hidden for premium
+ * SIMPLIFIED ARCHITECTURE (Jan 2026):
+ * The preview URL returned by renderPreview() IS the final rendered image.
+ * Download/Share operations now use this URL directly - no re-rendering needed.
+ * 
+ * Active Functions:
+ * - renderPreview() - Renders template when photos are added/changed
+ * - renderPreviewWithNewPhoto() - Convenience wrapper for renderPreview
+ * 
+ * Deprecated Functions (no longer used):
+ * - renderTemplate() - Was used for download/share, now uses preview URL directly
+ * - renderDraft() - Was used for draft rendering
+ * - reRenderDraft() - Was used for cache invalidation
+ * - legacyRenderTemplate() - Old API compatibility
  * 
  * Flow:
- * 1. User adds photo → Upload to temp storage → Render preview
- * 2. User taps Download → Render final (or use cached) → Save
- * 3. User taps Share → Use same rendered image → Share sheet
+ * 1. User adds photo → renderPreview() → Returns Templated.io URL
+ * 2. User taps Download → Download from preview URL → Save to gallery
+ * 3. User taps Share → Download from preview URL → Share sheet
  */
 
 // Templated.io API configuration
@@ -214,10 +223,14 @@ export async function renderPreviewWithNewPhoto(
 }
 
 // ============================================
-// Main Render Function (for Download/Share)
+// DEPRECATED: Main Render Function
 // ============================================
 
 /**
+ * @deprecated Since Jan 2026 - Download/Share now uses the preview URL directly.
+ * The renderPreview() URL is the final rendered image, so re-rendering is unnecessary.
+ * Use downloadAndSaveToGallery() or downloadAndShare() with the preview URL instead.
+ * 
  * Render a template with slot images
  * Uses cache if available, otherwise renders via Templated.io
  * 
@@ -361,10 +374,12 @@ export async function renderTemplate(
 }
 
 // ============================================
-// Draft-Specific Render Functions
+// DEPRECATED: Draft-Specific Render Functions
 // ============================================
 
 /**
+ * @deprecated Since Jan 2026 - No longer needed. Preview URL is used directly for download/share.
+ * 
  * Render a draft with its stored slot images
  * Automatically reads slot images from local storage
  */
@@ -408,6 +423,8 @@ export async function renderDraft(
 }
 
 /**
+ * @deprecated Since Jan 2026 - No longer needed. Preview URL is used directly for download/share.
+ * 
  * Invalidate cache and re-render a draft
  * Use when user changes a slot image
  */
@@ -427,10 +444,12 @@ export async function reRenderDraft(
 }
 
 // ============================================
-// Render Status Checking
+// DEPRECATED: Render Status Checking
 // ============================================
 
 /**
+ * @deprecated Since Jan 2026 - Local caching no longer used. Preview URL serves as the "cache".
+ * 
  * Check if a render is cached for a draft/theme combination
  */
 export async function isRenderCached(
@@ -442,6 +461,8 @@ export async function isRenderCached(
 }
 
 /**
+ * @deprecated Since Jan 2026 - Local caching no longer used. Preview URL serves as the "cache".
+ * 
  * Get cached render path if available
  */
 export async function getCachedRenderPath(
@@ -453,10 +474,12 @@ export async function getCachedRenderPath(
 }
 
 // ============================================
-// Batch Operations
+// DEPRECATED: Batch Operations
 // ============================================
 
 /**
+ * @deprecated Since Jan 2026 - Theme variants no longer pre-rendered. Preview URL is sufficient.
+ * 
  * Pre-render all theme variants for a draft
  * Useful for pre-caching common themes
  */
@@ -486,14 +509,15 @@ export async function preRenderThemes(
 }
 
 // ============================================
-// Legacy Compatibility
+// DEPRECATED: Legacy Compatibility
 // ============================================
 
 /**
+ * @deprecated Since Jan 2026 - All render functions deprecated. Use renderPreview() 
+ * and the returned URL directly for download/share operations.
+ * 
  * Legacy render function for backwards compatibility
  * Maps old CapturedImages format to new format
- * 
- * @deprecated Use renderTemplate or renderDraft instead
  */
 export async function legacyRenderTemplate(
   templatedId: string,
