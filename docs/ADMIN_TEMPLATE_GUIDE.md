@@ -40,6 +40,53 @@ A complete guide for creating, naming, and syncing templates from Templated.io t
 
 ---
 
+## Template Naming Convention
+
+When syncing a template, you must follow this naming format for the **Template Name** field:
+
+```
+[Format]-[Type]-[Variant]
+```
+
+### Format Options
+| Format | Canvas Size | Description |
+|--------|-------------|-------------|
+| `Square` | 1080 × 1080 | Instagram feed posts |
+| `Vertical` | 1080 × 1920 | Stories, Reels, TikTok |
+| `Portrait` | 1080 × 1350 | Instagram portrait posts |
+
+### Type Options
+| Type | Description |
+|------|-------------|
+| `BeforeAfter` | Standard 2-slot before/after layout |
+| `ThreeSlot` | 3-photo progress layout |
+| `FourSlot` | 4-photo grid layout |
+| `Single` | Single hero image |
+| `Carousel` | Multi-page carousel template |
+
+### Variant
+A descriptive PascalCase name for the specific design style.
+
+### Examples
+
+| Template Name | Description |
+|---------------|-------------|
+| `Square-BeforeAfter-Classic` | Basic square before/after |
+| `Square-BeforeAfter-Minimal` | Clean minimal design |
+| `Vertical-BeforeAfter-Labels` | Story with text labels |
+| `Square-BeforeAfter-Nails` | Nail salon themed |
+| `Vertical-BeforeAfter-Makeup` | Makeup transformation |
+| `Square-ThreeSlot-Progress` | 3-photo progress |
+| `Portrait-BeforeAfter-Elegant` | Elegant portrait style |
+
+### Rules
+1. **PascalCase** - Capitalize each word, no spaces
+2. **Hyphens only** - Use hyphens between sections
+3. **Unique names** - Each template name must be unique in the database
+4. **5-50 characters** - Name length must be between 5 and 50 characters
+
+---
+
 ## Layer Naming Convention
 
 ### Slot Layers (User Photo Placeholders)
