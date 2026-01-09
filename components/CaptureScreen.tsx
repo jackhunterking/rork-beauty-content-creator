@@ -8,8 +8,8 @@ import { ImagePlus, ChevronLeft } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { processImageForDimensions } from "@/utils/imageProcessing";
-import { ImageSlot } from "@/types";
-import { AvailableArea } from "@/utils/frameCalculator";
+import { ImageSlot, FramePositionInfo } from "@/types";
+import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
 
 // UI element height constants
 // These values must match the actual rendered heights of the UI components
@@ -69,17 +69,36 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     };
   }, []);
 
-  const processAndSetImage = useCallback(async (uri: string, width: number, height: number) => {
+  const processAndSetImage = useCallback(async (
+    uri: string, 
+    width: number, 
+    height: number,
+    useFramePosition: boolean = true
+  ) => {
     if (!slot) return;
     
     setIsProcessing(true);
     try {
+      // Calculate frame position for position-aware cropping
+      // This ensures the captured image matches what the user saw in the camera preview
+      let framePosition: FramePositionInfo | undefined;
+      
+      if (useFramePosition) {
+        const frame = calculateFrameForAvailableArea(slot, availableArea);
+        framePosition = {
+          frameTop: frame.top,
+          frameHeight: frame.height,
+          screenHeight: availableArea.screenHeight,
+        };
+      }
+      
       const processed = await processImageForDimensions(
         uri, 
         width, 
         height, 
         slot.width, 
-        slot.height
+        slot.height,
+        framePosition
       );
       
       if (isMountedRef.current) {
@@ -109,7 +128,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
         setIsProcessing(false);
       }
     }
-  }, [slot]);
+  }, [slot, availableArea]);
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturingRef.current || !slot) return;
@@ -151,7 +170,9 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
-      await processAndSetImage(asset.uri, asset.width, asset.height);
+      // Use center crop for library imports (no frame position)
+      // since imported images weren't taken through the camera preview
+      await processAndSetImage(asset.uri, asset.width, asset.height, false);
     }
   }, [slot, processAndSetImage]);
 

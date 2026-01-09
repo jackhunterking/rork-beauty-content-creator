@@ -1,13 +1,22 @@
 import * as ImageManipulator from 'expo-image-manipulator';
-import { ImageSlot } from '@/types';
+import { ImageSlot, FramePositionInfo } from '@/types';
 
 /**
- * Calculate crop region to extract center portion matching target aspect ratio
+ * Calculate crop region to extract portion matching target aspect ratio
+ * 
+ * When framePosition is provided, calculates a position-aware crop that matches
+ * what the user saw in the camera preview frame. Otherwise falls back to center crop.
+ * 
+ * @param sourceWidth - Width of source image in pixels
+ * @param sourceHeight - Height of source image in pixels
+ * @param targetAspectRatio - Target aspect ratio (width / height)
+ * @param framePosition - Optional frame position info for position-aware cropping
  */
 function calculateCropRegion(
   sourceWidth: number,
   sourceHeight: number,
-  targetAspectRatio: number
+  targetAspectRatio: number,
+  framePosition?: FramePositionInfo
 ): { originX: number; originY: number; width: number; height: number } {
   const sourceAspectRatio = sourceWidth / sourceHeight;
   
@@ -17,17 +26,52 @@ function calculateCropRegion(
   let originY: number;
   
   if (sourceAspectRatio > targetAspectRatio) {
-    // Source is wider - crop sides
+    // Source is wider than target - crop sides (horizontal crop)
     cropHeight = sourceHeight;
     cropWidth = cropHeight * targetAspectRatio;
+    
+    // Handle edge case: cropWidth exceeds sourceWidth (extreme aspect ratio)
+    if (cropWidth > sourceWidth) {
+      cropWidth = sourceWidth;
+      cropHeight = cropWidth / targetAspectRatio;
+    }
+    
+    // Horizontal cropping - frame is typically centered horizontally
+    // so we use center crop for X axis
     originX = (sourceWidth - cropWidth) / 2;
     originY = 0;
   } else {
-    // Source is taller - crop top/bottom
+    // Source is taller than target - crop top/bottom (vertical crop)
     cropWidth = sourceWidth;
     cropHeight = cropWidth / targetAspectRatio;
-    originX = 0;
-    originY = (sourceHeight - cropHeight) / 2;
+    
+    // Handle edge case: cropHeight exceeds sourceHeight (extreme aspect ratio)
+    if (cropHeight > sourceHeight) {
+      cropHeight = sourceHeight;
+      cropWidth = cropHeight * targetAspectRatio;
+      originX = (sourceWidth - cropWidth) / 2;
+      originY = 0;
+    } else {
+      originX = 0;
+      
+      if (framePosition) {
+        // Position-aware crop: calculate where frame center is on screen (as ratio 0-1)
+        const frameCenterY = framePosition.frameTop + (framePosition.frameHeight / 2);
+        const frameCenterRatio = frameCenterY / framePosition.screenHeight;
+        
+        // Apply same ratio to source image to find target center point
+        const targetCenterY = sourceHeight * frameCenterRatio;
+        originY = targetCenterY - (cropHeight / 2);
+        
+        // Clamp to valid bounds to handle edge cases
+        // (frame near top edge or bottom edge of screen)
+        originY = Math.max(0, Math.min(sourceHeight - cropHeight, originY));
+      } else {
+        // Fallback to center crop when no frame position provided
+        // (e.g., library imports, backwards compatibility)
+        originY = (sourceHeight - cropHeight) / 2;
+      }
+    }
   }
   
   return {
@@ -39,21 +83,26 @@ function calculateCropRegion(
 }
 
 /**
- * Crop an image to match a target aspect ratio (center crop)
+ * Crop an image to match a target aspect ratio
+ * 
+ * When framePosition is provided, uses position-aware cropping to match
+ * what the user saw in the camera preview. Otherwise uses center crop.
  * 
  * @param uri - Source image URI
  * @param sourceWidth - Width of source image in pixels
  * @param sourceHeight - Height of source image in pixels
  * @param targetAspectRatio - Target aspect ratio (width / height)
+ * @param framePosition - Optional frame position info for position-aware cropping
  * @returns New image URI after cropping
  */
 export async function cropToAspectRatio(
   uri: string,
   sourceWidth: number,
   sourceHeight: number,
-  targetAspectRatio: number
+  targetAspectRatio: number,
+  framePosition?: FramePositionInfo
 ): Promise<{ uri: string; width: number; height: number }> {
-  const cropRegion = calculateCropRegion(sourceWidth, sourceHeight, targetAspectRatio);
+  const cropRegion = calculateCropRegion(sourceWidth, sourceHeight, targetAspectRatio, framePosition);
   
   const result = await ImageManipulator.manipulateAsync(
     uri,
@@ -96,7 +145,7 @@ export async function resizeToSlot(
 
 /**
  * Process an image for specific target dimensions:
- * 1. Crop to match the target aspect ratio (center crop)
+ * 1. Crop to match the target aspect ratio (position-aware when framePosition provided)
  * 2. Resize to exact target pixel dimensions
  * 
  * @param uri - Source image URI
@@ -104,6 +153,7 @@ export async function resizeToSlot(
  * @param sourceHeight - Height of source image in pixels
  * @param targetWidth - Target width in pixels
  * @param targetHeight - Target height in pixels
+ * @param framePosition - Optional frame position info for position-aware cropping
  * @returns Processed image URI with exact target dimensions
  */
 export async function processImageForDimensions(
@@ -111,16 +161,18 @@ export async function processImageForDimensions(
   sourceWidth: number,
   sourceHeight: number,
   targetWidth: number,
-  targetHeight: number
+  targetHeight: number,
+  framePosition?: FramePositionInfo
 ): Promise<{ uri: string; width: number; height: number }> {
   const targetAspectRatio = targetWidth / targetHeight;
   
-  // Step 1: Crop to target aspect ratio
+  // Step 1: Crop to target aspect ratio (position-aware when framePosition provided)
   const cropped = await cropToAspectRatio(
     uri,
     sourceWidth,
     sourceHeight,
-    targetAspectRatio
+    targetAspectRatio,
+    framePosition
   );
   
   // Step 2: Resize to exact dimensions

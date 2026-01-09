@@ -33,6 +33,24 @@ export interface SlotStateInfo {
 export type SlotStates = Record<string, SlotStateInfo>;
 
 // ============================================
+// Camera Capture Types
+// ============================================
+
+/**
+ * Frame position data for position-aware image cropping
+ * Used to ensure captured image matches camera preview exactly
+ * 
+ * The camera preview may display content differently than what gets captured.
+ * By passing the frame's position on screen, we can calculate the correct
+ * crop region to match what the user saw in the preview.
+ */
+export interface FramePositionInfo {
+  frameTop: number;      // Frame Y position from screen top (pixels)
+  frameHeight: number;   // Frame height (pixels)
+  screenHeight: number;  // Total screen height (pixels)
+}
+
+// ============================================
 // Local Draft System (NEW)
 // ============================================
 

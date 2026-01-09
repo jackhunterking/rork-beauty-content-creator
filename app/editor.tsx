@@ -42,6 +42,10 @@ export default function EditorScreen() {
   // Track if we should allow navigation (after user confirms)
   const allowNavigationRef = useRef(false);
   
+  // Track if we're intentionally discarding/resetting the project
+  // This prevents the "no template" useEffect from triggering a second back navigation
+  const isDiscardingRef = useRef(false);
+  
   // Rendered preview state (from Templated.io)
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
@@ -278,8 +282,15 @@ export default function EditorScreen() {
   }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
   // Redirect if no template selected
+  // Skip this if we're intentionally discarding (to prevent double navigation)
   useEffect(() => {
     if (!template) {
+      // If we're discarding, don't auto-navigate - the discard handler already navigates
+      if (isDiscardingRef.current) {
+        isDiscardingRef.current = false; // Reset the flag
+        return;
+      }
+      
       Toast.show({
         type: 'error',
         text1: 'No template selected',
@@ -347,6 +358,7 @@ export default function EditorScreen() {
           style: 'destructive',
           onPress: () => {
             allowNavigationRef.current = true;
+            isDiscardingRef.current = true; // Prevent double navigation from template-null useEffect
             resetProject();
             router.back();
           },
