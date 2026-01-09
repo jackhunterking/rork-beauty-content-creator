@@ -333,6 +333,9 @@ export interface Draft {
   renderedPreviewUrl?: string | null;
   // Premium status when preview was rendered (for cache invalidation)
   wasRenderedAsPremium?: boolean | null;
+  // Local file path to cached preview image (client-side only, not in Supabase)
+  // Used for instant preview display without network requests
+  localPreviewPath?: string | null;
 }
 
 // Database row type for drafts

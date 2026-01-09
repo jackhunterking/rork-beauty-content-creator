@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { Draft, DraftRow } from '@/types';
 import { uploadDraftImage, deleteDraftImages } from './storageService';
+import { getLocalPreviewPath, deleteDirectory, getDraftDirectory } from './localStorageService';
 
 /**
  * Convert database row (snake_case) to Draft type (camelCase)
@@ -25,6 +26,7 @@ function mapRowToDraft(row: DraftRow): Draft {
 
 /**
  * Fetch all drafts
+ * Also checks for locally cached preview files and adds them to the draft objects
  */
 export async function fetchDrafts(): Promise<Draft[]> {
   const { data, error } = await supabase
@@ -37,11 +39,31 @@ export async function fetchDrafts(): Promise<Draft[]> {
     throw error;
   }
 
-  return (data as DraftRow[]).map(mapRowToDraft);
+  // Map database rows to Draft objects and check for local preview files
+  const drafts = (data as DraftRow[]).map(mapRowToDraft);
+  
+  // Enhance drafts with local preview paths (if they exist)
+  const enhancedDrafts = await Promise.all(
+    drafts.map(async (draft) => {
+      try {
+        const localPath = await getLocalPreviewPath(draft.id);
+        return {
+          ...draft,
+          localPreviewPath: localPath,
+        };
+      } catch {
+        // If checking local path fails, just return draft without it
+        return draft;
+      }
+    })
+  );
+
+  return enhancedDrafts;
 }
 
 /**
  * Fetch a single draft by ID
+ * Also checks for locally cached preview file and adds it to the draft object
  */
 export async function fetchDraftById(id: string): Promise<Draft | null> {
   const { data, error } = await supabase
@@ -58,7 +80,18 @@ export async function fetchDraftById(id: string): Promise<Draft | null> {
     throw error;
   }
 
-  return mapRowToDraft(data as DraftRow);
+  const draft = mapRowToDraft(data as DraftRow);
+  
+  // Check for local preview path
+  try {
+    const localPath = await getLocalPreviewPath(id);
+    return {
+      ...draft,
+      localPreviewPath: localPath,
+    };
+  } catch {
+    return draft;
+  }
 }
 
 /**
@@ -170,6 +203,7 @@ export async function updateDraft(
  * @param capturedImageUris - Optional map of slot ID to local URIs - new dynamic format
  * @param renderedPreviewUrl - Optional cached Templated.io preview URL
  * @param wasRenderedAsPremium - Optional premium status when preview was rendered
+ * @param localPreviewPath - Optional local file path for cached preview (client-side only, not stored in DB)
  */
 export async function saveDraftWithImages(
   templateId: string,
@@ -178,7 +212,8 @@ export async function saveDraftWithImages(
   existingDraftId?: string,
   capturedImageUris?: Record<string, string>,
   renderedPreviewUrl?: string | null,
-  wasRenderedAsPremium?: boolean
+  wasRenderedAsPremium?: boolean,
+  localPreviewPath?: string | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -245,7 +280,12 @@ export async function saveDraftWithImages(
       wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
     });
 
-    return updatedDraft;
+    // Return draft with localPreviewPath appended (client-side only, not in DB)
+    // This allows the caller to have the local path for immediate use
+    return {
+      ...updatedDraft,
+      localPreviewPath: localPreviewPath || null,
+    };
   } catch (error) {
     console.error('Failed to save draft with images:', error);
     throw error;
@@ -253,14 +293,24 @@ export async function saveDraftWithImages(
 }
 
 /**
- * Delete a draft and its associated images
+ * Delete a draft and its associated images (both remote and local)
  */
 export async function deleteDraft(id: string): Promise<void> {
   try {
-    // First delete images from storage
+    // Delete images from Supabase storage
     await deleteDraftImages(id);
 
-    // Then delete the draft record
+    // Delete local draft files (preview cache, slot images, etc.)
+    try {
+      const localDraftDir = getDraftDirectory(id);
+      await deleteDirectory(localDraftDir);
+      console.log('[DraftService] Deleted local draft directory:', localDraftDir);
+    } catch (localError) {
+      // Non-critical - local files may not exist
+      console.warn('[DraftService] Failed to delete local files:', localError);
+    }
+
+    // Then delete the draft record from database
     const { error } = await supabase
       .from('drafts')
       .delete()

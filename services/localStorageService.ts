@@ -233,6 +233,76 @@ export async function saveDraftRender(
   return destPath;
 }
 
+/**
+ * Download and save a rendered preview from a remote URL to local storage
+ * Used to cache Templated.io previews locally for instant access
+ * 
+ * @param draftId - The draft ID to associate the preview with
+ * @param remoteUrl - The remote URL of the rendered preview (e.g., from Templated.io)
+ * @param themeId - Optional theme ID for the render (defaults to 'default')
+ * @returns The local file path where the preview was saved, or null if failed
+ */
+export async function saveRenderedPreview(
+  draftId: string,
+  remoteUrl: string,
+  themeId: string = 'default'
+): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    // On web, just return the remote URL as we can't save locally
+    return remoteUrl;
+  }
+  
+  try {
+    // Ensure the draft renders directory exists
+    const rendersDir = getDraftRendersDirectory(draftId);
+    await ensureDirectoryExists(rendersDir);
+    
+    // Generate local path for the preview
+    const localPath = getCachedRenderPath(draftId, themeId);
+    
+    // Download the image from remote URL
+    console.log(`[LocalStorage] Downloading preview for draft ${draftId} from ${remoteUrl}`);
+    
+    const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
+    
+    if (downloadResult.status !== 200) {
+      console.error(`[LocalStorage] Failed to download preview: HTTP ${downloadResult.status}`);
+      return null;
+    }
+    
+    // Verify the file was saved
+    const exists = await fileExists(localPath);
+    if (!exists) {
+      console.error('[LocalStorage] Preview file was not saved');
+      return null;
+    }
+    
+    console.log(`[LocalStorage] Preview saved to ${localPath}`);
+    return localPath;
+  } catch (error) {
+    console.error('[LocalStorage] Error saving rendered preview:', error);
+    return null;
+  }
+}
+
+/**
+ * Get the local preview path for a draft if it exists
+ * Returns null if no local preview is cached
+ */
+export async function getLocalPreviewPath(
+  draftId: string,
+  themeId: string = 'default'
+): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+  
+  const localPath = getCachedRenderPath(draftId, themeId);
+  const exists = await fileExists(localPath);
+  
+  return exists ? localPath : null;
+}
+
 export async function draftRenderExists(
   draftId: string,
   themeId: string = 'default'

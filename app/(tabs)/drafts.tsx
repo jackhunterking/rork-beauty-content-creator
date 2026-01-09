@@ -38,10 +38,43 @@ export default function DraftsScreen() {
     [templates]
   );
 
+  // Get the best available preview URI for a draft
+  // Priority: local path > remote URL > first captured image > null
+  const getPreviewUri = useCallback((draft: Draft): string | null => {
+    // Priority 1: Local preview path (instant, no network)
+    if (draft.localPreviewPath) {
+      return draft.localPreviewPath;
+    }
+    
+    // Priority 2: Remote rendered preview URL
+    if (draft.renderedPreviewUrl) {
+      return draft.renderedPreviewUrl;
+    }
+    
+    // Priority 3: First captured image as thumbnail
+    // Check before image first, then after
+    if (draft.beforeImageUrl) {
+      return draft.beforeImageUrl;
+    }
+    if (draft.afterImageUrl) {
+      return draft.afterImageUrl;
+    }
+    
+    // Priority 4: Check capturedImageUrls if available
+    if (draft.capturedImageUrls) {
+      const firstImage = Object.values(draft.capturedImageUrls)[0];
+      if (firstImage) {
+        return firstImage;
+      }
+    }
+    
+    return null;
+  }, []);
+
   // Get draft status text
   const getDraftStatus = useCallback((draft: Draft) => {
-    // If we have a rendered preview, it's ready
-    if (draft.renderedPreviewUrl) {
+    // If we have a rendered preview (local or remote), it's ready
+    if (draft.localPreviewPath || draft.renderedPreviewUrl) {
       if (draft.beforeImageUrl && draft.afterImageUrl) {
         return 'Ready to download';
       }
@@ -58,7 +91,8 @@ export default function DraftsScreen() {
 
   // Get draft status color
   const getDraftStatusColor = useCallback((draft: Draft) => {
-    if (draft.renderedPreviewUrl && draft.beforeImageUrl && draft.afterImageUrl) {
+    const hasPreview = draft.localPreviewPath || draft.renderedPreviewUrl;
+    if (hasPreview && draft.beforeImageUrl && draft.afterImageUrl) {
       return Colors.light.success;
     }
     if (draft.beforeImageUrl && draft.afterImageUrl) {
@@ -212,6 +246,7 @@ export default function DraftsScreen() {
             const isTemplateAvailable = !!template;
             const status = getDraftStatus(draft);
             const statusColor = getDraftStatusColor(draft);
+            const previewUri = getPreviewUri(draft);
 
             return (
               <Pressable
@@ -222,20 +257,21 @@ export default function DraftsScreen() {
                 ]}
                 onPress={() => handleResumeDraft(draft)}
               >
-                {/* Preview section */}
+                {/* Preview section - uses fallback chain: local > remote > captured image > placeholder */}
                 <View style={styles.previewSection}>
-                  {draft.renderedPreviewUrl ? (
-                    // Show the actual rendered preview (same as in editor)
+                  {previewUri ? (
+                    // Show preview from best available source (local path, remote URL, or captured image)
                     <View style={styles.renderedPreviewContainer}>
                       <Image
-                        source={{ uri: draft.renderedPreviewUrl }}
+                        source={{ uri: previewUri }}
                         style={styles.renderedPreview}
                         contentFit="contain"
                         transition={200}
+                        cachePolicy="memory-disk"
                       />
                     </View>
                   ) : (
-                    // Fallback: Show placeholder with logo or icon
+                    // Fallback: Show placeholder only when no images at all
                     <View style={styles.placeholderContainer}>
                       {PLACEHOLDER_LOGO_URL ? (
                         <Image

@@ -58,6 +58,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     cachedPreviewUrl: string | null;
     // Premium status when the cached preview was rendered
     wasRenderedAsPremium: boolean | null;
+    // Local file path to cached preview (instant access, no network)
+    localPreviewPath: string | null;
   }>({
     contentType: 'single',
     template: null,
@@ -67,6 +69,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     draftId: null,
     cachedPreviewUrl: null,
     wasRenderedAsPremium: null,
+    localPreviewPath: null,
   });
 
   // Initialize local storage on app start
@@ -183,6 +186,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       existingDraftId,
       renderedPreviewUrl,
       wasRenderedAsPremium,
+      localPreviewPath,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -190,6 +194,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       existingDraftId?: string;
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
+      localPreviewPath?: string | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -198,7 +203,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         existingDraftId,
         undefined, // capturedImageUris
         renderedPreviewUrl,
-        wasRenderedAsPremium
+        wasRenderedAsPremium,
+        localPreviewPath
       );
     },
     onSuccess: (savedDraft) => {
@@ -208,6 +214,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         draftId: savedDraft.id,
         cachedPreviewUrl: savedDraft.renderedPreviewUrl || null,
         wasRenderedAsPremium: savedDraft.wasRenderedAsPremium ?? null,
+        localPreviewPath: savedDraft.localPreviewPath || null,
       }));
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
     },
@@ -270,6 +277,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       draftId: null,
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
+      localPreviewPath: null,
     }));
   }, []);
 
@@ -365,6 +373,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       draftId: null,
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
+      localPreviewPath: null,
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -450,6 +459,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       // Set cached preview URL from draft for instant display
       cachedPreviewUrl: draft.renderedPreviewUrl || null,
       wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
+      // Set local preview path for instant access (priority over remote URL)
+      localPreviewPath: draft.localPreviewPath || null,
     });
   }, []);
 
@@ -511,6 +522,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       existingDraftId?: string;
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
+      localPreviewPath?: string | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     loadDraft,

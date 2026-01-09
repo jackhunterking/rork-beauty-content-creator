@@ -26,6 +26,7 @@ import { renderPreview } from '@/services/renderService';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { usePremiumStatus } from '@/hooks/usePremiumStatus';
+import { saveRenderedPreview, createDraftDirectories } from '@/services/localStorageService';
 
 export default function EditorScreen() {
   const router = useRouter();
@@ -50,6 +51,9 @@ export default function EditorScreen() {
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  
+  // Local preview path (cached on device for instant access)
+  const [localPreviewPath, setLocalPreviewPath] = useState<string | null>(null);
   
   // Track if images have been modified by user since draft was loaded
   // Used to skip unnecessary API calls when reopening drafts
@@ -151,35 +155,53 @@ export default function EditorScreen() {
     console.log('[Editor] Captured initial state:', Object.keys(initialState).length, 'images');
   }, [template, capturedImages]);
 
-  // Initialize with cached preview URL when loading a draft
-  // This avoids an unnecessary Templated.io API call
+  // Initialize with cached preview when loading a draft
+  // Priority: local file path > remote URL (for instant display)
   useEffect(() => {
     // Only run once when the draft is first loaded
     if (hasInitializedFromCacheRef.current) return;
     
+    const cachedLocalPath = currentProject.localPreviewPath;
     const cachedPreviewUrl = currentProject.cachedPreviewUrl;
     const wasRenderedAsPremium = currentProject.wasRenderedAsPremium;
     
-    // Check if we have a cached preview and premium status matches
-    // If premium status changed, we need to re-render (watermark difference)
+    // Check if premium status matches (for cache invalidation)
     const premiumStatusMatch = wasRenderedAsPremium === null || wasRenderedAsPremium === isPremium;
     
-    if (currentProject.draftId && cachedPreviewUrl && premiumStatusMatch) {
-      console.log('[Editor] Using cached preview URL from draft');
-      setRenderedPreviewUri(cachedPreviewUrl);
-      // Initialize prevCapturedImages with current state to prevent immediate re-render
-      prevCapturedImagesRef.current = { ...capturedImages };
-      hasInitializedFromCacheRef.current = true;
-    } else if (currentProject.draftId && cachedPreviewUrl && !premiumStatusMatch) {
+    if (currentProject.draftId && premiumStatusMatch) {
+      // Priority 1: Use local file path (instant, no network)
+      if (cachedLocalPath) {
+        console.log('[Editor] Using local preview file from draft:', cachedLocalPath);
+        setRenderedPreviewUri(cachedLocalPath);
+        setLocalPreviewPath(cachedLocalPath);
+        prevCapturedImagesRef.current = { ...capturedImages };
+        hasInitializedFromCacheRef.current = true;
+        return;
+      }
+      
+      // Priority 2: Use remote URL (fallback)
+      if (cachedPreviewUrl) {
+        console.log('[Editor] Using cached preview URL from draft');
+        setRenderedPreviewUri(cachedPreviewUrl);
+        prevCapturedImagesRef.current = { ...capturedImages };
+        hasInitializedFromCacheRef.current = true;
+        return;
+      }
+    }
+    
+    // Handle premium status change (need to re-render)
+    if (currentProject.draftId && (cachedLocalPath || cachedPreviewUrl) && !premiumStatusMatch) {
       console.log('[Editor] Premium status changed, will re-render preview');
-      // Mark as initialized but don't use cache - let the normal flow re-render
       hasInitializedFromCacheRef.current = true;
       setImagesModifiedSinceLoad(true);
-    } else if (currentProject.draftId) {
-      // Draft without cached preview - mark as initialized
+      return;
+    }
+    
+    // Draft without any cached preview
+    if (currentProject.draftId) {
       hasInitializedFromCacheRef.current = true;
     }
-  }, [currentProject.draftId, currentProject.cachedPreviewUrl, currentProject.wasRenderedAsPremium, isPremium, capturedImages]);
+  }, [currentProject.draftId, currentProject.cachedPreviewUrl, currentProject.localPreviewPath, currentProject.wasRenderedAsPremium, isPremium, capturedImages]);
 
   // Trigger preview render when photos change
   const triggerPreviewRender = useCallback(async () => {
@@ -281,6 +303,71 @@ export default function EditorScreen() {
     }
   }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
+  // Auto-save preview locally when render completes
+  // This ensures the preview is cached for instant display later
+  useEffect(() => {
+    const savePreviewLocally = async () => {
+      // Only save if we have a rendered preview URL and it's not already a local file
+      if (!renderedPreviewUri || !currentProject.draftId) return;
+      
+      // Skip if it's already a local file path (starts with file://)
+      if (renderedPreviewUri.startsWith('file://')) {
+        console.log('[Editor] Preview is already local, skipping save');
+        return;
+      }
+      
+      // Skip if we already have a local path for this preview
+      if (localPreviewPath && renderedPreviewUri === currentProject.cachedPreviewUrl) {
+        return;
+      }
+      
+      try {
+        console.log('[Editor] Auto-saving preview locally for draft:', currentProject.draftId);
+        
+        // Ensure draft directories exist
+        await createDraftDirectories(currentProject.draftId);
+        
+        // Download and save the preview locally
+        const savedPath = await saveRenderedPreview(
+          currentProject.draftId,
+          renderedPreviewUri,
+          'default'
+        );
+        
+        if (savedPath) {
+          console.log('[Editor] Preview saved locally:', savedPath);
+          setLocalPreviewPath(savedPath);
+          
+          // Background sync to Supabase - don't block UI
+          // This will update the draft record with both local path and remote URL
+          if (template && imagesModifiedSinceLoad) {
+            const beforeSlot = slots.find(s => s.layerId.includes('before'));
+            const afterSlot = slots.find(s => s.layerId.includes('after'));
+            const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
+            const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
+            
+            saveDraft({
+              templateId: template.id,
+              beforeImageUri: beforeUri || null,
+              afterImageUri: afterUri || null,
+              existingDraftId: currentProject.draftId,
+              renderedPreviewUrl: renderedPreviewUri,
+              wasRenderedAsPremium: isPremium,
+              localPreviewPath: savedPath,
+            }).catch(err => {
+              console.warn('[Editor] Background save failed:', err);
+            });
+          }
+        }
+      } catch (error) {
+        console.error('[Editor] Failed to save preview locally:', error);
+        // Non-critical error - the remote URL will still work
+      }
+    };
+    
+    savePreviewLocally();
+  }, [renderedPreviewUri, currentProject.draftId, currentProject.cachedPreviewUrl, localPreviewPath, template, slots, capturedImages, saveDraft, isPremium, imagesModifiedSinceLoad]);
+
   // Redirect if no template selected
   // Skip this if we're intentionally discarding (to prevent double navigation)
   useEffect(() => {
@@ -377,6 +464,8 @@ export default function EditorScreen() {
                 renderedPreviewUrl: renderedPreviewUri,
                 // Track premium status at time of render for cache invalidation
                 wasRenderedAsPremium: isPremium,
+                // Save local preview path for instant display
+                localPreviewPath: localPreviewPath,
               });
               Toast.show({
                 type: 'success',
@@ -401,7 +490,7 @@ export default function EditorScreen() {
       ],
       { cancelable: true }
     );
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath]);
 
   // Prevent back navigation when there are unsaved changes
   // usePreventRemove works properly with native-stack navigators (Expo Router)
@@ -566,6 +655,8 @@ export default function EditorScreen() {
         renderedPreviewUrl: renderedPreviewUri,
         // Track premium status at time of render for cache invalidation
         wasRenderedAsPremium: isPremium,
+        // Save local preview path for instant display
+        localPreviewPath: localPreviewPath,
       });
       
       Toast.show({
@@ -587,7 +678,7 @@ export default function EditorScreen() {
         position: 'top',
       });
     }
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath]);
 
   // Save draft - shows confirmation dialog first
   const handleSaveDraft = useCallback(() => {
