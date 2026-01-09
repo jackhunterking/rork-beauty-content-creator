@@ -17,15 +17,20 @@ interface TemplateCanvasProps {
   isRendering?: boolean;
   /** Called when the cached preview image fails to load (e.g., expired URL) */
   onPreviewError?: () => void;
+  /** Whether user has premium status - affects which preview is shown */
+  isPremium?: boolean;
 }
 
 /**
  * TemplateCanvas - Renders template preview with invisible slot tap targets
  * 
- * Simple architecture:
- * 1. Shows template preview initially (templatedPreviewUrl)
- * 2. When photos are added, shows rendered preview from Templated.io
- * 3. Slot regions are invisible tap targets - template design shows through
+ * Preview Priority (based on premium status):
+ * 1. renderedPreviewUri (if user has added photos - watermark controlled by isPremium)
+ * 2. For FREE users: watermarkedPreviewUrl (shows watermark upfront in editor)
+ * 3. For PRO users: templatedPreviewUrl (clean preview)
+ * 4. Fallback: thumbnail
+ * 
+ * Slot regions are invisible tap targets - template design shows through
  */
 export function TemplateCanvas({
   template,
@@ -33,6 +38,7 @@ export function TemplateCanvas({
   renderedPreviewUri,
   isRendering = false,
   onPreviewError,
+  isPremium = false,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
   const { width: screenWidth } = useWindowDimensions();
@@ -70,8 +76,24 @@ export function TemplateCanvas({
     );
   }, [template, displayWidth, displayHeight]);
 
-  // Preview priority: rendered preview > template preview > thumbnail
-  const previewUrl = renderedPreviewUri || template.templatedPreviewUrl || template.thumbnail;
+  // Preview priority based on premium status:
+  // 1. renderedPreviewUri (if user has added photos)
+  // 2. For FREE users: watermarkedPreviewUrl (shows watermark upfront)
+  // 3. For PRO users: templatedPreviewUrl (clean)
+  // 4. Fallback: thumbnail
+  const previewUrl = useMemo(() => {
+    // If we have a rendered preview (user added photos), use it
+    if (renderedPreviewUri) return renderedPreviewUri;
+    
+    // Before photos are added, show appropriate preview based on premium status
+    if (isPremium) {
+      // Pro users see clean preview
+      return template.templatedPreviewUrl || template.thumbnail;
+    } else {
+      // Free users see watermarked preview so they know upfront
+      return template.watermarkedPreviewUrl || template.templatedPreviewUrl || template.thumbnail;
+    }
+  }, [renderedPreviewUri, isPremium, template.watermarkedPreviewUrl, template.templatedPreviewUrl, template.thumbnail]);
 
   return (
     <View style={styles.wrapper}>

@@ -34,8 +34,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     addDisclaimer: false,
   });
   
-  // Selected format filter ('all' shows all templates)
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>('all');
+  // Selected format filter (square or vertical)
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('square');
 
   // Per-slot state management (NEW)
   const [slotStates, setSlotStatesMap] = useState<SlotStates>({});
@@ -235,7 +235,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const filteredTemplates = useMemo(() => 
     templates.filter(t => {
       const matchesContentType = t.supports.includes(currentProject.contentType);
-      const matchesFormat = selectedFormat === 'all' || t.format === selectedFormat;
+      const matchesFormat = t.format === selectedFormat;
       return matchesContentType && matchesFormat;
     }),
     [templates, currentProject.contentType, selectedFormat]
@@ -245,7 +245,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setCurrentProject(prev => ({ ...prev, contentType: type }));
   }, []);
 
-  const setFormat = useCallback((format: TemplateFormat | 'all') => {
+  const setFormat = useCallback((format: TemplateFormat) => {
     setSelectedFormat(format);
   }, []);
 

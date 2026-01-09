@@ -1,12 +1,13 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Pressable, ActivityIndicator } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical } from "lucide-react-native";
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
 import { ContentType, Template, TemplateFormat } from "@/types";
+import { clearAllImageCache } from "@/services/imageCacheService";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -30,12 +31,7 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
   { type: 'video', icon: <Video size={20} color={Colors.light.textTertiary} />, label: 'Video', disabled: true },
 ];
 
-const formatFilters: { format: TemplateFormat | 'all'; icon: (active: boolean) => React.ReactNode; label: string }[] = [
-  { 
-    format: 'all', 
-    icon: (active) => <Layers size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: 'All' 
-  },
+const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.ReactNode; label: string }[] = [
   { 
     format: 'square', 
     icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
@@ -50,9 +46,27 @@ const formatFilters: { format: TemplateFormat | 'all'; icon: (active: boolean) =
 
 export default function CreateScreen() {
   const router = useRouter();
-  const { filteredTemplates, currentProject, setContentType, setFormat, selectedFormat, selectTemplate, toggleFavourite, isLoading, favouriteTemplates } = useApp();
+  const { filteredTemplates, currentProject, setContentType, setFormat, selectedFormat, selectTemplate, toggleFavourite, isLoading, favouriteTemplates, refetchTemplates } = useApp();
 
   const favouriteCount = favouriteTemplates.length;
+  
+  // Pull-to-refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Handle pull-to-refresh - clears image cache and refetches templates
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Clear all cached images to ensure fresh previews load
+      await clearAllImageCache();
+      // Refetch templates from Supabase
+      await refetchTemplates();
+    } catch (error) {
+      console.error('Failed to refresh templates:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchTemplates]);
 
   const handleFavouritesPress = useCallback(() => {
     router.push('/favourites');
@@ -63,7 +77,7 @@ export default function CreateScreen() {
     setContentType(type);
   }, [setContentType]);
 
-  const handleFormatSelect = useCallback((format: TemplateFormat | 'all') => {
+  const handleFormatSelect = useCallback((format: TemplateFormat) => {
     setFormat(format);
   }, [setFormat]);
 
@@ -162,6 +176,14 @@ export default function CreateScreen() {
           style={styles.scrollView}
           contentContainerStyle={styles.gridContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={Colors.light.accent}
+              colors={[Colors.light.accent]}
+            />
+          }
         >
           <View style={styles.grid}>
             {filteredTemplates.map((template) => (

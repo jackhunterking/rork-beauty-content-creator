@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Template, TemplateRow } from '@/types';
 import { mapRowToTemplate, fetchTemplates } from '@/services/templateService';
+import { clearCacheForTemplate } from '@/services/imageCacheService';
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface UseRealtimeTemplatesResult {
@@ -49,9 +50,14 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
   }, []);
 
   // Handle real-time UPDATE event
-  const handleUpdate = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
+  const handleUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<TemplateRow>) => {
     console.log('[Realtime] UPDATE received:', payload.new);
     const updatedRow = payload.new as TemplateRow;
+    
+    // Clear image cache for this template to ensure fresh images are loaded
+    // This is critical for when template previews are updated in the backend
+    await clearCacheForTemplate(updatedRow.id);
+    
     const updatedTemplate = mapRowToTemplate(updatedRow);
     
     console.log('[Realtime] Updating template:', updatedTemplate.name, 'thumbnail:', updatedTemplate.thumbnail);

@@ -6,7 +6,6 @@ import { View, Text, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Toast, { ToastConfig } from 'react-native-toast-message';
 import { CheckCircle, AlertCircle, Info } from 'lucide-react-native';
-import { Image } from 'expo-image';
 import { AppProvider } from "@/contexts/AppContext";
 import Colors from "@/constants/colors";
 
@@ -161,19 +160,9 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   useEffect(() => {
-    // Clear expo-image cache on app startup to ensure fresh thumbnails
-    // This fixes issues where cached images persist even after URL/cacheKey changes
-    const clearImageCache = async () => {
-      try {
-        await Image.clearDiskCache();
-        await Image.clearMemoryCache();
-        console.log('[App] Image cache cleared successfully');
-      } catch (error) {
-        console.warn('[App] Failed to clear image cache:', error);
-      }
-    };
-    
-    clearImageCache();
+    // Cache clearing on startup is no longer needed since we use cache-busting URLs
+    // (URLs include ?v=timestamp which forces refresh when templates are updated)
+    // The real-time subscription handler also clears cache when updates are received
     SplashScreen.hideAsync();
   }, []);
 

@@ -228,6 +228,9 @@ export interface Template {
   // Not actively used in new architecture - Templated.io handles all rendering
   framePreviewUrl?: string;
   
+  // Preview WITH watermark visible - shown to free users in Editor before adding photos
+  watermarkedPreviewUrl?: string;
+  
   // Source of truth for all layers - slots are extracted from this
   layersJson?: TemplatedLayer[];
   
@@ -283,6 +286,8 @@ export interface TemplateRow {
   templated_preview_url: string | null;
   // Frame preview URL - optional fallback
   frame_preview_url: string | null;
+  // Preview with watermark visible - shown to free users in Editor
+  watermarked_preview_url: string | null;
   // Source of truth for layers
   layers_json: TemplatedLayer[] | null;
 }

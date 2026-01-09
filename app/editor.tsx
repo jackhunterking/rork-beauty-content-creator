@@ -783,6 +783,7 @@ export default function EditorScreen() {
             renderedPreviewUri={renderedPreviewUri}
             isRendering={isRendering}
             onPreviewError={handlePreviewError}
+            isPremium={isPremium}
           />
 
           {/* Instructions */}

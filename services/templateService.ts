@@ -6,18 +6,60 @@ const DEFAULT_BEFORE_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?t
 const DEFAULT_AFTER_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?text=%2B%0AAfter';
 
 /**
+ * Add cache-busting query parameter to image URLs.
+ * This forces browsers/CDNs to fetch fresh content when timestamps change.
+ * 
+ * @param url - The image URL
+ * @param timestamp - ISO timestamp string (usually updated_at)
+ * @returns URL with cache-busting query parameter, or undefined if no URL
+ */
+function addCacheBuster(url: string | null | undefined, timestamp: string): string | undefined {
+  if (!url) return undefined;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}v=${new Date(timestamp).getTime()}`;
+}
+
+/**
+ * Auto-detect template format based on canvas dimensions
+ * Square: aspect ratio between 0.9 and 1.1 (e.g., 1080x1080 = 1.0)
+ * Vertical: aspect ratio < 0.9 (e.g., 1080x1920 = 0.5625 for 9:16 story)
+ */
+function detectFormatFromDimensions(width: number, height: number): TemplateFormat {
+  const aspectRatio = width / height;
+  // Square is 1:1 (with small tolerance for rounding)
+  if (aspectRatio >= 0.9 && aspectRatio <= 1.1) {
+    return 'square';
+  }
+  // Everything else (9:16, 4:5, etc.) is vertical/story
+  return 'vertical';
+}
+
+/**
  * Convert database row (snake_case) to Template type (camelCase)
  * Exported for use by real-time subscription hooks
+ * 
+ * Applies cache-busting to all image URLs using the updated_at timestamp.
+ * This ensures images refresh when templates are updated in the backend.
  */
 export function mapRowToTemplate(row: TemplateRow): Template {
+  const cacheBuster = row.updated_at;
+  
+  // Apply cache-busting to image URLs
+  const thumbnail = addCacheBuster(row.thumbnail, cacheBuster);
+  const templatedPreviewUrl = addCacheBuster(row.templated_preview_url, cacheBuster);
+  const watermarkedPreviewUrl = addCacheBuster(row.watermarked_preview_url, cacheBuster);
+  const backgroundUrl = addCacheBuster(row.background_url, cacheBuster);
+  const framePreviewUrl = addCacheBuster(row.frame_preview_url, cacheBuster);
+  
   return {
     id: row.id,
     name: row.name,
-    // Use templated_preview_url if available, otherwise fall back to thumbnail
-    thumbnail: row.templated_preview_url || row.thumbnail,
+    // Thumbnail for Create tab - always clean, no watermark
+    // Falls back to templated_preview_url for backwards compatibility
+    thumbnail: thumbnail || templatedPreviewUrl || '',
     canvasWidth: row.canvas_width,
     canvasHeight: row.canvas_height,
-    backgroundUrl: row.background_url || undefined,
+    backgroundUrl,
     // Legacy slot data - kept for backwards compatibility
     beforeSlot: {
       width: row.before_slot_width,
@@ -36,14 +78,17 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     supports: row.supports,
     isFavourite: row.is_favourite,
     isActive: row.is_active,
-    format: (row.format || 'square') as TemplateFormat,
+    format: detectFormatFromDimensions(row.canvas_width, row.canvas_height),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
-    templatedPreviewUrl: row.templated_preview_url || undefined,
+    // Clean preview (no watermark) - used for Pro users in Editor
+    templatedPreviewUrl,
+    // Watermarked preview - shown to Free users in Editor before adding photos
+    watermarkedPreviewUrl,
     // Frame preview URL - optional fallback
-    framePreviewUrl: row.frame_preview_url || undefined,
+    framePreviewUrl,
     // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
   };
