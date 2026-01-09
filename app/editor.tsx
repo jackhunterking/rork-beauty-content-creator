@@ -9,6 +9,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -16,7 +17,7 @@ import { usePreventRemove } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import Toast from 'react-native-toast-message';
-import { Save, Download, Share2, RefreshCw } from 'lucide-react-native';
+import { Save, Download, Share2, RefreshCw, Crown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -25,7 +26,7 @@ import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } fro
 import { renderPreview } from '@/services/renderService';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
-import { usePremiumStatus } from '@/hooks/usePremiumStatus';
+import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 import { saveRenderedPreview, createDraftDirectories } from '@/services/localStorageService';
 
 export default function EditorScreen() {
@@ -68,12 +69,19 @@ export default function EditorScreen() {
   // Track current template ID to detect template changes
   const currentTemplateIdRef = useRef<string | null>(null);
   
+  // Track if a preview save is in progress to prevent overlapping saves
+  const isSavingPreviewRef = useRef(false);
+  
+  // Track the last rendered preview URL to detect actual changes
+  const lastSavedPreviewUrlRef = useRef<string | null>(null);
+  
   // Download/share state
   const [isDownloading, setIsDownloading] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
 
   // Premium status for watermark control
-  const { isPremium } = usePremiumStatus();
+  const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
+  const { requestPremiumAccess, paywallState } = usePremiumFeature();
 
   // Extract slots from template
   const slots = useMemo(() => 
@@ -124,9 +132,12 @@ export default function EditorScreen() {
       prevCapturedImagesRef.current = {};
       initialCapturedImagesRef.current = {};
       allowNavigationRef.current = false;
+      isSavingPreviewRef.current = false;
+      lastSavedPreviewUrlRef.current = null;
       
       // Reset state
       setRenderedPreviewUri(null);
+      setLocalPreviewPath(null);
       setImagesModifiedSinceLoad(false);
       
       // Update tracked template ID
@@ -270,21 +281,39 @@ export default function EditorScreen() {
     const prevImages = prevCapturedImagesRef.current;
     const currentImages = capturedImages;
     
+    // Get all slot IDs from current images
+    const currentSlotIds = Object.keys(currentImages);
+    const currentImageCount = currentSlotIds.filter(id => currentImages[id]?.uri).length;
+    const prevImageCount = Object.keys(prevImages).filter(id => prevImages[id]?.uri).length;
+    
     // Check if any slot has a NEW or CHANGED image
     let hasNewOrChangedImage = false;
-    for (const slotId of Object.keys(currentImages)) {
+    let changedSlotId: string | null = null;
+    
+    for (const slotId of currentSlotIds) {
       const currentUri = currentImages[slotId]?.uri;
       const prevUri = prevImages[slotId]?.uri;
       
       // New image added or image changed
       if (currentUri && currentUri !== prevUri) {
         hasNewOrChangedImage = true;
+        changedSlotId = slotId;
         break;
       }
     }
     
-    // Update ref BEFORE triggering render to prevent loops
-    prevCapturedImagesRef.current = { ...currentImages };
+    // Log the state for debugging
+    if (hasNewOrChangedImage) {
+      console.log(`[Editor] Image change detected in slot: ${changedSlotId}, total images: ${currentImageCount}`);
+    }
+    
+    // Update ref AFTER detection but BEFORE triggering render
+    // Make a deep copy to avoid reference issues
+    const newPrevImages: Record<string, { uri: string } | null> = {};
+    for (const [slotId, media] of Object.entries(currentImages)) {
+      newPrevImages[slotId] = media ? { uri: media.uri } : null;
+    }
+    prevCapturedImagesRef.current = newPrevImages;
     
     // Only trigger if there's an actual new/changed image
     if (hasNewOrChangedImage) {
@@ -298,28 +327,36 @@ export default function EditorScreen() {
       // Mark that user has modified images (for future saves)
       setImagesModifiedSinceLoad(true);
       
-      console.log('[Editor] Detected image change, triggering preview render');
+      console.log('[Editor] Triggering preview render');
       triggerPreviewRender();
     }
   }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
   // Auto-save preview locally when render completes
   // This ensures the preview is cached for instant display later
+  // IMPORTANT: This effect should NOT depend on capturedImages to avoid infinite loops
   useEffect(() => {
     const savePreviewLocally = async () => {
-      // Only save if we have a rendered preview URL and it's not already a local file
+      // Only save if we have a rendered preview URL and a draft
       if (!renderedPreviewUri || !currentProject.draftId) return;
       
       // Skip if it's already a local file path (starts with file://)
       if (renderedPreviewUri.startsWith('file://')) {
-        console.log('[Editor] Preview is already local, skipping save');
         return;
       }
       
-      // Skip if we already have a local path for this preview
-      if (localPreviewPath && renderedPreviewUri === currentProject.cachedPreviewUrl) {
+      // Skip if we already saved this exact preview URL
+      if (lastSavedPreviewUrlRef.current === renderedPreviewUri) {
         return;
       }
+      
+      // Skip if another save is in progress (prevents overlapping saves)
+      if (isSavingPreviewRef.current) {
+        return;
+      }
+      
+      // Mark that we're saving
+      isSavingPreviewRef.current = true;
       
       try {
         console.log('[Editor] Auto-saving preview locally for draft:', currentProject.draftId);
@@ -336,37 +373,20 @@ export default function EditorScreen() {
         
         if (savedPath) {
           console.log('[Editor] Preview saved locally:', savedPath);
+          // Track that we saved this URL to prevent duplicate saves
+          lastSavedPreviewUrlRef.current = renderedPreviewUri;
           setLocalPreviewPath(savedPath);
-          
-          // Background sync to Supabase - don't block UI
-          // This will update the draft record with both local path and remote URL
-          if (template && imagesModifiedSinceLoad) {
-            const beforeSlot = slots.find(s => s.layerId.includes('before'));
-            const afterSlot = slots.find(s => s.layerId.includes('after'));
-            const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
-            const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
-            
-            saveDraft({
-              templateId: template.id,
-              beforeImageUri: beforeUri || null,
-              afterImageUri: afterUri || null,
-              existingDraftId: currentProject.draftId,
-              renderedPreviewUrl: renderedPreviewUri,
-              wasRenderedAsPremium: isPremium,
-              localPreviewPath: savedPath,
-            }).catch(err => {
-              console.warn('[Editor] Background save failed:', err);
-            });
-          }
         }
       } catch (error) {
         console.error('[Editor] Failed to save preview locally:', error);
         // Non-critical error - the remote URL will still work
+      } finally {
+        isSavingPreviewRef.current = false;
       }
     };
     
     savePreviewLocally();
-  }, [renderedPreviewUri, currentProject.draftId, currentProject.cachedPreviewUrl, localPreviewPath, template, slots, capturedImages, saveDraft, isPremium, imagesModifiedSinceLoad]);
+  }, [renderedPreviewUri, currentProject.draftId]);
 
   // Redirect if no template selected
   // Skip this if we're intentionally discarding (to prevent double navigation)
@@ -635,6 +655,20 @@ export default function EditorScreen() {
     triggerPreviewRender();
   }, [triggerPreviewRender]);
 
+  // Handle Remove Watermark toggle - triggers paywall for non-premium users
+  const handleRemoveWatermarkToggle = useCallback(async () => {
+    // If already premium, toggle is already ON and locked
+    if (isPremium) return;
+    
+    // Trigger paywall via Superwall
+    await requestPremiumAccess('remove_watermark', () => {
+      // This callback runs if user successfully subscribes
+      console.log('[Editor] Watermark removal unlocked!');
+      // The preview will automatically re-render with watermark removed
+      // because isPremium will change, triggering the render effect
+    });
+  }, [isPremium, requestPremiumAccess]);
+
   // Actually perform the save operation
   const performSaveDraft = useCallback(async () => {
     if (!template) return;
@@ -828,17 +862,6 @@ export default function EditorScreen() {
     return null;
   }
 
-  // Generate instruction text based on slot count
-  const getInstructionText = () => {
-    if (slots.length === 0) {
-      return 'This template has no image slots configured';
-    }
-    if (slots.length === 1) {
-      return `Tap on the slot to add your ${slots[0].label.toLowerCase()} photo`;
-    }
-    return `Tap on each slot to add your photos (${capturedCount}/${slots.length} added)`;
-  };
-
   const isProcessing = isDownloading || isSharing;
 
   return (
@@ -888,17 +911,47 @@ export default function EditorScreen() {
             onPreviewError={handlePreviewError}
             isPremium={isPremium}
           />
-
-          {/* Instructions */}
-          <View style={styles.instructions}>
-            <Text style={styles.instructionText}>
-              {getInstructionText()}
-            </Text>
-          </View>
         </ScrollView>
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
+          {/* Remove Watermark Toggle - only show when preview is ready */}
+          {allSlotsFilled && !isRendering && (
+            <TouchableOpacity
+              style={[
+                styles.watermarkToggleRow,
+                isPremium && styles.watermarkToggleRowActive,
+              ]}
+              onPress={handleRemoveWatermarkToggle}
+              disabled={isPremium || isPremiumLoading || paywallState === 'presenting'}
+              activeOpacity={0.7}
+            >
+              <View style={styles.watermarkToggleLeft}>
+                <Crown 
+                  size={18} 
+                  color={isPremium ? Colors.light.accent : Colors.light.textSecondary} 
+                />
+                <Text style={[
+                  styles.watermarkToggleText,
+                  isPremium && styles.watermarkToggleTextActive,
+                ]}>
+                  Remove Watermark
+                </Text>
+              </View>
+              <Switch
+                value={isPremium}
+                onValueChange={handleRemoveWatermarkToggle}
+                disabled={isPremium || isPremiumLoading || paywallState === 'presenting'}
+                trackColor={{ 
+                  false: Colors.light.border, 
+                  true: Colors.light.accent 
+                }}
+                thumbColor={Colors.light.surface}
+                ios_backgroundColor={Colors.light.border}
+              />
+            </TouchableOpacity>
+          )}
+
           {/* Preview Error with Retry Button */}
           {previewError && (
             <View style={styles.errorContainer}>
@@ -962,13 +1015,6 @@ export default function EditorScreen() {
               Generating preview...
             </Text>
           )}
-          
-          {/* Premium upsell hint - only show when ready */}
-          {!isPremium && canDownload && (
-            <Text style={styles.watermarkHint}>
-              Includes "Made with Resulta" watermark
-            </Text>
-          )}
         </View>
       </SafeAreaView>
     </View>
@@ -1018,15 +1064,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
-  instructions: {
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  instructionText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-  },
   bottomSection: {
     paddingHorizontal: 20,
     paddingBottom: 20,
@@ -1073,12 +1110,35 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
   },
-  watermarkHint: {
-    fontSize: 12,
-    color: Colors.light.textTertiary,
-    textAlign: 'center',
-    marginTop: 8,
-    fontStyle: 'italic',
+  watermarkToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.light.surface,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  watermarkToggleRowActive: {
+    borderColor: Colors.light.accent,
+    backgroundColor: 'rgba(201, 168, 124, 0.08)',
+  },
+  watermarkToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  watermarkToggleText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.light.textSecondary,
+  },
+  watermarkToggleTextActive: {
+    color: Colors.light.text,
+    fontWeight: '600',
   },
   errorContainer: {
     flexDirection: 'row',
