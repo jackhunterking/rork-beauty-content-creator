@@ -16,9 +16,9 @@ const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 // Dynamic tile height based on format
 const getTileHeight = (format: TemplateFormat) => {
   switch (format) {
-    case 'vertical':
+    case '9:16':
       return TILE_WIDTH * 1.78; // 9:16 ratio
-    case 'square':
+    case '1:1':
     default:
       return TILE_WIDTH; // 1:1 ratio
   }

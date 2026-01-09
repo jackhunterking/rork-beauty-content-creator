@@ -34,8 +34,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     addDisclaimer: false,
   });
   
-  // Selected format filter (square or vertical)
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('square');
+  // Selected format filter (1:1 or 9:16)
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('1:1');
 
   // Per-slot state management (NEW)
   const [slotStates, setSlotStatesMap] = useState<SlotStates>({});

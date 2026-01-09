@@ -1,5 +1,5 @@
 export type ContentType = 'single' | 'carousel' | 'video';
-export type TemplateFormat = 'square' | 'vertical';
+export type TemplateFormat = '1:1' | '9:16';
 
 // ============================================
 // Slot State Management (NEW)

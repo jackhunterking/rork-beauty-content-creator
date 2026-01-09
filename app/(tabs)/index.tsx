@@ -17,9 +17,9 @@ const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 // Dynamic tile height based on format
 const getTileHeight = (format: TemplateFormat) => {
   switch (format) {
-    case 'vertical':
+    case '9:16':
       return TILE_WIDTH * 1.78; // 9:16 ratio
-    case 'square':
+    case '1:1':
     default:
       return TILE_WIDTH; // 1:1 ratio
   }
@@ -33,14 +33,14 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
 
 const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.ReactNode; label: string }[] = [
   { 
-    format: 'square', 
+    format: '1:1', 
     icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: 'Square' 
+    label: '1:1' 
   },
   { 
-    format: 'vertical', 
+    format: '9:16', 
     icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: 'Story' 
+    label: '9:16' 
   },
 ];
 

@@ -141,8 +141,8 @@ Everything else becomes part of the template design (labels, arrows, backgrounds
 1. Go to https://app.templated.io
 2. Click **Create Template**
 3. Set canvas size:
-   - Square: `1080 x 1080`
-   - Story: `1080 x 1920`
+   - 1:1: `1080 x 1080`
+   - 9:16: `1080 x 1920`
    - Portrait: `1080 x 1350`
 
 ### Step 2: Add Background Elements
