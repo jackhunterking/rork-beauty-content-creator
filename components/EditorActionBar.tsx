@@ -7,12 +7,12 @@ import {
   ActivityIndicator,
   Alert 
 } from 'react-native';
-import { Download, Share2, Save, CheckCircle } from 'lucide-react-native';
+import { Download, Share2, CheckCircle } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import Colors from '@/constants/colors';
 import { saveToGallery } from '@/services/downloadService';
 import { shareImage } from '@/services/shareService';
-import { renderTemplate, RenderProgress } from '@/services/renderService';
+import { renderPreview, RenderProgress } from '@/services/renderService';
 
 interface EditorActionBarProps {
   // Whether all required slots are filled
@@ -69,7 +69,7 @@ export function EditorActionBar({
   onRenderComplete,
 }: EditorActionBarProps) {
   const [actionState, setActionState] = useState<ActionState>('idle');
-  const [renderProgress, setRenderProgress] = useState<RenderProgress | null>(null);
+  const [renderProgress] = useState<RenderProgress | null>(null);
   
   // Get or create rendered image
   const getRenderedImage = useCallback(async (): Promise<string | null> => {
@@ -88,39 +88,28 @@ export function EditorActionBar({
     }
     
     if (!draftId) {
-      // Create a temporary draft ID for rendering
-      const tempDraftId = `temp_${Date.now()}`;
+      const result = await renderPreview({
+        templateId: templatedId,
+        slotImages,
+      });
       
-      const result = await renderTemplate(
-        {
-          draftId: tempDraftId,
-          templateId: templatedId,
-          slotImages,
-        },
-        setRenderProgress
-      );
-      
-      if (result.success && result.localPath) {
-        onRenderComplete?.(result.localPath);
-        return result.localPath;
+      if (result.success && result.renderUrl) {
+        onRenderComplete?.(result.renderUrl);
+        return result.renderUrl;
       } else {
         throw new Error(result.error || 'Render failed');
       }
     }
     
-    // Render with draft ID for caching
-    const result = await renderTemplate(
-      {
-        draftId,
-        templateId: templatedId,
-        slotImages,
-      },
-      setRenderProgress
-    );
+    // Render with template ID
+    const result = await renderPreview({
+      templateId: templatedId,
+      slotImages,
+    });
     
-    if (result.success && result.localPath) {
-      onRenderComplete?.(result.localPath);
-      return result.localPath;
+    if (result.success && result.renderUrl) {
+      onRenderComplete?.(result.renderUrl);
+      return result.renderUrl;
     } else {
       throw new Error(result.error || 'Render failed');
     }
