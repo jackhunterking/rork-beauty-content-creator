@@ -261,8 +261,13 @@ curl -X POST "https://jackhunterking.app.n8n.cloud/webhook/sync-template" \
 1. N8n receives the webhook
 2. Fetches layer information from Templated.io
 3. Validates slot layers exist
-4. Saves template to Supabase with `layers_json`
-5. Template appears in app (may need pull-to-refresh)
+4. **Generates TWO preview renders**:
+   - Clean preview (watermark hidden) → `templated_preview_url`
+   - Watermarked preview (watermark visible) → `watermarked_preview_url`
+5. Saves template to Supabase with `layers_json` and both preview URLs
+6. Template appears in app (may need pull-to-refresh)
+
+**Note**: The automatic preview generation requires the watermark layer to be named correctly (contains "watermark"). See [N8N_WORKFLOW_UPDATE.md](./N8N_WORKFLOW_UPDATE.md) for setup instructions.
 
 ---
 
@@ -270,8 +275,21 @@ curl -X POST "https://jackhunterking.app.n8n.cloud/webhook/sync-template" \
 
 ### How Watermark Works
 
-1. **Free users**: Watermark is visible on all rendered images
+1. **Free users**: Watermark is visible on all rendered images AND in the Editor preview
 2. **Premium users**: Watermark layer is hidden via Templated.io API
+
+### Automatic Preview Generation
+
+When you sync a template, the n8n workflow automatically generates TWO preview URLs:
+
+| Field | Description | Used For |
+|-------|-------------|----------|
+| `templated_preview_url` | Clean preview (watermark hidden) | Create tab (all users), Editor (Pro users) |
+| `watermarked_preview_url` | Preview with watermark visible | Editor (Free users before adding photos) |
+
+This is automated based on the watermark layer naming - no manual work needed!
+
+**Note**: See [N8N_WORKFLOW_UPDATE.md](./N8N_WORKFLOW_UPDATE.md) for technical details on the workflow.
 
 ### Setting Up Watermark in Template
 
