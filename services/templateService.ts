@@ -10,13 +10,7 @@ const DEFAULT_AFTER_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?te
  * Exported for use by real-time subscription hooks
  */
 export function mapRowToTemplate(row: TemplateRow): Template {
-  // DEBUG: Log the raw row data for updated_at field
-  console.log(`[DEBUG:mapRowToTemplate] Mapping template: ${row.name}`);
-  console.log(`[DEBUG:mapRowToTemplate]   row.updated_at: "${row.updated_at}" (type: ${typeof row.updated_at})`);
-  console.log(`[DEBUG:mapRowToTemplate]   row.thumbnail: ${row.thumbnail?.substring(0, 50)}...`);
-  console.log(`[DEBUG:mapRowToTemplate]   row.templated_preview_url: ${row.templated_preview_url?.substring(0, 50)}...`);
-  
-  const template: Template = {
+  return {
     id: row.id,
     name: row.name,
     // Use templated_preview_url if available, otherwise fall back to thumbnail
@@ -53,11 +47,6 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
   };
-  
-  // DEBUG: Log the mapped template
-  console.log(`[DEBUG:mapRowToTemplate]   Result updatedAt: "${template.updatedAt}" (type: ${typeof template.updatedAt})`);
-  
-  return template;
 }
 
 /**

@@ -3,23 +3,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical } from "lucide-react-native";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
 import { ContentType, Template, TemplateFormat } from "@/types";
-
-// Debug helper to log template cacheKey info
-const logTemplateCacheKeys = (templates: Template[], source: string) => {
-  console.log(`[DEBUG:CreateScreen] ${source} - ${templates.length} templates:`);
-  templates.forEach((t, i) => {
-    const cacheKey = `${t.id}-${t.updatedAt}`;
-    console.log(`[DEBUG:CreateScreen]   [${i}] ${t.name}:`);
-    console.log(`[DEBUG:CreateScreen]       id: ${t.id}`);
-    console.log(`[DEBUG:CreateScreen]       thumbnail: ${t.thumbnail?.substring(0, 60)}...`);
-    console.log(`[DEBUG:CreateScreen]       updatedAt: ${t.updatedAt} (type: ${typeof t.updatedAt})`);
-    console.log(`[DEBUG:CreateScreen]       cacheKey: ${cacheKey}`);
-  });
-};
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -64,11 +51,6 @@ const formatFilters: { format: TemplateFormat | 'all'; icon: (active: boolean) =
 export default function CreateScreen() {
   const router = useRouter();
   const { filteredTemplates, currentProject, setContentType, setFormat, selectedFormat, selectTemplate, toggleFavourite, isLoading, favouriteTemplates } = useApp();
-
-  // DEBUG: Log templates whenever they change
-  useEffect(() => {
-    logTemplateCacheKeys(filteredTemplates, 'filteredTemplates changed');
-  }, [filteredTemplates]);
 
   const favouriteCount = favouriteTemplates.length;
 

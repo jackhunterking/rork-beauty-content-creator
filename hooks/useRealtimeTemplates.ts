@@ -26,15 +26,7 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
     try {
       setIsLoading(true);
       setError(null);
-      console.log('[DEBUG:Realtime] Fetching initial templates...');
       const data = await fetchTemplates();
-      console.log('[DEBUG:Realtime] Initial fetch complete. Templates:', data.length);
-      // DEBUG: Log each template's updatedAt
-      data.forEach((t, i) => {
-        console.log(`[DEBUG:Realtime] Initial template[${i}] ${t.name}:`);
-        console.log(`[DEBUG:Realtime]   updatedAt: "${t.updatedAt}" (type: ${typeof t.updatedAt})`);
-        console.log(`[DEBUG:Realtime]   cacheKey would be: ${t.id}-${t.updatedAt}`);
-      });
       setTemplates(data);
     } catch (err) {
       console.error('Error fetching templates:', err);
@@ -60,16 +52,9 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
   const handleUpdate = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
     console.log('[Realtime] UPDATE received:', payload.new);
     const updatedRow = payload.new as TemplateRow;
-    
-    // DEBUG: Log raw updated_at from payload
-    console.log('[DEBUG:Realtime] Raw payload.new.updated_at:', updatedRow.updated_at, 'type:', typeof updatedRow.updated_at);
-    
     const updatedTemplate = mapRowToTemplate(updatedRow);
     
     console.log('[Realtime] Updating template:', updatedTemplate.name, 'thumbnail:', updatedTemplate.thumbnail);
-    // DEBUG: Log the updatedAt field after mapping
-    console.log('[DEBUG:Realtime] Mapped template.updatedAt:', updatedTemplate.updatedAt, 'type:', typeof updatedTemplate.updatedAt);
-    console.log('[DEBUG:Realtime] Expected cacheKey:', `${updatedTemplate.id}-${updatedTemplate.updatedAt}`);
     
     setTemplates(prev => {
       // If template became inactive, remove it
@@ -84,11 +69,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
       if (existingIndex >= 0) {
         // Update existing template
         console.log('[Realtime] Updating existing template at index:', existingIndex);
-        // DEBUG: Log old vs new updatedAt
-        console.log('[DEBUG:Realtime] Old updatedAt:', prev[existingIndex].updatedAt);
-        console.log('[DEBUG:Realtime] New updatedAt:', updatedTemplate.updatedAt);
-        console.log('[DEBUG:Realtime] Old cacheKey:', `${prev[existingIndex].id}-${prev[existingIndex].updatedAt}`);
-        console.log('[DEBUG:Realtime] New cacheKey:', `${updatedTemplate.id}-${updatedTemplate.updatedAt}`);
         const updated = [...prev];
         updated[existingIndex] = updatedTemplate;
         return updated;
