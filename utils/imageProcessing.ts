@@ -2,15 +2,119 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { ImageSlot, FramePositionInfo } from '@/types';
 
 /**
- * Calculate crop region to extract portion matching target aspect ratio
+ * Calculate the visible region of the camera sensor that's shown in the preview.
  * 
- * When framePosition is provided, calculates a position-aware crop that matches
- * what the user saw in the camera preview frame. Otherwise falls back to center crop.
+ * The camera preview uses "cover" mode to fill the screen, which means:
+ * - If sensor is wider than screen aspect ratio: sides are cropped
+ * - If sensor is taller than screen aspect ratio: top/bottom are cropped
  * 
- * @param sourceWidth - Width of source image in pixels
- * @param sourceHeight - Height of source image in pixels
+ * This function returns the region of the sensor that's visible in the preview.
+ */
+function calculateVisibleSensorRegion(
+  sensorWidth: number,
+  sensorHeight: number,
+  screenWidth: number,
+  screenHeight: number
+): { left: number; top: number; width: number; height: number } {
+  const sensorAspectRatio = sensorWidth / sensorHeight;
+  const screenAspectRatio = screenWidth / screenHeight;
+  
+  let visibleLeft: number;
+  let visibleTop: number;
+  let visibleWidth: number;
+  let visibleHeight: number;
+  
+  if (sensorAspectRatio > screenAspectRatio) {
+    // Sensor is wider than screen - sides are cropped in preview
+    // Scale factor to fit sensor height to screen height
+    const scale = screenHeight / sensorHeight;
+    
+    // Visible width in sensor coordinates
+    visibleWidth = screenWidth / scale;
+    visibleHeight = sensorHeight;
+    
+    // Center crop - equal amounts cropped from each side
+    visibleLeft = (sensorWidth - visibleWidth) / 2;
+    visibleTop = 0;
+  } else {
+    // Sensor is taller than screen - top/bottom are cropped in preview
+    // Scale factor to fit sensor width to screen width
+    const scale = screenWidth / sensorWidth;
+    
+    // Visible height in sensor coordinates
+    visibleWidth = sensorWidth;
+    visibleHeight = screenHeight / scale;
+    
+    // Center crop - equal amounts cropped from top/bottom
+    visibleLeft = 0;
+    visibleTop = (sensorHeight - visibleHeight) / 2;
+  }
+  
+  return {
+    left: visibleLeft,
+    top: visibleTop,
+    width: visibleWidth,
+    height: visibleHeight,
+  };
+}
+
+/**
+ * Map a frame overlay position from screen coordinates to sensor coordinates.
+ * 
+ * The frame overlay is positioned on the screen, but we need to find the
+ * corresponding region in the captured sensor image.
+ */
+function mapFrameToSensorCoordinates(
+  framePosition: FramePositionInfo,
+  sensorWidth: number,
+  sensorHeight: number
+): { originX: number; originY: number; width: number; height: number } {
+  // Calculate which part of the sensor is visible in the preview
+  const visibleRegion = calculateVisibleSensorRegion(
+    sensorWidth,
+    sensorHeight,
+    framePosition.screenWidth,
+    framePosition.screenHeight
+  );
+  
+  // Map frame position from screen coordinates to sensor coordinates
+  // Frame position as ratio of screen (0-1)
+  const frameLeftRatio = framePosition.frameLeft / framePosition.screenWidth;
+  const frameTopRatio = framePosition.frameTop / framePosition.screenHeight;
+  const frameWidthRatio = framePosition.frameWidth / framePosition.screenWidth;
+  const frameHeightRatio = framePosition.frameHeight / framePosition.screenHeight;
+  
+  // Convert to sensor coordinates within the visible region
+  const sensorFrameLeft = visibleRegion.left + (frameLeftRatio * visibleRegion.width);
+  const sensorFrameTop = visibleRegion.top + (frameTopRatio * visibleRegion.height);
+  const sensorFrameWidth = frameWidthRatio * visibleRegion.width;
+  const sensorFrameHeight = frameHeightRatio * visibleRegion.height;
+  
+  // Clamp to valid bounds (ensure we don't exceed sensor dimensions)
+  const clampedLeft = Math.max(0, Math.min(sensorWidth - sensorFrameWidth, sensorFrameLeft));
+  const clampedTop = Math.max(0, Math.min(sensorHeight - sensorFrameHeight, sensorFrameTop));
+  const clampedWidth = Math.min(sensorFrameWidth, sensorWidth - clampedLeft);
+  const clampedHeight = Math.min(sensorFrameHeight, sensorHeight - clampedTop);
+  
+  return {
+    originX: Math.floor(clampedLeft),
+    originY: Math.floor(clampedTop),
+    width: Math.floor(clampedWidth),
+    height: Math.floor(clampedHeight),
+  };
+}
+
+/**
+ * Calculate crop region to extract portion matching target aspect ratio.
+ * 
+ * When framePosition is provided, first maps the frame to sensor coordinates
+ * (accounting for camera preview zoom), then extracts that exact region.
+ * Otherwise falls back to center crop.
+ * 
+ * @param sourceWidth - Width of source image (sensor) in pixels
+ * @param sourceHeight - Height of source image (sensor) in pixels
  * @param targetAspectRatio - Target aspect ratio (width / height)
- * @param framePosition - Optional frame position info for position-aware cropping
+ * @param framePosition - Optional frame position info for camera-aware cropping
  */
 function calculateCropRegion(
   sourceWidth: number,
@@ -18,6 +122,13 @@ function calculateCropRegion(
   targetAspectRatio: number,
   framePosition?: FramePositionInfo
 ): { originX: number; originY: number; width: number; height: number } {
+  
+  // When frame position is provided, map directly to sensor coordinates
+  if (framePosition) {
+    return mapFrameToSensorCoordinates(framePosition, sourceWidth, sourceHeight);
+  }
+  
+  // Fallback: Simple center crop for target aspect ratio (library imports, etc.)
   const sourceAspectRatio = sourceWidth / sourceHeight;
   
   let cropWidth: number;
@@ -26,52 +137,29 @@ function calculateCropRegion(
   let originY: number;
   
   if (sourceAspectRatio > targetAspectRatio) {
-    // Source is wider than target - crop sides (horizontal crop)
+    // Source is wider than target - crop sides
     cropHeight = sourceHeight;
     cropWidth = cropHeight * targetAspectRatio;
-    
-    // Handle edge case: cropWidth exceeds sourceWidth (extreme aspect ratio)
-    if (cropWidth > sourceWidth) {
-      cropWidth = sourceWidth;
-      cropHeight = cropWidth / targetAspectRatio;
-    }
-    
-    // Horizontal cropping - frame is typically centered horizontally
-    // so we use center crop for X axis
     originX = (sourceWidth - cropWidth) / 2;
     originY = 0;
   } else {
-    // Source is taller than target - crop top/bottom (vertical crop)
+    // Source is taller than target - crop top/bottom
     cropWidth = sourceWidth;
     cropHeight = cropWidth / targetAspectRatio;
-    
-    // Handle edge case: cropHeight exceeds sourceHeight (extreme aspect ratio)
-    if (cropHeight > sourceHeight) {
-      cropHeight = sourceHeight;
-      cropWidth = cropHeight * targetAspectRatio;
-      originX = (sourceWidth - cropWidth) / 2;
-      originY = 0;
-    } else {
-      originX = 0;
-      
-      if (framePosition) {
-        // Position-aware crop: calculate where frame center is on screen (as ratio 0-1)
-        const frameCenterY = framePosition.frameTop + (framePosition.frameHeight / 2);
-        const frameCenterRatio = frameCenterY / framePosition.screenHeight;
-        
-        // Apply same ratio to source image to find target center point
-        const targetCenterY = sourceHeight * frameCenterRatio;
-        originY = targetCenterY - (cropHeight / 2);
-        
-        // Clamp to valid bounds to handle edge cases
-        // (frame near top edge or bottom edge of screen)
-        originY = Math.max(0, Math.min(sourceHeight - cropHeight, originY));
-      } else {
-        // Fallback to center crop when no frame position provided
-        // (e.g., library imports, backwards compatibility)
-        originY = (sourceHeight - cropHeight) / 2;
-      }
-    }
+    originX = 0;
+    originY = (sourceHeight - cropHeight) / 2;
+  }
+  
+  // Handle edge cases where crop exceeds source
+  if (cropWidth > sourceWidth) {
+    cropWidth = sourceWidth;
+    cropHeight = cropWidth / targetAspectRatio;
+    originX = 0;
+  }
+  if (cropHeight > sourceHeight) {
+    cropHeight = sourceHeight;
+    cropWidth = cropHeight * targetAspectRatio;
+    originY = 0;
   }
   
   return {

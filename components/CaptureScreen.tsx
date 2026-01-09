@@ -79,15 +79,21 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     
     setIsProcessing(true);
     try {
-      // Calculate frame position for position-aware cropping
-      // This ensures the captured image matches what the user saw in the camera preview
+      // Calculate frame position for camera-aware cropping
+      // This maps the frame overlay position to the actual sensor coordinates,
+      // accounting for the zoom/crop difference between preview and captured image
       let framePosition: FramePositionInfo | undefined;
       
       if (useFramePosition) {
         const frame = calculateFrameForAvailableArea(slot, availableArea);
         framePosition = {
+          // Frame position and dimensions on screen
           frameTop: frame.top,
+          frameLeft: frame.left,
+          frameWidth: frame.width,
           frameHeight: frame.height,
+          // Screen dimensions for coordinate mapping
+          screenWidth: availableArea.screenWidth,
           screenHeight: availableArea.screenHeight,
         };
       }
