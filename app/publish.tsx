@@ -25,6 +25,7 @@ import { TemplateFormat, PlatformOption, PublishPlatform } from '@/types';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { createPortfolioItem } from '@/services/portfolioService';
+import { uploadToStorage } from '@/services/imageUploadService';
 
 const { width } = Dimensions.get('window');
 const PREVIEW_PADDING = 40;
@@ -231,11 +232,33 @@ export default function PublishScreen() {
 
       try {
         console.log('[Publish] Creating portfolio item...');
+        
+        // IMPORTANT: If previewUri is a local file path (file://), we need to upload it
+        // to Supabase storage to get a permanent cloud URL. Local file paths only exist
+        // on the device and will break when app is reinstalled or viewed on another device.
+        let finalImageUrl = previewUri;
+        
+        if (previewUri.startsWith('file://')) {
+          console.log('[Publish] Uploading local preview to cloud storage...');
+          try {
+            // Upload to Supabase storage and get permanent cloud URL
+            const cloudUrl = await uploadToStorage(previewUri, `portfolio-${templateId}`);
+            finalImageUrl = cloudUrl;
+            console.log('[Publish] Preview uploaded to cloud:', cloudUrl);
+          } catch (uploadError) {
+            console.error('[Publish] Failed to upload preview to cloud:', uploadError);
+            // Fall back to original URL - this will cause issues but better than failing entirely
+            // The user can still share/download from the current session
+          }
+        } else {
+          console.log('[Publish] Using existing cloud URL:', previewUri);
+        }
+        
         const item = await createPortfolioItem({
           draftId,
           templateId,
           templateName,
-          imageUrl: previewUri,
+          imageUrl: finalImageUrl,
           format,
           hasWatermark,
           publishedTo: [],

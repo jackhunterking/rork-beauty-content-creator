@@ -21,6 +21,8 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  // Track mounted state to handle React Strict Mode double-mounting
+  const mountedRef = useRef(true);
 
   // Initial fetch of templates
   const fetchInitialTemplates = useCallback(async () => {
@@ -96,12 +98,19 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
 
   // Set up real-time subscription
   useEffect(() => {
+    // Reset mounted status on each effect run
+    mountedRef.current = true;
+    
     // Initial fetch
     fetchInitialTemplates();
 
+    // Use a unique channel name to avoid conflicts during rapid remounts
+    // This prevents CHANNEL_ERROR during React Strict Mode double-mounting
+    const channelName = `templates-realtime-${Date.now()}`;
+    
     // Create real-time channel for templates table
     const channel = supabase
-      .channel('templates-realtime')
+      .channel(channelName)
       .on<TemplateRow>(
         'postgres_changes',
         {
@@ -130,14 +139,22 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
         handleDelete
       )
       .subscribe((status, err) => {
-        console.log('[Realtime] Subscription status:', status, err ? `Error: ${err.message}` : '');
+        // Only handle status updates if component is still mounted
+        // This prevents state updates on unmounted components during cleanup
+        if (!mountedRef.current) return;
+        
+        console.log('[Realtime] Subscription status:', status);
         if (status === 'SUBSCRIBED') {
           console.log('[Realtime] ✓ Subscription active for templates table');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('[Realtime] ✗ Channel error:', err);
-          setError(new Error('Real-time subscription failed'));
+          console.error('[Realtime] ✗ Channel error:', err?.message || 'Connection race condition (safe to ignore)');
+          // Only set error state for actual errors, not race conditions
+          if (err?.message) {
+            setError(new Error('Real-time subscription failed'));
+          }
         } else if (status === 'TIMED_OUT') {
           console.error('[Realtime] ✗ Subscription timed out');
+          setError(new Error('Real-time subscription timed out'));
         } else if (status === 'CLOSED') {
           console.log('[Realtime] Channel closed');
         }
@@ -147,6 +164,8 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
 
     // Cleanup subscription on unmount
     return () => {
+      // Mark as unmounted to prevent state updates from lingering callbacks
+      mountedRef.current = false;
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;

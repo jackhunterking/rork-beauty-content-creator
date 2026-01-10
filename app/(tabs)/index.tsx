@@ -2,19 +2,17 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Press
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, Clock, ChevronRight } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, Clock } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
-import { ContentType, Template, TemplateFormat, Draft } from "@/types";
+import { ContentType, Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
-import { extractSlots } from "@/utils/slotParser";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
-const DRAFT_CARD_WIDTH = 140;
 
 // Dynamic tile height based on format
 const getTileHeight = (format: TemplateFormat) => {
@@ -46,23 +44,6 @@ const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.
   },
 ];
 
-// Format relative time
-const formatTimeAgo = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
 export default function CreateScreen() {
   const router = useRouter();
   const { 
@@ -76,9 +57,6 @@ export default function CreateScreen() {
     isLoading, 
     refetchTemplates,
     drafts,
-    templates,
-    loadDraft,
-    isDraftsLoading,
   } = useApp();
 
   // Local state for favorites filter
@@ -95,44 +73,6 @@ export default function CreateScreen() {
     return filteredTemplates;
   }, [filteredTemplates, showFavoritesOnly]);
 
-  // Get the best available preview URI for a draft
-  const getDraftPreviewUri = useCallback((draft: Draft): string | null => {
-    if (draft.localPreviewPath) return draft.localPreviewPath;
-    if (draft.renderedPreviewUrl) return draft.renderedPreviewUrl;
-    if (draft.beforeImageUrl) return draft.beforeImageUrl;
-    if (draft.afterImageUrl) return draft.afterImageUrl;
-    if (draft.capturedImageUrls) {
-      const firstImage = Object.values(draft.capturedImageUrls)[0];
-      if (firstImage) return firstImage;
-    }
-    return null;
-  }, []);
-
-  // Get template for a draft
-  const getTemplateForDraft = useCallback((templateId: string) => 
-    templates.find(t => t.id === templateId), 
-    [templates]
-  );
-
-  // Get slot progress for a draft
-  const getDraftSlotProgress = useCallback((draft: Draft, template: Template | undefined) => {
-    if (!template) return { filled: 0, total: 2 };
-    const slots = extractSlots(template);
-    const total = slots.length;
-    let filled = 0;
-    
-    // Check new format
-    if (draft.capturedImageUrls) {
-      filled = Object.keys(draft.capturedImageUrls).length;
-    } else {
-      // Legacy format
-      if (draft.beforeImageUrl) filled++;
-      if (draft.afterImageUrl) filled++;
-    }
-    
-    return { filled, total };
-  }, []);
-  
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -165,15 +105,6 @@ export default function CreateScreen() {
     toggleFavourite(templateId);
   }, [toggleFavourite]);
 
-  // Handle resume draft
-  const handleResumeDraft = useCallback((draft: Draft) => {
-    const template = getTemplateForDraft(draft.templateId);
-    if (!template) return;
-    
-    loadDraft(draft, template);
-    router.push('/editor');
-  }, [getTemplateForDraft, loadDraft, router]);
-
   // Toggle favorites filter
   const handleToggleFavoritesFilter = useCallback(() => {
     setShowFavoritesOnly(prev => !prev);
@@ -183,6 +114,19 @@ export default function CreateScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Create</Text>
+        {drafts.length > 0 && (
+          <TouchableOpacity 
+            style={styles.draftsHeaderButton}
+            onPress={() => router.push('/drafts')}
+            activeOpacity={0.7}
+          >
+            <Clock size={20} color={Colors.light.text} />
+            <Text style={styles.draftsHeaderText}>Drafts</Text>
+            <View style={styles.draftsHeaderBadge}>
+              <Text style={styles.draftsHeaderBadgeText}>{drafts.length}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.typeSelector}>
@@ -234,73 +178,8 @@ export default function CreateScreen() {
             />
           }
         >
-          {/* Drafts Section */}
-          {drafts.length > 0 && (
-            <View style={styles.draftsSection}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitleRow}>
-                  <Clock size={18} color={Colors.light.textSecondary} />
-                  <Text style={styles.sectionTitle}>Drafts</Text>
-                  <View style={styles.draftCountBadge}>
-                    <Text style={styles.draftCountText}>{drafts.length}</Text>
-                  </View>
-                </View>
-              </View>
-              
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.draftsScrollContent}
-              >
-                {drafts.map((draft) => {
-                  const template = getTemplateForDraft(draft.templateId);
-                  const previewUri = getDraftPreviewUri(draft);
-                  const progress = getDraftSlotProgress(draft, template);
-                  
-                  return (
-                    <TouchableOpacity
-                      key={draft.id}
-                      style={styles.draftCard}
-                      onPress={() => handleResumeDraft(draft)}
-                      activeOpacity={0.8}
-                    >
-                      {previewUri ? (
-                        <Image
-                          source={{ uri: previewUri }}
-                          style={styles.draftThumbnail}
-                          contentFit="cover"
-                          transition={200}
-                        />
-                      ) : (
-                        <View style={styles.draftPlaceholder}>
-                          <ImageIcon size={24} color={Colors.light.textTertiary} />
-                        </View>
-                      )}
-                      
-                      {/* Progress indicator */}
-                      <View style={styles.draftProgressBadge}>
-                        <Text style={styles.draftProgressText}>
-                          {progress.filled}/{progress.total}
-                        </Text>
-                      </View>
-                      
-                      {/* Time ago */}
-                      <View style={styles.draftFooter}>
-                        <Text style={styles.draftTimeText} numberOfLines={1}>
-                          {formatTimeAgo(draft.updatedAt)}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          )}
-
           {/* Templates Section */}
           <View style={styles.templatesSection}>
-            <Text style={styles.templatesSectionTitle}>Templates</Text>
-            
             {/* Format Filter Row with Favorites Toggle */}
             <View style={styles.filterRow}>
               {formatFilters.map((item) => {
@@ -428,6 +307,30 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     letterSpacing: -0.5,
   },
+  draftsHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: 8,
+  },
+  draftsHeaderText: {
+    fontSize: 16,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+  },
+  draftsHeaderBadge: {
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  draftsHeaderBadgeText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
+  },
   typeSelector: {
     flexDirection: 'row',
     paddingHorizontal: GRID_PADDING,
@@ -497,98 +400,15 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   
-  // Drafts Section
-  draftsSection: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    paddingHorizontal: GRID_PADDING,
-    marginBottom: 12,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.light.text,
-  },
-  draftCountBadge: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  draftCountText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
-  },
-  draftsScrollContent: {
-    paddingHorizontal: GRID_PADDING,
-    gap: 12,
-  },
-  draftCard: {
-    width: DRAFT_CARD_WIDTH,
-    height: DRAFT_CARD_WIDTH,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: Colors.light.surfaceSecondary,
-  },
-  draftThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  draftPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  draftProgressBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  draftProgressText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
-  },
-  draftFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-  },
-  draftTimeText: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: Colors.light.surface,
-  },
-  
   // Templates Section
   templatesSection: {
     paddingHorizontal: GRID_PADDING,
-  },
-  templatesSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.light.text,
-    marginBottom: 12,
   },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 4,
     marginBottom: 16,
   },
   filterSpacer: {
