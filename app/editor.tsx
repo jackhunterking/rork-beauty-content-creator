@@ -15,17 +15,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { usePreventRemove } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import * as Sharing from 'expo-sharing';
-import Toast from 'react-native-toast-message';
-import { Save, Download, Share2, RefreshCw, Crown } from 'lucide-react-native';
+import { Save, Sparkles, RefreshCw, Crown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { processImageForDimensions } from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
 import { renderPreview } from '@/services/renderService';
-import { downloadAndSaveToGallery } from '@/services/downloadService';
-import { downloadAndShare } from '@/services/shareService';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 import { saveRenderedPreview, createDraftDirectories } from '@/services/localStorageService';
 
@@ -45,7 +41,6 @@ export default function EditorScreen() {
   const allowNavigationRef = useRef(false);
   
   // Track if we're intentionally discarding/resetting the project
-  // This prevents the "no template" useEffect from triggering a second back navigation
   const isDiscardingRef = useRef(false);
   
   // Rendered preview state (from Templated.io)
@@ -53,16 +48,17 @@ export default function EditorScreen() {
   const [isRendering, setIsRendering] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   
+  // Generate button animation state
+  const [isGenerating, setIsGenerating] = useState(false);
+  
   // Local preview path (cached on device for instant access)
   const [localPreviewPath, setLocalPreviewPath] = useState<string | null>(null);
   
   // Track if images have been modified by user since draft was loaded
-  // Used to skip unnecessary API calls when reopening drafts
   const [imagesModifiedSinceLoad, setImagesModifiedSinceLoad] = useState(false);
   const hasInitializedFromCacheRef = useRef(false);
   
   // Track the initial state of captured images when draft/template loads
-  // Used to determine if user made actual changes (for back button prompt)
   const initialCapturedImagesRef = useRef<Record<string, string | null>>({});
   const hasSetInitialStateRef = useRef(false);
   
@@ -74,10 +70,6 @@ export default function EditorScreen() {
   
   // Track the last rendered preview URL to detect actual changes
   const lastSavedPreviewUrlRef = useRef<string | null>(null);
-  
-  // Download/share state
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
 
   // Premium status for watermark control
   const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
@@ -89,12 +81,12 @@ export default function EditorScreen() {
     [template]
   );
 
-  // Check if ready to download/share:
+  // Check if ready to proceed to publish:
   // 1. All slots must have images
   // 2. Preview must be rendered (renderedPreviewUri exists)
   // 3. Not currently rendering
   // 4. No preview error
-  const canDownload = useMemo(() => 
+  const canProceed = useMemo(() => 
     allSlotsCaptured(slots, capturedImages) && 
     !!renderedPreviewUri && 
     !isRendering && 
@@ -102,7 +94,7 @@ export default function EditorScreen() {
     [slots, capturedImages, renderedPreviewUri, isRendering, previewError]
   );
   
-  // Check if all slots are filled (separate from canDownload for UI messaging)
+  // Check if all slots are filled (separate from canProceed for UI messaging)
   const allSlotsFilled = useMemo(() => 
     allSlotsCaptured(slots, capturedImages),
     [slots, capturedImages]
@@ -114,19 +106,16 @@ export default function EditorScreen() {
     [slots, capturedImages]
   );
 
-  // Track previous capturedImages to detect actual changes (not just reference changes)
+  // Track previous capturedImages to detect actual changes
   const prevCapturedImagesRef = useRef<Record<string, { uri: string } | null>>({});
 
-  // Reset all refs when template changes (handles navigating from Create page)
-  // This ensures clicking a new template always starts with fresh state
+  // Reset all refs when template changes
   useEffect(() => {
     const newTemplateId = template?.id || null;
     
-    // If template ID changed, reset all refs
     if (currentTemplateIdRef.current !== newTemplateId) {
       console.log('[Editor] Template changed, resetting all refs');
       
-      // Reset all tracking refs
       hasInitializedFromCacheRef.current = false;
       hasSetInitialStateRef.current = false;
       prevCapturedImagesRef.current = {};
@@ -135,26 +124,19 @@ export default function EditorScreen() {
       isSavingPreviewRef.current = false;
       lastSavedPreviewUrlRef.current = null;
       
-      // Reset state
       setRenderedPreviewUri(null);
       setLocalPreviewPath(null);
       setImagesModifiedSinceLoad(false);
       
-      // Update tracked template ID
       currentTemplateIdRef.current = newTemplateId;
     }
   }, [template?.id]);
 
   // Capture initial state when draft/template first loads
-  // This is used to determine if user made actual changes
   useEffect(() => {
-    // Only set initial state once per template session
     if (hasSetInitialStateRef.current) return;
-    
-    // Wait until we have a template
     if (!template) return;
     
-    // Capture the initial state of captured images
     const initialState: Record<string, string | null> = {};
     for (const [slotId, media] of Object.entries(capturedImages)) {
       initialState[slotId] = media?.uri || null;
@@ -167,20 +149,16 @@ export default function EditorScreen() {
   }, [template, capturedImages]);
 
   // Initialize with cached preview when loading a draft
-  // Priority: local file path > remote URL (for instant display)
   useEffect(() => {
-    // Only run once when the draft is first loaded
     if (hasInitializedFromCacheRef.current) return;
     
     const cachedLocalPath = currentProject.localPreviewPath;
     const cachedPreviewUrl = currentProject.cachedPreviewUrl;
     const wasRenderedAsPremium = currentProject.wasRenderedAsPremium;
     
-    // Check if premium status matches (for cache invalidation)
     const premiumStatusMatch = wasRenderedAsPremium === null || wasRenderedAsPremium === isPremium;
     
     if (currentProject.draftId && premiumStatusMatch) {
-      // Priority 1: Use local file path (instant, no network)
       if (cachedLocalPath) {
         console.log('[Editor] Using local preview file from draft:', cachedLocalPath);
         setRenderedPreviewUri(cachedLocalPath);
@@ -190,7 +168,6 @@ export default function EditorScreen() {
         return;
       }
       
-      // Priority 2: Use remote URL (fallback)
       if (cachedPreviewUrl) {
         console.log('[Editor] Using cached preview URL from draft');
         setRenderedPreviewUri(cachedPreviewUrl);
@@ -200,7 +177,6 @@ export default function EditorScreen() {
       }
     }
     
-    // Handle premium status change (need to re-render)
     if (currentProject.draftId && (cachedLocalPath || cachedPreviewUrl) && !premiumStatusMatch) {
       console.log('[Editor] Premium status changed, will re-render preview');
       hasInitializedFromCacheRef.current = true;
@@ -208,7 +184,6 @@ export default function EditorScreen() {
       return;
     }
     
-    // Draft without any cached preview
     if (currentProject.draftId) {
       hasInitializedFromCacheRef.current = true;
     }
@@ -218,7 +193,6 @@ export default function EditorScreen() {
   const triggerPreviewRender = useCallback(async () => {
     if (!template?.templatedId) return;
     
-    // Only render if we have at least one photo
     const photosToRender: Record<string, string> = {};
     for (const [slotId, media] of Object.entries(capturedImages)) {
       if (media?.uri) {
@@ -233,7 +207,7 @@ export default function EditorScreen() {
     }
     
     setIsRendering(true);
-    setPreviewError(null); // Clear any previous error
+    setPreviewError(null);
     
     try {
       const result = await renderPreview({
@@ -244,49 +218,29 @@ export default function EditorScreen() {
       
       if (result.success && result.renderUrl) {
         setRenderedPreviewUri(result.renderUrl);
-        setPreviewError(null); // Clear error on success
+        setPreviewError(null);
       } else {
         console.warn('Preview render failed:', result.error);
         setPreviewError(result.error || 'Could not generate preview');
-        Toast.show({
-          type: 'error',
-          text1: 'Preview failed',
-          text2: 'Tap Retry to try again',
-          position: 'top',
-        });
       }
     } catch (error) {
       console.error('Preview render error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Something went wrong';
       setPreviewError(errorMessage);
-      Toast.show({
-        type: 'error',
-        text1: 'Preview error',
-        text2: 'Tap Retry to try again',
-        position: 'top',
-      });
     } finally {
       setIsRendering(false);
     }
   }, [template?.templatedId, capturedImages, isPremium]);
 
-  // REACTIVE PREVIEW RENDERING
-  // Automatically trigger preview render when capturedImages changes
-  // This handles BOTH paths: camera capture return AND library pick
+  // Reactive preview rendering
   useEffect(() => {
-    // Skip if no template configured for rendering
     if (!template?.templatedId) return;
     
-    // Compare current images to previous to detect actual changes
     const prevImages = prevCapturedImagesRef.current;
     const currentImages = capturedImages;
     
-    // Get all slot IDs from current images
     const currentSlotIds = Object.keys(currentImages);
-    const currentImageCount = currentSlotIds.filter(id => currentImages[id]?.uri).length;
-    const prevImageCount = Object.keys(prevImages).filter(id => prevImages[id]?.uri).length;
     
-    // Check if any slot has a NEW or CHANGED image
     let hasNewOrChangedImage = false;
     let changedSlotId: string | null = null;
     
@@ -294,7 +248,6 @@ export default function EditorScreen() {
       const currentUri = currentImages[slotId]?.uri;
       const prevUri = prevImages[slotId]?.uri;
       
-      // New image added or image changed
       if (currentUri && currentUri !== prevUri) {
         hasNewOrChangedImage = true;
         changedSlotId = slotId;
@@ -302,29 +255,22 @@ export default function EditorScreen() {
       }
     }
     
-    // Log the state for debugging
     if (hasNewOrChangedImage) {
-      console.log(`[Editor] Image change detected in slot: ${changedSlotId}, total images: ${currentImageCount}`);
+      console.log(`[Editor] Image change detected in slot: ${changedSlotId}`);
     }
     
-    // Update ref AFTER detection but BEFORE triggering render
-    // Make a deep copy to avoid reference issues
     const newPrevImages: Record<string, { uri: string } | null> = {};
     for (const [slotId, media] of Object.entries(currentImages)) {
       newPrevImages[slotId] = media ? { uri: media.uri } : null;
     }
     prevCapturedImagesRef.current = newPrevImages;
     
-    // Only trigger if there's an actual new/changed image
     if (hasNewOrChangedImage) {
-      // If we have a cached preview and user hasn't modified images yet,
-      // skip the API call - we're just loading the draft
       if (renderedPreviewUri && !imagesModifiedSinceLoad && currentProject.draftId) {
         console.log('[Editor] Skipping render - using cached preview from draft');
         return;
       }
       
-      // Mark that user has modified images (for future saves)
       setImagesModifiedSinceLoad(true);
       
       console.log('[Editor] Triggering preview render');
@@ -333,38 +279,29 @@ export default function EditorScreen() {
   }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
   // Auto-save preview locally when render completes
-  // This ensures the preview is cached for instant display later
-  // IMPORTANT: This effect should NOT depend on capturedImages to avoid infinite loops
   useEffect(() => {
     const savePreviewLocally = async () => {
-      // Only save if we have a rendered preview URL and a draft
       if (!renderedPreviewUri || !currentProject.draftId) return;
       
-      // Skip if it's already a local file path (starts with file://)
       if (renderedPreviewUri.startsWith('file://')) {
         return;
       }
       
-      // Skip if we already saved this exact preview URL
       if (lastSavedPreviewUrlRef.current === renderedPreviewUri) {
         return;
       }
       
-      // Skip if another save is in progress (prevents overlapping saves)
       if (isSavingPreviewRef.current) {
         return;
       }
       
-      // Mark that we're saving
       isSavingPreviewRef.current = true;
       
       try {
         console.log('[Editor] Auto-saving preview locally for draft:', currentProject.draftId);
         
-        // Ensure draft directories exist
         await createDraftDirectories(currentProject.draftId);
         
-        // Download and save the preview locally
         const savedPath = await saveRenderedPreview(
           currentProject.draftId,
           renderedPreviewUri,
@@ -373,13 +310,11 @@ export default function EditorScreen() {
         
         if (savedPath) {
           console.log('[Editor] Preview saved locally:', savedPath);
-          // Track that we saved this URL to prevent duplicate saves
           lastSavedPreviewUrlRef.current = renderedPreviewUri;
           setLocalPreviewPath(savedPath);
         }
       } catch (error) {
         console.error('[Editor] Failed to save preview locally:', error);
-        // Non-critical error - the remote URL will still work
       } finally {
         isSavingPreviewRef.current = false;
       }
@@ -389,42 +324,24 @@ export default function EditorScreen() {
   }, [renderedPreviewUri, currentProject.draftId]);
 
   // Redirect if no template selected
-  // Skip this if we're intentionally discarding (to prevent double navigation)
   useEffect(() => {
     if (!template) {
-      // If we're discarding, don't auto-navigate - the discard handler already navigates
       if (isDiscardingRef.current) {
-        isDiscardingRef.current = false; // Reset the flag
+        isDiscardingRef.current = false;
         return;
       }
       
-      Toast.show({
-        type: 'error',
-        text1: 'No template selected',
-        text2: 'Please select a template first',
-        position: 'top',
-      });
       router.back();
     }
   }, [template, router]);
 
   // Check if user has made any ACTUAL changes since opening
-  // Compare current captured images to initial state
   const hasUnsavedChanges = useMemo(() => {
-    // If no images at all, no changes
     if (capturedCount === 0) return false;
-    
-    // If initial state hasn't been set yet, assume no changes
     if (!hasSetInitialStateRef.current) return false;
     
     const initialState = initialCapturedImagesRef.current;
     
-    // Check if any slot has changed from initial state
-    // Case 1: New image added (wasn't in initial state)
-    // Case 2: Image changed (different URI than initial)
-    // Case 3: Image removed (was in initial but not now)
-    
-    // Get all slot IDs from both current and initial
     const allSlotIds = new Set([
       ...Object.keys(capturedImages),
       ...Object.keys(initialState),
@@ -435,18 +352,15 @@ export default function EditorScreen() {
       const initialUri = initialState[slotId] || null;
       
       if (currentUri !== initialUri) {
-        // Found a change
         return true;
       }
     }
     
-    // No changes detected
     return false;
   }, [capturedImages, capturedCount]);
 
   // Handle back navigation confirmation
   const showBackConfirmation = useCallback(() => {
-    // Get first captured image URIs for legacy save
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
@@ -465,7 +379,7 @@ export default function EditorScreen() {
           style: 'destructive',
           onPress: () => {
             allowNavigationRef.current = true;
-            isDiscardingRef.current = true; // Prevent double navigation from template-null useEffect
+            isDiscardingRef.current = true;
             resetProject();
             router.back();
           },
@@ -480,30 +394,14 @@ export default function EditorScreen() {
                 beforeImageUri: beforeUri || null,
                 afterImageUri: afterUri || null,
                 existingDraftId: currentProject.draftId || undefined,
-                // Save the current preview URL so it can be reused when reopening
                 renderedPreviewUrl: renderedPreviewUri,
-                // Track premium status at time of render for cache invalidation
                 wasRenderedAsPremium: isPremium,
-                // Save local preview path for instant display
                 localPreviewPath: localPreviewPath,
-              });
-              Toast.show({
-                type: 'success',
-                text1: 'Draft saved',
-                text2: 'You can continue later from Drafts',
-                position: 'top',
-                visibilityTime: 2000,
               });
               allowNavigationRef.current = true;
               router.back();
             } catch (error) {
               console.error('Failed to save draft:', error);
-              Toast.show({
-                type: 'error',
-                text1: 'Save failed',
-                text2: 'Please try again',
-                position: 'top',
-              });
             }
           },
         },
@@ -513,7 +411,6 @@ export default function EditorScreen() {
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath]);
 
   // Prevent back navigation when there are unsaved changes
-  // usePreventRemove works properly with native-stack navigators (Expo Router)
   usePreventRemove(
     hasUnsavedChanges && !allowNavigationRef.current,
     ({ data }) => {
@@ -528,16 +425,9 @@ export default function EditorScreen() {
     async (uri: string, width: number, height: number, slotId: string) => {
       if (!template) return;
 
-      // Find the slot by ID
       const slot = getSlotById(slots, slotId);
       
       if (!slot) {
-        Toast.show({
-          type: 'error',
-          text1: 'Template error',
-          text2: 'Could not find slot dimensions',
-          position: 'top',
-        });
         return;
       }
 
@@ -555,15 +445,8 @@ export default function EditorScreen() {
           width: processed.width,
           height: processed.height,
         });
-        // useEffect will automatically trigger preview render when capturedImages changes
       } catch (error) {
         console.error('Failed to process image:', error);
-        Toast.show({
-          type: 'error',
-          text1: 'Processing failed',
-          text2: 'Please try again',
-          position: 'top',
-        });
       }
     },
     [template, slots, setCapturedImage]
@@ -597,7 +480,6 @@ export default function EditorScreen() {
   // Show action sheet for slot
   const handleSlotPress = useCallback(
     (slotId: string) => {
-      // Don't allow interaction while rendering
       if (isRendering) {
         return;
       }
@@ -621,7 +503,6 @@ export default function EditorScreen() {
           }
         );
       } else {
-        // Android: Use Alert as a simple alternative
         Alert.alert(
           `Add ${slotLabel} Image`,
           'Choose an option',
@@ -636,15 +517,12 @@ export default function EditorScreen() {
     [slots, isRendering, takePhoto, chooseFromLibrary]
   );
 
-  // Handle cached preview failing to load (e.g., expired URL)
+  // Handle cached preview failing to load
   const handlePreviewError = useCallback(() => {
     console.log('[Editor] Cached preview failed to load, triggering re-render');
-    // Clear the invalid cached preview
     setRenderedPreviewUri(null);
     setPreviewError('Preview expired');
-    // Mark that we need to re-render
     setImagesModifiedSinceLoad(true);
-    // Trigger a fresh render
     triggerPreviewRender();
   }, [triggerPreviewRender]);
 
@@ -655,25 +533,19 @@ export default function EditorScreen() {
     triggerPreviewRender();
   }, [triggerPreviewRender]);
 
-  // Handle Remove Watermark toggle - triggers paywall for non-premium users
+  // Handle Remove Watermark toggle
   const handleRemoveWatermarkToggle = useCallback(async () => {
-    // If already premium, toggle is already ON and locked
     if (isPremium) return;
     
-    // Trigger paywall via Superwall
     await requestPremiumAccess('remove_watermark', () => {
-      // This callback runs if user successfully subscribes
       console.log('[Editor] Watermark removal unlocked!');
-      // The preview will automatically re-render with watermark removed
-      // because isPremium will change, triggering the render effect
     });
   }, [isPremium, requestPremiumAccess]);
 
-  // Actually perform the save operation
+  // Perform save draft operation
   const performSaveDraft = useCallback(async () => {
     if (!template) return;
 
-    // Get before/after URIs for legacy draft storage
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
@@ -685,32 +557,14 @@ export default function EditorScreen() {
         beforeImageUri: beforeUri || null,
         afterImageUri: afterUri || null,
         existingDraftId: currentProject.draftId || undefined,
-        // Save the current preview URL so it can be reused when reopening
         renderedPreviewUrl: renderedPreviewUri,
-        // Track premium status at time of render for cache invalidation
         wasRenderedAsPremium: isPremium,
-        // Save local preview path for instant display
         localPreviewPath: localPreviewPath,
       });
       
-      Toast.show({
-        type: 'success',
-        text1: 'Draft saved',
-        text2: 'You can continue later from Drafts',
-        position: 'top',
-        visibilityTime: 2000,
-      });
-      
-      // Navigate back to drafts screen
-      router.push('/drafts');
+      router.push('/(tabs)');
     } catch (error) {
       console.error('Failed to save draft:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Save failed',
-        text2: 'Please try again',
-        position: 'top',
-      });
     }
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath]);
 
@@ -718,19 +572,10 @@ export default function EditorScreen() {
   const handleSaveDraft = useCallback(() => {
     if (!template) return;
 
-    // Need at least one image to save
     if (capturedCount === 0) {
-      Toast.show({
-        type: 'info',
-        text1: 'Nothing to save',
-        text2: 'Add at least one image first',
-        position: 'top',
-        visibilityTime: 2000,
-      });
       return;
     }
 
-    // Show native confirmation dialog
     Alert.alert(
       'Save Draft',
       'Would you like to save this as a draft? You can continue editing it later.',
@@ -748,121 +593,36 @@ export default function EditorScreen() {
     );
   }, [template, capturedCount, performSaveDraft]);
 
-  // Handle download - use already rendered preview URL and save to camera roll
-  const handleDownload = useCallback(async () => {
-    // Guard: Check if we have a rendered preview ready
-    if (!renderedPreviewUri) {
-      Toast.show({
-        type: 'info',
-        text1: 'Not ready',
-        text2: 'Please wait for preview to complete',
-        position: 'top',
-      });
-      return;
-    }
+  // Handle Generate button - show animation then navigate to publish screen
+  const handleGenerate = useCallback(() => {
+    if (!canProceed || !template || isGenerating) return;
     
-    setIsDownloading(true);
+    // Start generation animation
+    setIsGenerating(true);
     
-    try {
-      Toast.show({
-        type: 'info',
-        text1: 'Saving...',
-        text2: 'Downloading your image',
-        position: 'top',
-        visibilityTime: 2000,
+    // After animation delay, navigate to publish screen
+    // Use replace() so Editor is removed from stack and won't react to state changes
+    setTimeout(() => {
+      router.replace({
+        pathname: '/publish',
+        params: {
+          draftId: currentProject.draftId || '',
+          templateId: template.id,
+          templateName: template.name,
+          previewUri: renderedPreviewUri || '',
+          format: template.format,
+          hasWatermark: (!isPremium).toString(),
+        }
       });
       
-      // Download from the already-rendered preview URL and save to gallery
-      const result = await downloadAndSaveToGallery(renderedPreviewUri);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Download failed');
-      }
-      
-      Toast.show({
-        type: 'success',
-        text1: 'Downloaded!',
-        text2: 'Image saved to your photo library',
-        position: 'top',
-        visibilityTime: 3000,
-      });
-    } catch (error) {
-      console.error('Download failed:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Download failed',
-        text2: 'Try changing an image to refresh the preview',
-        position: 'top',
-      });
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [renderedPreviewUri]);
-
-  // Handle share - use already rendered preview URL and open share sheet
-  const handleShare = useCallback(async () => {
-    // Guard: Check if we have a rendered preview ready
-    if (!renderedPreviewUri) {
-      Toast.show({
-        type: 'info',
-        text1: 'Not ready',
-        text2: 'Please wait for preview to complete',
-        position: 'top',
-      });
-      return;
-    }
-    
-    // Check if sharing is available
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (!isAvailable) {
-      Toast.show({
-        type: 'error',
-        text1: 'Sharing not available',
-        text2: 'Your device does not support sharing',
-        position: 'top',
-      });
-      return;
-    }
-    
-    setIsSharing(true);
-    
-    try {
-      Toast.show({
-        type: 'info',
-        text1: 'Preparing...',
-        text2: 'Getting your image ready to share',
-        position: 'top',
-        visibilityTime: 2000,
-      });
-      
-      // Download from the already-rendered preview URL and share
-      const result = await downloadAndShare(renderedPreviewUri, undefined, {
-        mimeType: 'image/jpeg',
-        dialogTitle: 'Share your creation',
-      });
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Share failed');
-      }
-      
-    } catch (error) {
-      console.error('Share failed:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Share failed',
-        text2: 'Try changing an image to refresh the preview',
-        position: 'top',
-      });
-    } finally {
-      setIsSharing(false);
-    }
-  }, [renderedPreviewUri]);
+      // Reset generating state after navigation
+      setTimeout(() => setIsGenerating(false), 500);
+    }, 1500);
+  }, [canProceed, currentProject.draftId, template, renderedPreviewUri, isPremium, router, isGenerating]);
 
   if (!template) {
     return null;
   }
-
-  const isProcessing = isDownloading || isSharing;
 
   return (
     <View style={styles.container}>
@@ -967,41 +727,34 @@ export default function EditorScreen() {
             </View>
           )}
 
-          <View style={styles.actionRow}>
-            {/* Download Button */}
-            <TouchableOpacity
-              style={[styles.actionButton, (!canDownload || isProcessing) && styles.actionButtonDisabled]}
-              onPress={handleDownload}
-              disabled={!canDownload || isProcessing}
-              activeOpacity={0.8}
-            >
-              {isDownloading ? (
+          {/* Generate Button */}
+          <TouchableOpacity
+            style={[
+              styles.generateButton, 
+              (!canProceed || isGenerating) && styles.generateButtonDisabled,
+              isGenerating && styles.generateButtonGenerating,
+            ]}
+            onPress={handleGenerate}
+            disabled={!canProceed || isGenerating}
+            activeOpacity={0.8}
+          >
+            {isGenerating ? (
+              <>
                 <ActivityIndicator size="small" color={Colors.light.surface} />
-              ) : (
-                <Download size={20} color={canDownload && !isProcessing ? Colors.light.surface : Colors.light.textTertiary} />
-              )}
-              <Text style={[styles.actionButtonText, (!canDownload || isProcessing) && styles.actionButtonTextDisabled]}>
-                {isDownloading ? 'Saving...' : 'Download'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Share Button */}
-            <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonSecondary, (!canDownload || isProcessing) && styles.actionButtonDisabled]}
-              onPress={handleShare}
-              disabled={!canDownload || isProcessing}
-              activeOpacity={0.8}
-            >
-              {isSharing ? (
-                <ActivityIndicator size="small" color={Colors.light.text} />
-              ) : (
-                <Share2 size={20} color={canDownload && !isProcessing ? Colors.light.text : Colors.light.textTertiary} />
-              )}
-              <Text style={[styles.actionButtonTextSecondary, (!canDownload || isProcessing) && styles.actionButtonTextDisabled]}>
-                {isSharing ? 'Sharing...' : 'Share'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <Text style={styles.generateButtonText}>Generating...</Text>
+              </>
+            ) : (
+              <>
+                <Sparkles 
+                  size={20} 
+                  color={canProceed ? Colors.light.surface : Colors.light.textTertiary} 
+                />
+                <Text style={[styles.generateButtonText, !canProceed && styles.generateButtonTextDisabled]}>
+                  Generate
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
           {/* Helper text - shows different messages based on state */}
           {!allSlotsFilled && !isRendering && (
@@ -1068,12 +821,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
+  generateButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1082,26 +830,18 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 14,
   },
-  actionButtonSecondary: {
-    backgroundColor: Colors.light.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  actionButtonDisabled: {
+  generateButtonDisabled: {
     backgroundColor: Colors.light.border,
-    borderColor: Colors.light.border,
   },
-  actionButtonText: {
+  generateButtonGenerating: {
+    backgroundColor: Colors.light.accent,
+  },
+  generateButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.surface,
   },
-  actionButtonTextSecondary: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  actionButtonTextDisabled: {
+  generateButtonTextDisabled: {
     color: Colors.light.textTertiary,
   },
   helperText: {

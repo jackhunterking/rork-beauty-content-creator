@@ -1,30 +1,36 @@
-import { StyleSheet, View, Text, TouchableOpacity, Dimensions, ScrollView, Platform, Alert } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useMemo } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  Dimensions, 
+  Platform, 
+  Alert 
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
-import { Share2, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react-native";
-import React, { useState, useCallback, useMemo, useRef } from "react";
-import Colors from "@/constants/colors";
-import { useApp } from "@/contexts/AppContext";
+import { Share2, Trash2, X } from 'lucide-react-native';
+import Colors from '@/constants/colors';
+import { useApp } from '@/contexts/AppContext';
 
 const { width } = Dimensions.get('window');
 
-export default function WorkViewerScreen() {
+export default function PortfolioViewerScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { work, deleteFromWork } = useApp();
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const { portfolio, deleteFromPortfolio } = useApp();
 
-  const asset = useMemo(() => 
-    work.find(a => a.id === id),
-    [work, id]
+  const item = useMemo(() => 
+    portfolio.find(p => p.id === id),
+    [portfolio, id]
   );
 
   const handleShare = useCallback(async () => {
-    if (!asset) return;
+    if (!item) return;
     
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
@@ -35,45 +41,42 @@ export default function WorkViewerScreen() {
 
     try {
       const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable && asset.outputUris[currentSlide]) {
-        await Sharing.shareAsync(asset.outputUris[currentSlide]);
+      if (isAvailable && item.imageUrl) {
+        await Sharing.shareAsync(item.imageUrl, {
+          mimeType: 'image/jpeg',
+          dialogTitle: 'Share your creation',
+        });
       }
     } catch (error) {
       console.log('Share error:', error);
     }
-  }, [asset, currentSlide]);
+  }, [item]);
 
   const handleDelete = useCallback(() => {
     Alert.alert(
       'Delete',
-      'Are you sure you want to delete this item?',
+      'Are you sure you want to remove this from your portfolio?',
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Delete', 
           style: 'destructive', 
-          onPress: () => {
+          onPress: async () => {
             if (id) {
-              deleteFromWork(id);
-              router.back();
+              try {
+                await deleteFromPortfolio(id);
+                router.back();
+              } catch {
+                // Error handled silently
+              }
             }
           }
         },
       ]
     );
-  }, [id, deleteFromWork, router]);
+  }, [id, deleteFromPortfolio, router]);
 
-  const handleScroll = useCallback((event: any) => {
-    const slideIndex = Math.round(event.nativeEvent.contentOffset.x / width);
-    setCurrentSlide(slideIndex);
-  }, []);
-
-  const goToSlide = useCallback((index: number) => {
-    scrollViewRef.current?.scrollTo({ x: index * width, animated: true });
-    setCurrentSlide(index);
-  }, []);
-
-  if (!asset) {
+  if (!item) {
     return (
       <View style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
@@ -86,12 +89,26 @@ export default function WorkViewerScreen() {
     );
   }
 
-  const isCarousel = asset.type === 'carousel';
-  const formattedDate = new Date(asset.createdAt).toLocaleDateString('en-US', {
+  const formattedDate = new Date(item.createdAt).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   });
+
+  // Get platforms this was published to
+  const publishedPlatforms = item.publishedTo?.length > 0 
+    ? item.publishedTo.map(p => {
+        switch (p) {
+          case 'instagram_post': return 'Instagram Post';
+          case 'instagram_story': return 'Instagram Story';
+          case 'facebook_post': return 'Facebook';
+          case 'tiktok': return 'TikTok';
+          case 'download': return 'Downloaded';
+          case 'share': return 'Shared';
+          default: return p;
+        }
+      }).join(', ')
+    : null;
 
   return (
     <View style={styles.container}>
@@ -101,7 +118,7 @@ export default function WorkViewerScreen() {
             <X size={22} color={Colors.light.text} />
           </TouchableOpacity>
           <View style={styles.meta}>
-            <Text style={styles.metaType}>{isCarousel ? 'Carousel' : 'Single'}</Text>
+            <Text style={styles.metaFormat}>{item.format === '1:1' ? 'Square' : 'Vertical'}</Text>
             <Text style={styles.metaDate}>{formattedDate}</Text>
           </View>
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
@@ -110,72 +127,30 @@ export default function WorkViewerScreen() {
         </View>
 
         <View style={styles.previewContainer}>
-          {isCarousel ? (
-            <>
-              <ScrollView
-                ref={scrollViewRef}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={handleScroll}
-                decelerationRate="fast"
-              >
-                {asset.outputUris.map((uri, index) => (
-                  <View key={index} style={styles.carouselSlide}>
-                    <Image
-                      source={{ uri }}
-                      style={styles.slideImage}
-                      contentFit="contain"
-                    />
-                    {index < 2 && (
-                      <View style={styles.slideTag}>
-                        <Text style={styles.slideTagText}>
-                          {index === 0 ? 'BEFORE' : 'AFTER'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-              <View style={styles.pagination}>
-                {asset.outputUris.map((_, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.paginationDot,
-                      currentSlide === index && styles.paginationDotActive,
-                    ]}
-                    onPress={() => goToSlide(index)}
-                  />
-                ))}
+          <View style={styles.imageWrapper}>
+            <Image
+              source={{ uri: item.imageUrl }}
+              style={styles.image}
+              contentFit="contain"
+            />
+            {item.hasWatermark && (
+              <View style={styles.watermarkBadge}>
+                <Text style={styles.watermarkText}>Watermarked</Text>
               </View>
-              <View style={styles.slideNavigation}>
-                <TouchableOpacity 
-                  style={[styles.navButton, currentSlide === 0 && styles.navButtonDisabled]}
-                  onPress={() => goToSlide(Math.max(0, currentSlide - 1))}
-                  disabled={currentSlide === 0}
-                >
-                  <ChevronLeft size={20} color={currentSlide === 0 ? Colors.light.textTertiary : Colors.light.text} />
-                </TouchableOpacity>
-                <Text style={styles.slideCounter}>
-                  {currentSlide + 1} / {asset.outputUris.length}
-                </Text>
-                <TouchableOpacity 
-                  style={[styles.navButton, currentSlide === asset.outputUris.length - 1 && styles.navButtonDisabled]}
-                  onPress={() => goToSlide(Math.min(asset.outputUris.length - 1, currentSlide + 1))}
-                  disabled={currentSlide === asset.outputUris.length - 1}
-                >
-                  <ChevronRight size={20} color={currentSlide === asset.outputUris.length - 1 ? Colors.light.textTertiary : Colors.light.text} />
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <View style={styles.singlePreview}>
-              <Image
-                source={{ uri: asset.outputUris[0] }}
-                style={styles.singleImage}
-                contentFit="contain"
-              />
+            )}
+          </View>
+        </View>
+
+        {/* Info section */}
+        <View style={styles.infoSection}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Template</Text>
+            <Text style={styles.infoValue}>{item.templateName}</Text>
+          </View>
+          {publishedPlatforms && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Published to</Text>
+              <Text style={styles.infoValue}>{publishedPlatforms}</Text>
             </View>
           )}
         </View>
@@ -183,7 +158,7 @@ export default function WorkViewerScreen() {
         <View style={styles.actions}>
           <TouchableOpacity style={styles.actionButton} onPress={handleShare} activeOpacity={0.8}>
             <Share2 size={20} color={Colors.light.surface} />
-            <Text style={styles.actionButtonText}>Share</Text>
+            <Text style={styles.actionButtonText}>Share Again</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -217,7 +192,7 @@ const styles = StyleSheet.create({
   meta: {
     alignItems: 'center',
   },
-  metaType: {
+  metaFormat: {
     fontSize: 15,
     fontWeight: '600' as const,
     color: Colors.light.text,
@@ -238,77 +213,55 @@ const styles = StyleSheet.create({
   previewContainer: {
     flex: 1,
     paddingVertical: 16,
-  },
-  singlePreview: {
-    flex: 1,
-    marginHorizontal: 20,
-  },
-  singleImage: {
-    width: '100%',
-    height: '100%',
-  },
-  carouselSlide: {
-    width: width,
     paddingHorizontal: 20,
   },
-  slideImage: {
+  imageWrapper: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  image: {
     width: '100%',
     height: '100%',
-    borderRadius: 16,
   },
-  slideTag: {
+  watermarkBadge: {
     position: 'absolute',
-    top: 16,
-    left: 36,
+    top: 12,
+    right: 12,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingVertical: 6,
     paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
   },
-  slideTagText: {
+  watermarkText: {
     fontSize: 11,
-    fontWeight: '700' as const,
+    fontWeight: '600',
     color: Colors.light.surface,
-    letterSpacing: 0.5,
   },
-  pagination: {
+  infoSection: {
+    marginHorizontal: 20,
+    padding: 16,
+    backgroundColor: Colors.light.surface,
+    borderRadius: 12,
+    marginBottom: 16,
+    gap: 12,
+  },
+  infoRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 16,
-  },
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.light.border,
-  },
-  paginationDotActive: {
-    backgroundColor: Colors.light.text,
-    width: 20,
-  },
-  slideNavigation: {
-    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-    marginTop: 12,
   },
-  navButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navButtonDisabled: {
-    opacity: 0.5,
-  },
-  slideCounter: {
+  infoLabel: {
     fontSize: 14,
-    fontWeight: '500' as const,
     color: Colors.light.textSecondary,
+  },
+  infoValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.light.text,
+    maxWidth: '60%',
+    textAlign: 'right',
   },
   actions: {
     paddingHorizontal: 20,

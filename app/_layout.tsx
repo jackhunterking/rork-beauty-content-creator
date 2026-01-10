@@ -2,121 +2,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import Toast, { ToastConfig } from 'react-native-toast-message';
-import { CheckCircle, AlertCircle, Info } from 'lucide-react-native';
+import { SuperwallProvider } from "expo-superwall";
 import { AppProvider } from "@/contexts/AppContext";
-import Colors from "@/constants/colors";
+import { AuthProvider } from "@/contexts/AuthContext";
 
-SplashScreen.preventAutoHideAsync();
-
-// Custom toast configuration to match app design
-const toastConfig: ToastConfig = {
-  success: (props) => (
-    <View style={toastStyles.container}>
-      <View style={[toastStyles.iconContainer, toastStyles.successIcon]}>
-        <CheckCircle size={18} color={Colors.light.success} />
-      </View>
-      <View style={toastStyles.textContainer}>
-        <Text style={toastStyles.title} numberOfLines={1}>
-          {props.text1}
-        </Text>
-        {props.text2 && (
-          <Text style={toastStyles.message} numberOfLines={2}>
-            {props.text2}
-          </Text>
-        )}
-      </View>
-    </View>
-  ),
-  error: (props) => (
-    <View style={toastStyles.container}>
-      <View style={[toastStyles.iconContainer, toastStyles.errorIcon]}>
-        <AlertCircle size={18} color={Colors.light.error} />
-      </View>
-      <View style={toastStyles.textContainer}>
-        <Text style={toastStyles.title} numberOfLines={1}>
-          {props.text1}
-        </Text>
-        {props.text2 && (
-          <Text style={toastStyles.message} numberOfLines={2}>
-            {props.text2}
-          </Text>
-        )}
-      </View>
-    </View>
-  ),
-  info: (props) => (
-    <View style={toastStyles.container}>
-      <View style={[toastStyles.iconContainer, toastStyles.infoIcon]}>
-        <Info size={18} color={Colors.light.accent} />
-      </View>
-      <View style={toastStyles.textContainer}>
-        <Text style={toastStyles.title} numberOfLines={1}>
-          {props.text1}
-        </Text>
-        {props.text2 && (
-          <Text style={toastStyles.message} numberOfLines={2}>
-            {props.text2}
-          </Text>
-        )}
-      </View>
-    </View>
-  ),
+// Superwall API keys - replace with your actual keys from Superwall dashboard
+const SUPERWALL_API_KEYS = {
+  ios: process.env.EXPO_PUBLIC_SUPERWALL_IOS_KEY || "",
+  android: process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY || "",
 };
 
-const toastStyles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '90%',
-    maxWidth: 380,
-    backgroundColor: Colors.light.surface,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    shadowColor: Colors.light.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 6,
-    borderWidth: 1,
-    borderColor: Colors.light.borderLight,
-  },
-  iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  successIcon: {
-    backgroundColor: 'rgba(90, 171, 97, 0.12)',
-  },
-  errorIcon: {
-    backgroundColor: 'rgba(214, 69, 69, 0.12)',
-  },
-  infoIcon: {
-    backgroundColor: 'rgba(201, 168, 124, 0.15)',
-  },
-  textContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.light.text,
-    letterSpacing: -0.2,
-  },
-  message: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-    lineHeight: 18,
-  },
-});
+SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -134,9 +31,10 @@ function RootLayoutNav() {
         }} 
       />
       <Stack.Screen 
-        name="drafts" 
+        name="publish" 
         options={{ 
-          headerShown: false,
+          headerShown: true,
+          title: 'Publish',
           presentation: 'card',
         }} 
       />
@@ -154,6 +52,22 @@ function RootLayoutNav() {
           presentation: 'modal',
         }} 
       />
+      <Stack.Screen 
+        name="auth/sign-in" 
+        options={{ 
+          headerShown: true,
+          title: 'Sign In',
+          presentation: 'modal',
+        }} 
+      />
+      <Stack.Screen 
+        name="auth/sign-up" 
+        options={{ 
+          headerShown: true,
+          title: 'Create Account',
+          presentation: 'modal',
+        }} 
+      />
     </Stack>
   );
 }
@@ -167,17 +81,16 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <AppProvider>
-          <RootLayoutNav />
-          <Toast 
-            config={toastConfig}
-            topOffset={100}
-            visibilityTime={3000}
-          />
-        </AppProvider>
-      </GestureHandlerRootView>
-    </QueryClientProvider>
+    <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>
+      <QueryClientProvider client={queryClient}>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <AuthProvider>
+            <AppProvider>
+              <RootLayoutNav />
+            </AppProvider>
+          </AuthProvider>
+        </GestureHandlerRootView>
+      </QueryClientProvider>
+    </SuperwallProvider>
   );
 }

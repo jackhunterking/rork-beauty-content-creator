@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState } from '@/types';
+import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
+import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as deletePortfolioItemService } from '@/services/portfolioService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
@@ -29,6 +30,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [work, setWork] = useState<SavedAsset[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [brandKit, setBrandKit] = useState<BrandKit>({
     applyLogoAutomatically: false,
     addDisclaimer: false,
@@ -37,10 +39,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   // Selected format filter (1:1 or 9:16)
   const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('1:1');
 
-  // Per-slot state management (NEW)
+  // Per-slot state management
   const [slotStates, setSlotStatesMap] = useState<SlotStates>({});
   
-  // Composed preview state (NEW)
+  // Composed preview state
   const [composedPreviewUri, setComposedPreviewUri] = useState<string | null>(null);
   const [isComposing, setIsComposing] = useState(false);
 
@@ -48,17 +50,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [currentProject, setCurrentProject] = useState<{
     contentType: ContentType;
     template: Template | null;
-    // Dynamic captured images keyed by slot layer ID
     capturedImages: CapturedImages;
-    // Legacy fields - kept for backwards compatibility during transition
     beforeMedia: MediaAsset | null;
     afterMedia: MediaAsset | null;
-    draftId: string | null;  // Track if we're editing an existing draft
-    // Cached preview URL from draft (avoids re-rendering on load)
+    draftId: string | null;
     cachedPreviewUrl: string | null;
-    // Premium status when the cached preview was rendered
     wasRenderedAsPremium: boolean | null;
-    // Local file path to cached preview (instant access, no network)
     localPreviewPath: string | null;
   }>({
     contentType: 'single',
@@ -82,6 +79,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setTemplates(realtimeTemplates);
   }, [realtimeTemplates]);
 
+  // Legacy work query (kept for backwards compatibility)
   const workQuery = useQuery({
     queryKey: ['work'],
     queryFn: async () => {
@@ -101,11 +99,18 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  // Fetch drafts from Supabase (legacy - will migrate to local)
+  // Fetch drafts from Supabase
   const draftsQuery = useQuery({
     queryKey: ['drafts'],
     queryFn: fetchDrafts,
-    staleTime: 30 * 1000, // Cache for 30 seconds
+    staleTime: 30 * 1000,
+  });
+
+  // Fetch portfolio from Supabase
+  const portfolioQuery = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: fetchPortfolioItems,
+    staleTime: 30 * 1000,
   });
 
   useEffect(() => {
@@ -120,6 +125,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (draftsQuery.data) setDrafts(draftsQuery.data);
   }, [draftsQuery.data]);
 
+  useEffect(() => {
+    if (portfolioQuery.data) setPortfolio(portfolioQuery.data);
+  }, [portfolioQuery.data]);
+
   // Toggle favourite with optimistic update
   const toggleFavourite = useCallback(async (templateId: string) => {
     const template = templates.find(t => t.id === templateId);
@@ -127,20 +136,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     const newFavouriteState = !template.isFavourite;
     
-    // Optimistic update - immediately update UI
     setTemplates(prev => optimisticUpdateTemplate(prev, templateId, { isFavourite: newFavouriteState }));
     
     try {
-      // Sync with database
       await toggleTemplateFavourite(templateId, newFavouriteState);
-      // Real-time subscription will handle the actual update
     } catch (error) {
       console.error('Error toggling favourite:', error);
-      // Revert on error
       setTemplates(prev => optimisticUpdateTemplate(prev, templateId, { isFavourite: !newFavouriteState }));
     }
   }, [templates]);
 
+  // Legacy save to work mutation (kept for backwards compatibility)
   const saveToWorkMutation = useMutation({
     mutationFn: async (asset: SavedAsset) => {
       const updated = [asset, ...work];
@@ -201,14 +207,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
         beforeImageUri, 
         afterImageUri, 
         existingDraftId,
-        undefined, // capturedImageUris
+        undefined,
         renderedPreviewUrl,
         wasRenderedAsPremium,
         localPreviewPath
       );
     },
     onSuccess: (savedDraft) => {
-      // Update current project with the draft ID and cached preview
       setCurrentProject(prev => ({ 
         ...prev, 
         draftId: savedDraft.id,
@@ -229,6 +234,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
     onSuccess: (deletedId) => {
       setDrafts(prev => prev.filter(d => d.id !== deletedId));
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
+    },
+  });
+
+  // Add to portfolio mutation
+  const addToPortfolioMutation = useMutation({
+    mutationFn: createPortfolioItem,
+    onSuccess: (newItem) => {
+      setPortfolio(prev => [newItem, ...prev]);
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+  });
+
+  // Delete from portfolio mutation
+  const deleteFromPortfolioMutation = useMutation({
+    mutationFn: deletePortfolioItemService,
+    onSuccess: (_, deletedId) => {
+      setPortfolio(prev => prev.filter(p => p.id !== deletedId));
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
     },
   });
 
@@ -256,10 +279,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setSelectedFormat(format);
   }, []);
 
-  // Select template - stores the full template object with slot specs
-  // Also resets all captured images and draftId to ensure fresh start
+  // Select template
   const selectTemplate = useCallback((template: Template) => {
-    // Initialize slot states for new template
     const slots = extractSlots(template);
     const initialSlotStates: SlotStates = {};
     slots.forEach(slot => {
@@ -281,8 +302,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }));
   }, []);
 
-  // Legacy support: select by ID (finds template from list)
-  // Also resets all captured images and draftId to ensure fresh start
+  // Legacy support: select by ID
   const selectTemplateById = useCallback((templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (template) {
@@ -290,7 +310,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, [templates, selectTemplate]);
 
-  // Set slot state for a specific slot (NEW)
+  // Set slot state
   const setSlotState = useCallback((slotId: string, state: SlotState, errorMessage?: string, progress?: number) => {
     setSlotStatesMap(prev => ({
       ...prev,
@@ -298,7 +318,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }));
   }, []);
 
-  // Set captured image for a specific slot by layer ID
+  // Set captured image
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
     setCurrentProject(prev => ({
       ...prev,
@@ -308,14 +328,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       },
     }));
     
-    // Update slot state
     if (media) {
       setSlotState(layerId, 'ready');
     } else {
       setSlotState(layerId, 'empty');
     }
     
-    // Invalidate composed preview when images change
     setComposedPreviewUri(null);
   }, [setSlotState]);
 
@@ -331,7 +349,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       capturedImages: {},
     }));
     
-    // Reset all slot states to empty
     const template = currentProject.template;
     if (template) {
       const slots = extractSlots(template);
@@ -345,19 +362,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setComposedPreviewUri(null);
   }, [currentProject.template]);
 
-  // Legacy: set before media (for backwards compatibility)
+  // Legacy: set before media
   const setBeforeMedia = useCallback((media: MediaAsset | null) => {
     setCurrentProject(prev => ({ ...prev, beforeMedia: media }));
-    // Also set in capturedImages for new architecture
     if (media) {
       setCapturedImage('slot-before', media);
     }
   }, [setCapturedImage]);
 
-  // Legacy: set after media (for backwards compatibility)
+  // Legacy: set after media
   const setAfterMedia = useCallback((media: MediaAsset | null) => {
     setCurrentProject(prev => ({ ...prev, afterMedia: media }));
-    // Also set in capturedImages for new architecture
     if (media) {
       setCapturedImage('slot-after', media);
     }
@@ -380,21 +395,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, []);
 
   // Load a draft into the current project
-  // Supports both legacy before/after format and new capturedImageUrls format
   const loadDraft = useCallback((draft: Draft, template: Template) => {
-    // Extract slots from template to get dimensions
     const slots = extractSlots(template);
     
-    // Build capturedImages from draft data
     const capturedImages: CapturedImages = {};
     const slotStates: SlotStates = {};
     
-    // Initialize all slots
     slots.forEach(slot => {
       slotStates[slot.layerId] = { state: 'empty' };
     });
     
-    // First, try new format (capturedImageUrls)
     if (draft.capturedImageUrls) {
       for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
         const slot = slots.find(s => s.layerId === layerId);
@@ -409,8 +419,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       }
     }
     
-    // Legacy: Handle before/after image URLs
-    // Map to slot-before and slot-after for backwards compatibility
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     
@@ -432,7 +440,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       slotStates[afterSlot.layerId] = { state: 'ready' };
     }
     
-    // Legacy beforeMedia/afterMedia for backwards compatibility
     const beforeMedia = draft.beforeImageUrl && template.beforeSlot ? {
       uri: draft.beforeImageUrl,
       width: template.beforeSlot.width,
@@ -446,7 +453,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     } : null;
     
     setSlotStatesMap(slotStates);
-    // Don't clear composed preview - we might use cached one
     setComposedPreviewUri(null);
     
     setCurrentProject({
@@ -456,10 +462,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeMedia,
       afterMedia,
       draftId: draft.id,
-      // Set cached preview URL from draft for instant display
       cachedPreviewUrl: draft.renderedPreviewUrl || null,
       wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
-      // Set local preview path for instant access (priority over remote URL)
       localPreviewPath: draft.localPreviewPath || null,
     });
   }, []);
@@ -467,6 +471,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
   // Refresh drafts
   const refreshDrafts = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['drafts'] });
+  }, [queryClient]);
+
+  // Refresh portfolio
+  const refreshPortfolio = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['portfolio'] });
   }, [queryClient]);
 
   return {
@@ -477,16 +486,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
     templatesError,
     refetchTemplates,
     
-    // Other state
+    // Legacy work state (kept for backwards compatibility)
     work,
+    
+    // Portfolio state (new)
+    portfolio,
+    isPortfolioLoading: portfolioQuery.isLoading,
+    
+    // Drafts
     drafts,
+    isDraftsLoading: draftsQuery.isLoading,
+    
+    // Other state
     brandKit,
     currentProject,
     selectedFormat,
     isLoading: isTemplatesLoading || workQuery.isLoading,
-    isDraftsLoading: draftsQuery.isLoading,
     
-    // Slot state management (NEW)
+    // Slot state management
     slotStates,
     setSlotState,
     composedPreviewUri,
@@ -504,12 +521,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
     selectTemplate,
     selectTemplateById,
     
-    // Dynamic slot actions (new architecture)
+    // Dynamic slot actions
     setCapturedImage,
     clearCapturedImage,
     resetCapturedImages,
     
-    // Legacy actions (backwards compatibility)
+    // Legacy actions
     setBeforeMedia,
     setAfterMedia,
     resetProject,
@@ -528,5 +545,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     loadDraft,
     refreshDrafts,
     isSavingDraft: saveDraftMutation.isPending,
+    
+    // Portfolio actions
+    addToPortfolio: (item: Omit<PortfolioItem, 'id' | 'createdAt'>) => addToPortfolioMutation.mutateAsync(item),
+    deleteFromPortfolio: (id: string) => deleteFromPortfolioMutation.mutateAsync(id),
+    refreshPortfolio,
   };
 });

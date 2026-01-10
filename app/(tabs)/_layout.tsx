@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Plus, FileEdit, FolderOpen, Settings } from "lucide-react-native";
+import { Plus, FolderOpen, Settings } from "lucide-react-native";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import Colors from "@/constants/colors";
@@ -24,13 +24,6 @@ export default function TabLayout() {
               <Plus color={focused ? Colors.light.surface : color} size={22} strokeWidth={2.5} />
             </View>
           ),
-        }}
-      />
-      <Tabs.Screen
-        name="drafts"
-        options={{
-          title: "Drafts",
-          tabBarIcon: ({ color }) => <FileEdit color={color} size={22} />,
         }}
       />
       <Tabs.Screen

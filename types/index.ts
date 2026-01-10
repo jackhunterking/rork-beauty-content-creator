@@ -2,6 +2,87 @@ export type ContentType = 'single' | 'carousel' | 'video';
 export type TemplateFormat = '1:1' | '9:16';
 
 // ============================================
+// Platform & Publishing Types
+// ============================================
+
+/**
+ * Platform types based on format
+ * Square (1:1): Instagram Post, Facebook Post
+ * Vertical (9:16): Instagram Story, TikTok
+ */
+export type SquarePlatform = 'instagram_post' | 'facebook_post' | 'download' | 'share';
+export type VerticalPlatform = 'instagram_story' | 'tiktok' | 'facebook_post' | 'download' | 'share';
+export type PublishPlatform = SquarePlatform | VerticalPlatform;
+
+/**
+ * Platform option for the publish screen
+ */
+export interface PlatformOption {
+  id: PublishPlatform;
+  name: string;
+  icon: string;
+  supportedFormats: TemplateFormat[];
+}
+
+// ============================================
+// Portfolio Types
+// ============================================
+
+/**
+ * Portfolio item - created when user completes publish flow
+ * Represents finished work that appears in the Work tab
+ */
+export interface PortfolioItem {
+  id: string;
+  draftId?: string;
+  templateId: string;
+  templateName: string;
+  
+  // Rendered image
+  imageUrl: string;
+  localPath?: string;
+  thumbnailUrl?: string;
+  
+  // Metadata
+  format: TemplateFormat;
+  hasWatermark: boolean;
+  
+  // Export tracking - which platforms it was published to
+  publishedTo: PublishPlatform[];
+  
+  createdAt: string;
+}
+
+/**
+ * Database row type for portfolio (snake_case from Supabase)
+ */
+export interface PortfolioRow {
+  id: string;
+  draft_id: string | null;
+  template_id: string;
+  template_name: string;
+  image_url: string;
+  local_path: string | null;
+  thumbnail_url: string | null;
+  format: string;
+  has_watermark: boolean;
+  published_to: string[];
+  created_at: string;
+}
+
+/**
+ * Params passed to the publish screen
+ */
+export interface PublishScreenParams {
+  draftId?: string;
+  templateId: string;
+  templateName: string;
+  previewUri: string;
+  format: TemplateFormat;
+  hasWatermark: string; // "true" or "false" as string for URL params
+}
+
+// ============================================
 // Slot State Management (NEW)
 // ============================================
 
@@ -387,6 +468,10 @@ export interface Project {
   createdAt: string;
 }
 
+/**
+ * @deprecated Use PortfolioItem instead
+ * Kept for backwards compatibility during migration
+ */
 export interface SavedAsset {
   id: string;
   type: 'single' | 'carousel';
@@ -431,6 +516,68 @@ export interface BrandKit {
   primaryColor?: string;
   applyLogoAutomatically: boolean;
   addDisclaimer: boolean;
+}
+
+// ============================================
+// Authentication & User Profile
+// ============================================
+
+/**
+ * User profile from Supabase profiles table
+ */
+export interface UserProfile {
+  id: string;
+  email: string;
+  displayName?: string;
+  businessName?: string;
+  avatarUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Database row type for profiles (snake_case from Supabase)
+ */
+export interface ProfileRow {
+  id: string;
+  email: string;
+  display_name: string | null;
+  business_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Auth provider types supported
+ */
+export type AuthProvider = 'apple' | 'google' | 'email';
+
+/**
+ * Auth state for the application
+ */
+export interface AuthState {
+  user: UserProfile | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
+
+/**
+ * Sign in result from auth operations
+ */
+export interface AuthResult {
+  success: boolean;
+  user?: UserProfile;
+  error?: string;
+}
+
+/**
+ * App preferences stored locally
+ */
+export interface AppPreferences {
+  defaultFormat: '1:1' | '9:16';
+  hapticFeedback: boolean;
+  showWatermarkWarning: boolean;
 }
 
 // ============================================

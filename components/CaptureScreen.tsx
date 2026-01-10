@@ -3,7 +3,6 @@ import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowD
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import Toast from 'react-native-toast-message';
 import { ImagePlus, ChevronLeft } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
@@ -110,25 +109,9 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
       if (isMountedRef.current) {
         setPreviewUri(processed.uri);
         setImageSize({ width: processed.width, height: processed.height });
-        Toast.show({
-          type: 'success',
-          text1: 'Photo captured',
-          text2: `Cropped to ${processed.width}x${processed.height}`,
-          position: 'top',
-          visibilityTime: 2000,
-        });
       }
     } catch (error) {
       console.error('Failed to process image:', error);
-      if (isMountedRef.current) {
-        Toast.show({
-          type: 'error',
-          text1: 'Processing failed',
-          text2: 'Please try again',
-          position: 'top',
-          visibilityTime: 2000,
-        });
-      }
     } finally {
       if (isMountedRef.current) {
         setIsProcessing(false);
@@ -151,15 +134,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
       }
     } catch (error) {
       console.error('Failed to take picture:', error);
-      if (isMountedRef.current) {
-        Toast.show({
-          type: 'error',
-          text1: 'Capture failed',
-          text2: 'Please try again',
-          position: 'top',
-          visibilityTime: 2000,
-        });
-      }
     } finally {
       isCapturingRef.current = false;
     }

@@ -1,6 +1,5 @@
 import React, { useEffect, useCallback, useMemo } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import Toast from 'react-native-toast-message';
 import { useApp } from "@/contexts/AppContext";
 import { CaptureScreen } from "@/components/CaptureScreen";
 import { extractSlots, slotToImageSlot } from "@/utils/slotParser";
@@ -35,25 +34,11 @@ export default function CaptureSlotScreen() {
   // If no template is selected, go back
   useEffect(() => {
     if (!template) {
-      Toast.show({
-        type: 'error',
-        text1: 'No template selected',
-        text2: 'Please select a template first',
-        position: 'top',
-        visibilityTime: 2000,
-      });
       router.back();
       return;
     }
     
     if (!slot && slotId) {
-      Toast.show({
-        type: 'error',
-        text1: 'Slot not found',
-        text2: `Could not find slot: ${slotId}`,
-        position: 'top',
-        visibilityTime: 2000,
-      });
       router.back();
     }
   }, [template, slot, slotId, router]);

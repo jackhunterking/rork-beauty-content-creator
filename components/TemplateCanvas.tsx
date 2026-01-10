@@ -139,13 +139,6 @@ export function TemplateCanvas({
           </View>
         )}
       </View>
-
-      {/* Template dimensions */}
-      <View style={styles.infoContainer}>
-        <Text style={styles.templateDimensions}>
-          {template.canvasWidth} × {template.canvasHeight}
-        </Text>
-      </View>
     </View>
   );
 }
@@ -183,14 +176,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#FFFFFF',
-  },
-  infoContainer: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  templateDimensions: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
   },
 });
 

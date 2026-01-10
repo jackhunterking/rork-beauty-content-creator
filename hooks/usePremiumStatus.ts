@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUser, usePlacement } from 'expo-superwall';
 
 /**
  * Premium Status Hook
  * 
- * Manages premium/subscription status for the app.
- * Currently uses local storage for development/testing.
- * 
- * In production, replace with actual subscription service:
- * - RevenueCat
- * - Stripe
- * - App Store/Play Store subscriptions
+ * Manages premium/subscription status for the app using Superwall.
+ * Superwall handles:
+ * - Paywall presentation
+ * - Subscription status tracking
+ * - A/B testing for paywalls
  * 
  * Premium features:
  * - Remove watermark from rendered images
@@ -27,7 +26,70 @@ export interface PremiumStatus {
   plan?: 'monthly' | 'yearly' | 'lifetime';
 }
 
+/**
+ * Main premium status hook using Superwall
+ * Use this throughout the app to check subscription status
+ * 
+ * subscriptionStatus.status can be:
+ * - "ACTIVE" - User has an active subscription
+ * - "INACTIVE" - User does not have a subscription
+ * - "UNKNOWN" - Subscription status is being determined
+ */
 export function usePremiumStatus() {
+  const { subscriptionStatus } = useUser();
+  
+  // Determine if user is premium based on Superwall's subscription status
+  const isPremium = subscriptionStatus?.status === "ACTIVE";
+  const isLoading = subscriptionStatus?.status === "UNKNOWN" || subscriptionStatus === undefined;
+
+  return {
+    isPremium,
+    isLoading,
+    subscriptionStatus,
+  };
+}
+
+/**
+ * Hook to trigger a paywall for premium features
+ * Use this when you want to gate a feature behind a paywall
+ */
+export function usePremiumFeature() {
+  const { registerPlacement, state: paywallState } = usePlacement({
+    onPresent: (info) => console.log('Paywall presented:', info.name),
+    onDismiss: (info, result) => console.log('Paywall dismissed:', result),
+    onSkip: (reason) => console.log('Paywall skipped:', reason),
+    onError: (error) => console.error('Paywall error:', error),
+  });
+
+  /**
+   * Request access to a premium feature
+   * If user is subscribed, the feature callback runs immediately
+   * If not subscribed, a paywall is shown
+   * 
+   * @param placement - The placement name configured in Superwall dashboard
+   * @param onFeatureAccess - Callback when user gets access (subscribed or passes paywall)
+   */
+  const requestPremiumAccess = useCallback(async (
+    placement: string,
+    onFeatureAccess?: () => void
+  ) => {
+    await registerPlacement({
+      placement,
+      feature: onFeatureAccess,
+    });
+  }, [registerPlacement]);
+
+  return {
+    requestPremiumAccess,
+    paywallState,
+  };
+}
+
+/**
+ * Legacy hook for development/testing without Superwall
+ * Useful for testing premium features locally
+ */
+export function usePremiumStatusLegacy() {
   const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [plan, setPlan] = useState<'monthly' | 'yearly' | 'lifetime' | undefined>();
@@ -124,11 +186,11 @@ export function usePremiumStatus() {
 }
 
 /**
- * Check premium status synchronously (for render functions)
+ * Check premium status from local storage (legacy fallback)
  * Note: This is a convenience function that returns the last known status
- * For accurate status, use the hook
+ * For accurate status, use the usePremiumStatus hook
  */
-export async function checkPremiumStatus(): Promise<boolean> {
+export async function checkPremiumStatusLegacy(): Promise<boolean> {
   try {
     const storedData = await AsyncStorage.getItem(PREMIUM_STORAGE_KEY);
     

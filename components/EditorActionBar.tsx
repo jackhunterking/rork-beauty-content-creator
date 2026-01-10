@@ -8,7 +8,6 @@ import {
   Alert 
 } from 'react-native';
 import { Download, Share2, CheckCircle } from 'lucide-react-native';
-import Toast from 'react-native-toast-message';
 import Colors from '@/constants/colors';
 import { saveToGallery } from '@/services/downloadService';
 import { shareImage } from '@/services/shareService';
@@ -134,13 +133,6 @@ export function EditorActionBar({
       
       if (result.success) {
         setActionState('success');
-        Toast.show({
-          type: 'success',
-          text1: 'Saved to gallery',
-          text2: 'Your image has been saved to Photos',
-          position: 'top',
-          visibilityTime: 2000,
-        });
         
         // Reset after showing success
         setTimeout(() => setActionState('idle'), 2000);
@@ -151,12 +143,6 @@ export function EditorActionBar({
     } catch (error) {
       console.error('Download failed:', error);
       setActionState('error');
-      Toast.show({
-        type: 'error',
-        text1: 'Download failed',
-        text2: error instanceof Error ? error.message : 'Please try again',
-        position: 'top',
-      });
       
       setTimeout(() => setActionState('idle'), 2000);
     }
@@ -183,7 +169,6 @@ export function EditorActionBar({
       
       if (result.success) {
         setActionState('idle');
-        // Don't show toast for share as user sees the share sheet
       } else {
         throw new Error(result.error || 'Share failed');
       }
@@ -191,12 +176,6 @@ export function EditorActionBar({
     } catch (error) {
       console.error('Share failed:', error);
       setActionState('error');
-      Toast.show({
-        type: 'error',
-        text1: 'Share failed',
-        text2: error instanceof Error ? error.message : 'Please try again',
-        position: 'top',
-      });
       
       setTimeout(() => setActionState('idle'), 2000);
     }
