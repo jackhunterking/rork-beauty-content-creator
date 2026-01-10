@@ -11,14 +11,14 @@ export default {
     slug: "resulta",
     version: "1.0.0",
     orientation: "portrait",
-    icon: "./assets/images/icon.png",
+    icon: "./assets/images/resultalogo.png",
     scheme: "resulta",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     splash: {
-      image: "./assets/images/splash-icon.png",
+      image: "./assets/images/resultalogo.png",
       resizeMode: "contain",
-      backgroundColor: "#ffffff",
+      backgroundColor: "#C9A87C",
     },
     ios: {
       supportsTablet: false,
@@ -32,8 +32,8 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        foregroundImage: "./assets/images/adaptive-icon.png",
-        backgroundColor: "#ffffff",
+        foregroundImage: "./assets/images/resultalogo.png",
+        backgroundColor: "#C9A87C",
       },
       package: "app.resulta.android",
       permissions: [
@@ -46,7 +46,7 @@ export default {
       ],
     },
     web: {
-      favicon: "./assets/images/favicon.png",
+      favicon: "./assets/images/resultalogo.png",
     },
     plugins: [
       [

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SuperwallProvider } from "expo-superwall";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider } from "@/contexts/AuthContext";
+import AnimatedSplash from "@/components/AnimatedSplash";
 
 // Superwall API keys - replace with your actual keys from Superwall dashboard
 const SUPERWALL_API_KEYS = {
@@ -81,11 +82,15 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
+
   useEffect(() => {
-    // Cache clearing on startup is no longer needed since we use cache-busting URLs
-    // (URLs include ?v=timestamp which forces refresh when templates are updated)
-    // The real-time subscription handler also clears cache when updates are received
+    // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
+  }, []);
+
+  const handleSplashAnimationEnd = useCallback(() => {
+    setShowAnimatedSplash(false);
   }, []);
 
   return (
@@ -95,6 +100,9 @@ export default function RootLayout() {
           <AuthProvider>
             <AppProvider>
               <RootLayoutNav />
+              {showAnimatedSplash && (
+                <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
+              )}
             </AppProvider>
           </AuthProvider>
         </GestureHandlerRootView>
