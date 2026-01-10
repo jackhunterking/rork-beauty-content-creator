@@ -22,7 +22,6 @@ export default function SignInScreen() {
   const router = useRouter();
   const { 
     signInWithApple, 
-    signInWithGoogle, 
     signInWithEmail,
     sendPasswordReset,
     isLoading,
@@ -81,15 +80,6 @@ export default function SignInScreen() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    const result = await signInWithGoogle();
-    
-    if (result.success) {
-      router.back();
-    } else if (result.error !== 'Sign in cancelled') {
-      Alert.alert('Sign In Failed', result.error || 'Google sign in failed');
-    }
-  };
 
   const handleForgotPassword = async () => {
     if (!email.trim()) {
@@ -144,8 +134,8 @@ export default function SignInScreen() {
           </View>
 
           {/* Social Sign In Buttons */}
-          <View style={styles.socialButtons}>
-            {appleSignInAvailable && (
+          {appleSignInAvailable && (
+            <View style={styles.socialButtons}>
               <AppleAuthentication.AppleAuthenticationButton
                 buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
                 buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
@@ -153,18 +143,8 @@ export default function SignInScreen() {
                 style={styles.appleButton}
                 onPress={handleAppleSignIn}
               />
-            )}
-
-            <TouchableOpacity 
-              style={styles.googleButton}
-              onPress={handleGoogleSignIn}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.googleIcon}>G</Text>
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+          )}
 
           {/* Divider */}
           <View style={styles.dividerContainer}>
@@ -305,27 +285,6 @@ const styles = StyleSheet.create({
   appleButton: {
     height: 50,
     width: '100%',
-  },
-  googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 50,
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    gap: 10,
-  },
-  googleIcon: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#4285F4',
-  },
-  googleButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.text,
   },
   dividerContainer: {
     flexDirection: 'row',
