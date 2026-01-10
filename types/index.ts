@@ -1,18 +1,15 @@
 export type ContentType = 'single' | 'carousel' | 'video';
-export type TemplateFormat = '1:1' | '9:16';
+export type TemplateFormat = '4:5' | '1:1' | '9:16';
 
 // ============================================
 // Platform & Publishing Types
 // ============================================
 
 /**
- * Platform types based on format
- * Square (1:1): Instagram Post, Facebook Post
- * Vertical (9:16): Instagram Story, TikTok
+ * Platform types for sharing/downloading content
+ * Simplified to just download and share until native sharing is implemented
  */
-export type SquarePlatform = 'instagram_post' | 'facebook_post' | 'download' | 'share';
-export type VerticalPlatform = 'instagram_story' | 'tiktok' | 'facebook_post' | 'download' | 'share';
-export type PublishPlatform = SquarePlatform | VerticalPlatform;
+export type PublishPlatform = 'download' | 'share';
 
 /**
  * Platform option for the publish screen

@@ -26,15 +26,22 @@ const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 // Dynamic tile height based on format
 const getTileHeight = (format: TemplateFormat) => {
   switch (format) {
+    case '4:5':
+      return TILE_WIDTH * 1.25; // 4:5 ratio (Instagram Posts)
     case '9:16':
-      return TILE_WIDTH * 1.78; // 9:16 ratio
+      return TILE_WIDTH * 1.78; // 9:16 ratio (Stories/Reels)
     case '1:1':
     default:
-      return TILE_WIDTH; // 1:1 ratio
+      return TILE_WIDTH; // 1:1 ratio (Square)
   }
 };
 
 const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.ReactNode; label: string }[] = [
+  { 
+    format: '4:5', 
+    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
+    label: '4:5' 
+  },
   { 
     format: '1:1', 
     icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
@@ -74,7 +81,7 @@ export default function DraftsScreen() {
   } = useApp();
 
   // Local state for format filter
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('1:1');
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('4:5');
 
   // Get the best available preview URI for a draft
   const getDraftPreviewUri = useCallback((draft: Draft): string | null => {

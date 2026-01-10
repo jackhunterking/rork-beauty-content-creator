@@ -78,16 +78,16 @@
             <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Examples:</p>
             <div class="grid grid-cols-1 gap-1 text-sm">
               <div class="flex items-center gap-2">
+                <code class="bg-white dark:bg-gray-600 px-2 py-0.5 rounded text-xs">Portrait-BeforeAfter-Classic</code>
+                <span class="text-gray-400 text-xs">Instagram Posts (recommended)</span>
+              </div>
+              <div class="flex items-center gap-2">
                 <code class="bg-white dark:bg-gray-600 px-2 py-0.5 rounded text-xs">Square-BeforeAfter-Classic</code>
-                <span class="text-gray-400 text-xs">Basic layout</span>
+                <span class="text-gray-400 text-xs">Basic square layout</span>
               </div>
               <div class="flex items-center gap-2">
                 <code class="bg-white dark:bg-gray-600 px-2 py-0.5 rounded text-xs">Vertical-BeforeAfter-Labels</code>
-                <span class="text-gray-400 text-xs">Story with labels</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <code class="bg-white dark:bg-gray-600 px-2 py-0.5 rounded text-xs">Square-ThreeSlot-Progress</code>
-                <span class="text-gray-400 text-xs">3-photo progress</span>
+                <span class="text-gray-400 text-xs">Stories/Reels</span>
               </div>
             </div>
           </div>
@@ -148,7 +148,7 @@
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Template name follows [Format]-[Type]-[Variant] pattern</li>
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> All photo slots have "slot" in the layer name</li>
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Watermark layer contains "watermark" in the name</li>
-            <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Canvas size matches the preset (1080x1080, 1080x1920, 1080x1350)</li>
+            <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Canvas size: 1080x1350 (recommended), 1080x1080, or 1080x1920</li>
           </ul>
         </div>
       </div>
@@ -217,8 +217,17 @@
         <div class="grid grid-cols-3 gap-3 mb-3">
           <button 
             type="button" 
+            onclick="setPreset(1080, 1350, this)"
+            class="preset-btn active px-4 py-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium hover:bg-primary/20 transition relative"
+          >
+            <div class="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">Best</div>
+            <div class="text-sm font-semibold">4:5</div>
+            <div class="text-xs opacity-75">1080 × 1350</div>
+          </button>
+          <button 
+            type="button" 
             onclick="setPreset(1080, 1080, this)"
-            class="preset-btn active px-4 py-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium hover:bg-primary/20 transition"
+            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
           >
             <div class="text-sm font-semibold">1:1</div>
             <div class="text-xs opacity-75">1080 × 1080</div>
@@ -230,14 +239,6 @@
           >
             <div class="text-sm font-semibold">9:16</div>
             <div class="text-xs opacity-75">1080 × 1920</div>
-          </button>
-          <button 
-            type="button" 
-            onclick="setPreset(1080, 1350, this)"
-            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
-          >
-            <div class="text-sm font-semibold">Portrait</div>
-            <div class="text-xs opacity-75">1080 × 1350</div>
           </button>
         </div>
         
@@ -263,7 +264,7 @@
               id="canvas_height" 
               name="canvas_height" 
               required
-              value="1080"
+              value="1350"
               min="100"
               max="4096"
               class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent transition"

@@ -51,9 +51,9 @@ When syncing a template, you must follow this naming format for the **Template N
 ### Format Options
 | Format | Canvas Size | Description |
 |--------|-------------|-------------|
-| `Square` | 1080 × 1080 | Instagram feed posts |
+| `Portrait` | 1080 × 1350 | Instagram Posts (recommended) |
+| `Square` | 1080 × 1080 | Facebook, carousel posts |
 | `Vertical` | 1080 × 1920 | Stories, Reels, TikTok |
-| `Portrait` | 1080 × 1350 | Instagram portrait posts |
 
 ### Type Options
 | Type | Description |
@@ -71,13 +71,13 @@ A descriptive PascalCase name for the specific design style.
 
 | Template Name | Description |
 |---------------|-------------|
-| `Square-BeforeAfter-Classic` | Basic square before/after |
-| `Square-BeforeAfter-Minimal` | Clean minimal design |
-| `Vertical-BeforeAfter-Labels` | Story with text labels |
-| `Square-BeforeAfter-Nails` | Nail salon themed |
-| `Vertical-BeforeAfter-Makeup` | Makeup transformation |
-| `Square-ThreeSlot-Progress` | 3-photo progress |
+| `Portrait-BeforeAfter-Classic` | Instagram post (recommended) |
 | `Portrait-BeforeAfter-Elegant` | Elegant portrait style |
+| `Portrait-BeforeAfter-Minimal` | Clean minimal design |
+| `Square-BeforeAfter-Classic` | Basic square before/after |
+| `Square-ThreeSlot-Progress` | 3-photo progress |
+| `Vertical-BeforeAfter-Labels` | Story with text labels |
+| `Vertical-BeforeAfter-Makeup` | Makeup transformation |
 
 ### Rules
 1. **PascalCase** - Capitalize each word, no spaces
@@ -141,9 +141,9 @@ Everything else becomes part of the template design (labels, arrows, backgrounds
 1. Go to https://app.templated.io
 2. Click **Create Template**
 3. Set canvas size:
-   - 1:1: `1080 x 1080`
-   - 9:16: `1080 x 1920`
-   - Portrait: `1080 x 1350`
+   - 4:5 (Recommended): `1080 x 1350` - Instagram Posts
+   - 1:1: `1080 x 1080` - Square posts
+   - 9:16: `1080 x 1920` - Stories/Reels
 
 ### Step 2: Add Background Elements
 
@@ -419,7 +419,7 @@ When rendering, the app sends:
   "templated_id": "required - from URL",
   "name": "required - display name",
   "canvas_width": "required - 1080",
-  "canvas_height": "required - 1080 or 1920",
+  "canvas_height": "required - 1350 (recommended), 1080, or 1920",
   "preview_url": "optional - thumbnail",
   "is_active": "optional - default true",
   "supports": "optional - default [\"single\"]"

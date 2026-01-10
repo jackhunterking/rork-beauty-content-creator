@@ -21,7 +21,6 @@ import {
   Mail,
   FileText,
   Shield,
-  Instagram,
   RefreshCw,
   ExternalLink,
 } from "lucide-react-native";
@@ -451,45 +450,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Connected Accounts Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitleInline}>Connected Accounts</Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Soon</Text>
-            </View>
-          </View>
-          <View style={[styles.card, styles.cardDisabled]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#FCE7F3' }]}>
-                  <Instagram size={18} color="#E4405F" />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, styles.textDisabled]}>Instagram</Text>
-                  <Text style={[styles.settingHint, styles.textDisabled]}>Not connected</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.border} />
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#F0F0F0' }]}>
-                  <Text style={[styles.tiktokIcon, styles.textDisabled]}>T</Text>
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, styles.textDisabled]}>TikTok</Text>
-                  <Text style={[styles.settingHint, styles.textDisabled]}>Not connected</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.border} />
-            </View>
-          </View>
-        </View>
-
         {/* Support Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
@@ -819,11 +779,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.light.borderLight,
     marginLeft: 68,
-  },
-  tiktokIcon: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    color: Colors.light.text,
   },
   
   // Version styles

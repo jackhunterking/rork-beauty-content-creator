@@ -21,16 +21,21 @@ function addCacheBuster(url: string | null | undefined, timestamp: string): stri
 
 /**
  * Auto-detect template format based on canvas dimensions
- * 1:1: aspect ratio between 0.9 and 1.1 (e.g., 1080x1080 = 1.0)
- * 9:16: aspect ratio < 0.9 (e.g., 1080x1920 = 0.5625)
+ * 1:1: aspect ratio ~1.0 (e.g., 1080x1080)
+ * 4:5: aspect ratio ~0.8 (e.g., 1080x1350) - Instagram Posts
+ * 9:16: aspect ratio ~0.5625 (e.g., 1080x1920) - Stories/Reels
  */
 function detectFormatFromDimensions(width: number, height: number): TemplateFormat {
   const aspectRatio = width / height;
-  // 1:1 is square (with small tolerance for rounding)
-  if (aspectRatio >= 0.9 && aspectRatio <= 1.1) {
+  // 1:1 is square (aspect ratio ~1.0)
+  if (aspectRatio >= 0.95 && aspectRatio <= 1.05) {
     return '1:1';
   }
-  // Everything else (9:16, 4:5, etc.) is vertical
+  // 4:5 is portrait for Instagram posts (aspect ratio ~0.8)
+  if (aspectRatio >= 0.75 && aspectRatio < 0.95) {
+    return '4:5';
+  }
+  // 9:16 is vertical for Stories/Reels (aspect ratio ~0.5625)
   return '9:16';
 }
 
