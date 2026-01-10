@@ -13,9 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
-import { usePreventRemove } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Save, Sparkles, RefreshCw, Crown } from 'lucide-react-native';
+import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -410,13 +409,14 @@ export default function EditorScreen() {
     );
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath]);
 
-  // Prevent back navigation when there are unsaved changes
-  usePreventRemove(
-    hasUnsavedChanges && !allowNavigationRef.current,
-    ({ data }) => {
+  // Handle back button press with unsaved changes check
+  const handleBackPress = useCallback(() => {
+    if (hasUnsavedChanges && !allowNavigationRef.current) {
       showBackConfirmation();
+    } else {
+      router.back();
     }
-  );
+  }, [hasUnsavedChanges, showBackConfirmation, router]);
 
   const isEditingDraft = !!currentProject.draftId;
 
@@ -573,6 +573,11 @@ export default function EditorScreen() {
     if (!template) return;
 
     if (capturedCount === 0) {
+      Alert.alert(
+        'Nothing to Save',
+        'Add at least one image before saving a draft.',
+        [{ text: 'OK', style: 'default' }]
+      );
       return;
     }
 
@@ -629,6 +634,16 @@ export default function EditorScreen() {
       <Stack.Screen
         options={{
           title: isEditingDraft ? 'Edit Draft' : 'Editor',
+          headerLeft: () => (
+            <TouchableOpacity
+              style={styles.headerBackButton}
+              onPress={handleBackPress}
+              activeOpacity={0.7}
+            >
+              <ChevronLeft size={24} color={Colors.light.text} />
+              <Text style={styles.headerBackText}>Back</Text>
+            </TouchableOpacity>
+          ),
           headerRight: () => (
             <TouchableOpacity
               style={[styles.headerSaveButton, isSavingDraft && styles.saveButtonDisabled]}
@@ -781,6 +796,19 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  headerBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingRight: 8,
+    marginLeft: -8,
+  },
+  headerBackText: {
+    fontSize: 17,
+    fontWeight: '400',
+    color: Colors.light.text,
+    marginLeft: -2,
   },
   headerSaveButton: {
     flexDirection: 'row',
