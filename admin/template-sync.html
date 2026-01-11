@@ -319,6 +319,59 @@
     <!-- Status Message -->
     <div id="statusMessage" class="hidden mt-6"></div>
 
+    <!-- Resync Existing Template Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mt-8">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+          <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">Resync Existing Template</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Update layers & previews for a template you've already synced</p>
+        </div>
+      </div>
+
+      <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-4 border border-blue-200 dark:border-blue-800">
+        <p class="text-sm text-blue-800 dark:text-blue-200">
+          <strong>When to use:</strong> After making changes to a template in Templated.io (moving layers, changing sizes, updating watermark position), use this to pull fresh layer data and regenerate preview images.
+        </p>
+      </div>
+
+      <form id="resyncForm" class="space-y-4">
+        <div>
+          <label for="resync_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Select Template to Resync
+          </label>
+          <select 
+            id="resync_template" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+          >
+            <option value="">Loading templates...</option>
+          </select>
+        </div>
+        
+        <button 
+          type="submit" 
+          id="resyncBtn"
+          class="w-full py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <svg id="resyncBtnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          <span id="resyncBtnText">Resync Layers</span>
+          <svg id="resyncBtnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Resync Status Message -->
+      <div id="resyncStatusMessage" class="hidden mt-4"></div>
+    </div>
+
     <!-- Sync History -->
     <div id="recentSyncs" class="mt-8">
       <div class="flex items-center justify-between mb-4">
@@ -624,6 +677,158 @@
 
     // Initialize: Load history on page load
     loadHistory();
+
+    // ==========================================
+    // RESYNC FUNCTIONALITY
+    // ==========================================
+
+    // Load existing templates for resync dropdown
+    async function loadTemplatesForResync() {
+      const select = document.getElementById('resync_template');
+      
+      try {
+        const { data, error } = await supabaseClient
+          .from('templates')
+          .select('id, templated_id, name, updated_at')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+          select.innerHTML = '<option value="">No templates found</option>';
+          return;
+        }
+        
+        select.innerHTML = '<option value="">-- Select a template --</option>' + 
+          data.map(t => {
+            const lastUpdated = t.updated_at ? formatDate(t.updated_at) : 'Never';
+            return `<option value="${t.templated_id}" data-name="${escapeHtml(t.name)}">${escapeHtml(t.name)} (Updated: ${lastUpdated})</option>`;
+          }).join('');
+        
+      } catch (err) {
+        console.error('Error loading templates for resync:', err);
+        select.innerHTML = '<option value="">Error loading templates</option>';
+      }
+    }
+
+    // Show resync status message
+    function showResyncStatus(message, isSuccess, responseData = null) {
+      const statusEl = document.getElementById('resyncStatusMessage');
+      
+      let detailsHtml = '';
+      if (responseData) {
+        detailsHtml = `
+          <details class="mt-3">
+            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
+            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
+          </details>
+        `;
+      }
+      
+      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
+      statusEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium">${isSuccess ? 'Resync Successful!' : 'Resync Failed'}</p>
+            <p class="text-sm mt-1">${message}</p>
+            ${detailsHtml}
+          </div>
+        </div>
+      `;
+      statusEl.classList.remove('hidden');
+      
+      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Toggle resync loading state
+    function setResyncLoading(isLoading) {
+      const btn = document.getElementById('resyncBtn');
+      const btnText = document.getElementById('resyncBtnText');
+      const btnIcon = document.getElementById('resyncBtnIcon');
+      const btnSpinner = document.getElementById('resyncBtnSpinner');
+      
+      btn.disabled = isLoading;
+      btnText.textContent = isLoading ? 'Resyncing...' : 'Resync Layers';
+      btnIcon.classList.toggle('hidden', isLoading);
+      btnSpinner.classList.toggle('hidden', !isLoading);
+      btn.classList.toggle('opacity-75', isLoading);
+      btn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+
+    // Resync form submission
+    document.getElementById('resyncForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Hide previous status
+      document.getElementById('resyncStatusMessage').classList.add('hidden');
+      
+      const select = document.getElementById('resync_template');
+      const templatedId = select.value;
+      const templateName = select.options[select.selectedIndex]?.dataset?.name || templatedId;
+      
+      if (!templatedId) {
+        showResyncStatus('Please select a template to resync', false);
+        return;
+      }
+      
+      setResyncLoading(true);
+      
+      let responseData = null;
+      let success = false;
+      let errorMessage = null;
+      
+      try {
+        const response = await fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            templated_id: templatedId,
+            resync: true  // This flag triggers the resync branch in n8n
+          })
+        });
+        
+        const responseText = await response.text();
+        try {
+          responseData = JSON.parse(responseText);
+        } catch {
+          responseData = { raw: responseText };
+        }
+        
+        if (response.ok && responseData.success) {
+          success = true;
+          showResyncStatus(
+            `Template "${templateName}" resynced successfully! Fresh layers and previews have been generated.`,
+            true,
+            responseData
+          );
+          
+          // Reload the templates dropdown to show updated timestamp
+          await loadTemplatesForResync();
+        } else {
+          errorMessage = responseData.error || responseData.message || `HTTP ${response.status}: ${response.statusText}`;
+          throw new Error(errorMessage);
+        }
+      } catch (error) {
+        console.error('Resync error:', error);
+        errorMessage = error.message || 'Failed to resync template. Check console for details.';
+        showResyncStatus(errorMessage, false, responseData);
+      } finally {
+        // Log to Supabase
+        await logSyncResult({ templated_id: templatedId, name: `[RESYNC] ${templateName}` }, success, errorMessage);
+        
+        // Refresh history
+        await loadHistory();
+        
+        setResyncLoading(false);
+      }
+    });
+
+    // Load templates for resync on page load
+    loadTemplatesForResync();
   </script>
 </body>
 </html>
