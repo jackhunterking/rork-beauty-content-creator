@@ -69,10 +69,10 @@
         <div>
           <h3 class="text-sm font-semibold text-primary mb-2 flex items-center gap-2">
             <span class="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs">1</span>
-            Template Name Convention (Required)
+            Template Name Convention (Recommended)
           </h3>
           <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-            Use this format: <code class="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-primary">[Format]-[Type]-[Variant]</code>
+            Recommended format: <code class="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-primary">[Format]-[Type]-[Variant]</code>
           </p>
           <div class="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3">
             <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Examples:</p>
@@ -145,7 +145,7 @@
         <div class="bg-primary/5 rounded-lg p-3 border border-primary/20">
           <p class="text-sm font-medium text-primary mb-2">Quick Checklist</p>
           <ul class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-            <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Template name follows [Format]-[Type]-[Variant] pattern</li>
+            <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Template ID is correct from Templated.io</li>
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> All photo slots have "slot" in the layer name</li>
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Watermark layer contains "watermark" in the name</li>
             <li class="flex items-center gap-2"><span class="text-primary">&#10003;</span> Canvas size: 1080x1350 (recommended), 1080x1080, or 1080x1920</li>
@@ -178,35 +178,17 @@
         <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Template Name <span class="text-red-500">*</span>
         </label>
-        <div class="relative">
-          <input 
-            type="text" 
-            id="name" 
-            name="name" 
-            required
-            placeholder="e.g., Square-BeforeAfter-Classic"
-            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition pr-10"
-          >
-          <div id="nameValidationIcon" class="absolute right-3 top-1/2 -translate-y-1/2 hidden">
-            <!-- Success icon -->
-            <svg id="nameValidIcon" class="w-5 h-5 text-green-500 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-            <!-- Error icon -->
-            <svg id="nameInvalidIcon" class="w-5 h-5 text-red-500 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-            </svg>
-            <!-- Loading spinner -->
-            <svg id="nameLoadingIcon" class="w-5 h-5 text-gray-400 animate-spin hidden" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </div>
-        </div>
-        <p id="nameHelperText" class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Use format: <span class="text-primary font-medium">[Format]-[Type]-[Variant]</span> (e.g., Square-BeforeAfter-Classic)
+        <input 
+          type="text" 
+          id="name" 
+          name="name" 
+          required
+          placeholder="e.g., Square-BeforeAfter-Classic"
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition"
+        >
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Recommended format: <span class="text-primary font-medium">[Format]-[Type]-[Variant]</span> (e.g., Square-BeforeAfter-Classic)
         </p>
-        <p id="nameErrorText" class="mt-1 text-sm text-red-500 hidden"></p>
       </div>
 
       <!-- Canvas Size Presets -->
@@ -387,151 +369,6 @@
 
     // Initialize Supabase client
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    // Name validation state
-    let nameValidationTimeout = null;
-    let isNameValid = false;
-    let isNameChecking = false;
-
-    // Naming convention regex pattern: [Format]-[Type]-[Variant]
-    const NAME_PATTERN = /^(Square|Vertical|Portrait)-(BeforeAfter|ThreeSlot|FourSlot|Single|Carousel)-[A-Z][a-zA-Z0-9]+$/;
-
-    // Check if template name already exists in database
-    async function checkNameExists(name) {
-      try {
-        const { data, error } = await supabaseClient
-          .from('templates')
-          .select('id, name')
-          .ilike('name', name)
-          .limit(1);
-        
-        if (error) throw error;
-        return data && data.length > 0;
-      } catch (err) {
-        console.error('Error checking name:', err);
-        return false; // Allow submission if check fails
-      }
-    }
-
-    // Validate template name format
-    function validateNameFormat(name) {
-      if (!name || name.trim().length === 0) {
-        return { valid: false, message: 'Template name is required' };
-      }
-      
-      if (name.length < 5) {
-        return { valid: false, message: 'Name must be at least 5 characters' };
-      }
-      
-      if (name.length > 50) {
-        return { valid: false, message: 'Name must be less than 50 characters' };
-      }
-      
-      if (!NAME_PATTERN.test(name)) {
-        return { 
-          valid: false, 
-          message: 'Name must follow format: [Format]-[Type]-[Variant] (e.g., Square-BeforeAfter-Classic)' 
-        };
-      }
-      
-      return { valid: true, message: '' };
-    }
-
-    // Update name validation UI
-    function updateNameValidationUI(state, message = '') {
-      const container = document.getElementById('nameValidationIcon');
-      const validIcon = document.getElementById('nameValidIcon');
-      const invalidIcon = document.getElementById('nameInvalidIcon');
-      const loadingIcon = document.getElementById('nameLoadingIcon');
-      const errorText = document.getElementById('nameErrorText');
-      const helperText = document.getElementById('nameHelperText');
-      const nameInput = document.getElementById('name');
-      
-      container.classList.remove('hidden');
-      validIcon.classList.add('hidden');
-      invalidIcon.classList.add('hidden');
-      loadingIcon.classList.add('hidden');
-      
-      // Reset input border
-      nameInput.classList.remove('border-red-500', 'border-green-500');
-      
-      switch (state) {
-        case 'loading':
-          loadingIcon.classList.remove('hidden');
-          errorText.classList.add('hidden');
-          helperText.classList.remove('hidden');
-          break;
-        case 'valid':
-          validIcon.classList.remove('hidden');
-          errorText.classList.add('hidden');
-          helperText.classList.remove('hidden');
-          nameInput.classList.add('border-green-500');
-          break;
-        case 'invalid':
-          invalidIcon.classList.remove('hidden');
-          errorText.textContent = message;
-          errorText.classList.remove('hidden');
-          helperText.classList.add('hidden');
-          nameInput.classList.add('border-red-500');
-          break;
-        case 'idle':
-        default:
-          container.classList.add('hidden');
-          errorText.classList.add('hidden');
-          helperText.classList.remove('hidden');
-          break;
-      }
-    }
-
-    // Debounced name validation
-    async function validateName(name) {
-      // Clear previous timeout
-      if (nameValidationTimeout) {
-        clearTimeout(nameValidationTimeout);
-      }
-      
-      const trimmedName = name.trim();
-      
-      // If empty, reset to idle
-      if (!trimmedName) {
-        isNameValid = false;
-        updateNameValidationUI('idle');
-        return;
-      }
-      
-      // First check format
-      const formatResult = validateNameFormat(trimmedName);
-      if (!formatResult.valid) {
-        isNameValid = false;
-        updateNameValidationUI('invalid', formatResult.message);
-        return;
-      }
-      
-      // Show loading state
-      isNameChecking = true;
-      updateNameValidationUI('loading');
-      
-      // Debounce the database check
-      nameValidationTimeout = setTimeout(async () => {
-        try {
-          const exists = await checkNameExists(trimmedName);
-          isNameChecking = false;
-          
-          if (exists) {
-            isNameValid = false;
-            updateNameValidationUI('invalid', 'This template name is already taken. Please choose a different name.');
-          } else {
-            isNameValid = true;
-            updateNameValidationUI('valid');
-          }
-        } catch (err) {
-          isNameChecking = false;
-          // On error, allow submission but don't show valid state
-          isNameValid = true;
-          updateNameValidationUI('idle');
-        }
-      }, 500);
-    }
 
     // Set preset canvas size
     function setPreset(width, height, button) {
@@ -722,29 +559,6 @@
         return;
       }
       
-      // Validate name format
-      const formatResult = validateNameFormat(formData.name);
-      if (!formatResult.valid) {
-        showStatus(formatResult.message, false);
-        return;
-      }
-      
-      // Wait for name check if still in progress
-      if (isNameChecking) {
-        showStatus('Please wait while we verify the template name...', false);
-        return;
-      }
-      
-      // Check if name is valid (not a duplicate)
-      if (!isNameValid) {
-        // Do a final check before submitting
-        const exists = await checkNameExists(formData.name);
-        if (exists) {
-          showStatus('This template name is already taken. Please choose a different name.', false);
-          return;
-        }
-      }
-      
       if (formData.supports.length === 0) {
         formData.supports = ['single'];
       }
@@ -810,19 +624,6 @@
 
     // Initialize: Load history on page load
     loadHistory();
-
-    // Add name input validation listener
-    document.getElementById('name').addEventListener('input', (e) => {
-      validateName(e.target.value);
-    });
-
-    // Also validate on blur (when leaving the field)
-    document.getElementById('name').addEventListener('blur', (e) => {
-      const name = e.target.value.trim();
-      if (name) {
-        validateName(name);
-      }
-    });
   </script>
 </body>
 </html>
