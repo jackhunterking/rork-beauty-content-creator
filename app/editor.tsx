@@ -186,47 +186,66 @@ export default function EditorScreen() {
       setLocalPreviewPath(null);
       setImagesModifiedSinceLoad(false);
       
-      // Reset overlays when template changes
+      // Reset overlays when template changes - but don't reset lastLoadedDraftIdRef here
+      // It will be handled by the overlay loading effect
       setOverlays([]);
       setSelectedOverlayId(null);
       initialOverlaysRef.current = [];
       hasSetInitialOverlaysRef.current = false;
+      // Force re-load overlays for this draft by clearing lastLoadedDraftIdRef
+      // This ensures overlays are loaded even if the draft ID hasn't changed
       
       currentTemplateIdRef.current = newTemplateId;
     }
   }, [template?.id]);
 
+  // Track the last loaded draft ID to prevent duplicate loads
+  const lastLoadedDraftIdRef = useRef<string | null>(null);
+
   // Load overlays when loading a draft
   useEffect(() => {
     const loadDraftOverlays = async () => {
+      // No draft - reset overlays and initial state
       if (!currentProject.draftId) {
-        // No draft - set initial state as empty
-        if (!hasSetInitialOverlaysRef.current) {
+        if (lastLoadedDraftIdRef.current !== null) {
+          // We had a draft before but now we don't - clear overlays
+          setOverlays([]);
           initialOverlaysRef.current = [];
           hasSetInitialOverlaysRef.current = true;
+          lastLoadedDraftIdRef.current = null;
+          console.log('[Editor] No draft ID, cleared overlays');
         }
         return;
       }
       
+      // Skip if we already loaded this draft's overlays
+      if (lastLoadedDraftIdRef.current === currentProject.draftId && hasSetInitialOverlaysRef.current) {
+        console.log('[Editor] Overlays already loaded for draft:', currentProject.draftId);
+        return;
+      }
+      
+      console.log('[Editor] Loading overlays for draft:', currentProject.draftId);
+      
       try {
         const savedOverlays = await loadOverlays(currentProject.draftId);
-        if (savedOverlays.length > 0) {
-          console.log(`[Editor] Loaded ${savedOverlays.length} overlays from draft`);
-          setOverlays(savedOverlays);
-        }
+        console.log(`[Editor] Loaded ${savedOverlays.length} overlays from draft`);
+        
+        // Always set overlays (even if empty) to ensure clean state
+        setOverlays(savedOverlays);
+        
         // Set initial overlay state for change detection
-        if (!hasSetInitialOverlaysRef.current) {
-          initialOverlaysRef.current = savedOverlays;
-          hasSetInitialOverlaysRef.current = true;
-          console.log(`[Editor] Captured initial overlay state: ${savedOverlays.length} overlays`);
-        }
+        initialOverlaysRef.current = savedOverlays;
+        hasSetInitialOverlaysRef.current = true;
+        lastLoadedDraftIdRef.current = currentProject.draftId;
+        
+        console.log(`[Editor] Captured initial overlay state: ${savedOverlays.length} overlays`);
       } catch (error) {
         console.error('[Editor] Failed to load overlays:', error);
         // Set empty initial state on error
-        if (!hasSetInitialOverlaysRef.current) {
-          initialOverlaysRef.current = [];
-          hasSetInitialOverlaysRef.current = true;
-        }
+        setOverlays([]);
+        initialOverlaysRef.current = [];
+        hasSetInitialOverlaysRef.current = true;
+        lastLoadedDraftIdRef.current = currentProject.draftId;
       }
     };
     
@@ -524,6 +543,16 @@ export default function EditorScreen() {
           onPress: async () => {
             if (!template) return;
             try {
+              // Capture preview with overlays if there are any
+              let previewToSave = localPreviewPath;
+              if (overlays.length > 0 && renderedPreviewUri) {
+                const capturedPreview = await captureCanvasWithOverlays();
+                if (capturedPreview) {
+                  previewToSave = capturedPreview;
+                  console.log('[Editor] Using captured preview with overlays for back save');
+                }
+              }
+              
               const savedDraft = await saveDraft({
                 templateId: template.id,
                 beforeImageUri: beforeUri || null,
@@ -532,11 +561,11 @@ export default function EditorScreen() {
                 capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
                 renderedPreviewUrl: renderedPreviewUri,
                 wasRenderedAsPremium: isPremium,
-                localPreviewPath: localPreviewPath,
+                localPreviewPath: previewToSave,
               });
               
-              // Save overlays with the draft
-              if (savedDraft && overlays.length > 0) {
+              // Always save overlays (even if empty to clear old ones)
+              if (savedDraft) {
                 try {
                   await saveOverlays(savedDraft.id, overlays);
                   console.log(`[Editor] Saved ${overlays.length} overlays via back button`);
@@ -556,7 +585,7 @@ export default function EditorScreen() {
       ],
       { cancelable: true }
     );
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath, overlays]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath, overlays, captureCanvasWithOverlays]);
 
   // Handle back button press with unsaved changes check
   const handleBackPress = useCallback(() => {
@@ -820,6 +849,19 @@ export default function EditorScreen() {
       }
     }
 
+    // Determine the best preview to save
+    // If there are overlays, capture the canvas with overlays
+    let previewToSave = localPreviewPath;
+    
+    if (overlays.length > 0 && renderedPreviewUri) {
+      console.log('[Editor] Capturing canvas with overlays for draft preview');
+      const capturedPreview = await captureCanvasWithOverlays();
+      if (capturedPreview) {
+        previewToSave = capturedPreview;
+        console.log('[Editor] Using captured preview with overlays:', capturedPreview);
+      }
+    }
+
     try {
       const savedDraft = await saveDraft({
         templateId: template.id,
@@ -829,14 +871,16 @@ export default function EditorScreen() {
         capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
         renderedPreviewUrl: renderedPreviewUri,
         wasRenderedAsPremium: isPremium,
-        localPreviewPath: localPreviewPath,
+        localPreviewPath: previewToSave, // Use the preview with overlays if available
       });
       
-      // Save overlays locally if there are any
-      if (savedDraft && overlays.length > 0) {
+      // Always save overlays (even if empty to clear old overlays)
+      if (savedDraft) {
         try {
           await saveOverlays(savedDraft.id, overlays);
           console.log(`[Editor] Saved ${overlays.length} overlays with draft`);
+          // Update initial state after successful save
+          initialOverlaysRef.current = [...overlays];
         } catch (overlayError) {
           console.error('[Editor] Failed to save overlays:', overlayError);
           // Non-critical, don't throw
@@ -849,7 +893,7 @@ export default function EditorScreen() {
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath, overlays]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath, overlays, captureCanvasWithOverlays]);
 
   // Save draft - shows confirmation dialog first
   const handleSaveDraft = useCallback(() => {
@@ -1064,8 +1108,8 @@ export default function EditorScreen() {
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
-          {/* Overlay Action Bar - show when all slots are filled */}
-          {allSlotsFilled && !isRendering && (
+          {/* Overlay Action Bar - show as soon as template is selected */}
+          {template && (
             <OverlayActionBar
               isPremium={isPremium}
               disabled={isGenerating || paywallState === 'presenting'}

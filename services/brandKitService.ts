@@ -115,49 +115,113 @@ async function getImageDimensions(uri: string): Promise<{ width: number; height:
 }
 
 /**
+ * Normalize an image URI by processing it through ImageManipulator
+ * This handles various URI schemes (ph://, file://, content://) and
+ * returns a local file:// URI that can be reliably copied
+ */
+async function normalizeImageUri(sourceUri: string): Promise<{ uri: string; width: number; height: number }> {
+  console.log('[BrandKit] Normalizing image URI:', sourceUri.substring(0, 50) + '...');
+  
+  try {
+    // Process through ImageManipulator to normalize the URI
+    // This converts any URI scheme to a local file:// URI
+    const result = await ImageManipulator.manipulateAsync(
+      sourceUri,
+      [], // No transformations, just process
+      { 
+        format: ImageManipulator.SaveFormat.PNG,
+        compress: 0.9,
+      }
+    );
+    
+    console.log('[BrandKit] Normalized URI:', result.uri.substring(0, 50) + '...');
+    return {
+      uri: result.uri,
+      width: result.width,
+      height: result.height,
+    };
+  } catch (error) {
+    console.error('[BrandKit] Failed to normalize image URI:', error);
+    throw new Error(`Failed to process image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
  * Save a logo image to the brand kit
  * 
  * @param sourceUri - The source URI of the logo image (from picker or camera)
  * @returns The saved brand kit with the new logo
  */
 export async function saveBrandLogo(sourceUri: string): Promise<BrandKit> {
+  console.log('[BrandKit] Starting logo save, source URI type:', sourceUri.split(':')[0]);
+  
   try {
+    // Ensure brand kit directory exists
     await ensureBrandKitDirectory();
+    console.log('[BrandKit] Directory ready');
 
-    // Get image dimensions before saving
-    const dimensions = await getImageDimensions(sourceUri);
+    // Normalize the source URI - this handles ph://, content://, etc.
+    const normalized = await normalizeImageUri(sourceUri);
+    console.log('[BrandKit] Image normalized, dimensions:', normalized.width, 'x', normalized.height);
 
-    // Copy the logo to our brand kit directory
+    // Get the destination path
     const logoPath = getLogoPath();
+    console.log('[BrandKit] Destination path:', logoPath);
     
     // Delete existing logo if present
     const existingInfo = await FileSystem.getInfoAsync(logoPath);
     if (existingInfo.exists) {
       await FileSystem.deleteAsync(logoPath, { idempotent: true });
+      console.log('[BrandKit] Deleted existing logo');
     }
 
-    // Copy new logo
-    await FileSystem.copyAsync({
-      from: sourceUri,
-      to: logoPath,
-    });
+    // Try to copy the normalized image
+    try {
+      await FileSystem.copyAsync({
+        from: normalized.uri,
+        to: logoPath,
+      });
+      console.log('[BrandKit] Logo copied successfully');
+    } catch (copyError) {
+      console.warn('[BrandKit] Copy failed, trying move:', copyError);
+      
+      // If copy fails, try moving the file instead
+      try {
+        await FileSystem.moveAsync({
+          from: normalized.uri,
+          to: logoPath,
+        });
+        console.log('[BrandKit] Logo moved successfully');
+      } catch (moveError) {
+        console.error('[BrandKit] Move also failed:', moveError);
+        throw new Error(`Failed to save logo file: ${moveError instanceof Error ? moveError.message : 'Unknown error'}`);
+      }
+    }
 
-    console.log('[BrandKit] Logo saved to:', logoPath);
+    // Verify the file was saved
+    const savedInfo = await FileSystem.getInfoAsync(logoPath);
+    if (!savedInfo.exists) {
+      throw new Error('Logo file was not saved successfully');
+    }
+    console.log('[BrandKit] Logo file verified, size:', (savedInfo as any).size || 'unknown');
 
     // Update brand kit configuration
     const currentBrandKit = await loadBrandKit();
     const updatedBrandKit: BrandKit = {
       ...currentBrandKit,
       logoUri: logoPath,
-      logoWidth: dimensions.width,
-      logoHeight: dimensions.height,
+      logoWidth: normalized.width,
+      logoHeight: normalized.height,
     };
 
     await saveBrandKit(updatedBrandKit);
+    console.log('[BrandKit] Brand kit configuration updated');
 
     return updatedBrandKit;
   } catch (error) {
-    console.error('[BrandKit] Failed to save brand logo:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[BrandKit] Failed to save brand logo:', errorMessage);
+    console.error('[BrandKit] Full error:', error);
     throw error;
   }
 }

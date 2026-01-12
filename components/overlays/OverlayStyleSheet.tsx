@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Slider from '@react-native-community/slider';
 import { Check, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
@@ -44,8 +45,8 @@ interface OverlayStyleSheetProps {
   onDeleteOverlay: () => void;
 }
 
-// Slider component for font size with editable input
-interface SliderProps {
+// Slider component for font size with editable input - using native slider
+interface SizeSliderProps {
   value: number;
   min: number;
   max: number;
@@ -53,18 +54,15 @@ interface SliderProps {
   onChange: (value: number) => void;
 }
 
-function SimpleSlider({ value, min, max, step, onChange }: SliderProps) {
+function SizeSlider({ value, min, max, step, onChange }: SizeSliderProps) {
   const [inputValue, setInputValue] = useState(value.toString());
   const [isEditing, setIsEditing] = useState(false);
-  const percentage = ((value - min) / (max - min)) * 100;
-  
-  const handlePress = useCallback((event: { nativeEvent: { locationX: number } }, width: number) => {
-    const newPercentage = Math.max(0, Math.min(100, (event.nativeEvent.locationX / width) * 100));
-    const newValue = min + (newPercentage / 100) * (max - min);
+
+  // Handle slider value change
+  const handleSliderChange = useCallback((newValue: number) => {
     const steppedValue = Math.round(newValue / step) * step;
     const clampedValue = Math.max(min, Math.min(max, steppedValue));
     onChange(clampedValue);
-    setInputValue(clampedValue.toString());
   }, [min, max, step, onChange]);
 
   // Handle direct input change
@@ -97,14 +95,19 @@ function SimpleSlider({ value, min, max, step, onChange }: SliderProps) {
 
   return (
     <View style={styles.sliderContainer}>
-      <TouchableOpacity
-        style={styles.sliderTrack}
-        onPress={(e) => handlePress(e, 220)}
-        activeOpacity={1}
-      >
-        <View style={[styles.sliderFill, { width: `${percentage}%` }]} />
-        <View style={[styles.sliderThumb, { left: `${percentage}%` }]} />
-      </TouchableOpacity>
+      <View style={styles.sliderWrapper}>
+        <Slider
+          style={styles.nativeSlider}
+          minimumValue={min}
+          maximumValue={max}
+          step={step}
+          value={value}
+          onValueChange={handleSliderChange}
+          minimumTrackTintColor={Colors.light.accent}
+          maximumTrackTintColor={Colors.light.border}
+          thumbTintColor={Colors.light.accent}
+        />
+      </View>
       <View style={styles.sizeInputContainer}>
         <TextInput
           style={styles.sizeInput}
@@ -132,8 +135,8 @@ export function OverlayStyleSheet({
 }: OverlayStyleSheetProps) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   
-  // Snap points for bottom sheet
-  const snapPoints = useMemo(() => ['50%', '80%'], []);
+  // Snap points for bottom sheet - lower initial height so canvas remains visible
+  const snapPoints = useMemo(() => ['30%', '60%'], []);
 
   // Check if overlay is text-based
   const isTextBased = overlay ? isTextBasedOverlay(overlay) : false;
@@ -364,7 +367,7 @@ export function OverlayStyleSheet({
         {/* Font Size Slider with Input */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Size</Text>
-          <SimpleSlider
+          <SizeSlider
             value={textOverlay.fontSize}
             min={FONT_SIZE_CONSTRAINTS.min}
             max={FONT_SIZE_CONSTRAINTS.max}
@@ -557,36 +560,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  sliderTrack: {
+  sliderWrapper: {
     flex: 1,
-    height: 6,
-    backgroundColor: Colors.light.border,
-    borderRadius: 3,
-    position: 'relative',
   },
-  sliderFill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: Colors.light.accent,
-    borderRadius: 3,
-  },
-  sliderThumb: {
-    position: 'absolute',
-    top: -7,
-    marginLeft: -10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 3,
-    borderColor: Colors.light.accent,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+  nativeSlider: {
+    width: '100%',
+    height: 40,
   },
   // Size input styles
   sizeInputContainer: {

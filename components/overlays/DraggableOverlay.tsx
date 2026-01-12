@@ -5,7 +5,7 @@
  * and rotation gestures. Provides Instagram-style interaction.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -67,6 +67,14 @@ export function DraggableOverlay({
   const startScale = useSharedValue(1);
   const startRotation = useSharedValue(0);
 
+  // Sync shared values when transform prop changes (e.g., when loading from draft)
+  useEffect(() => {
+    translateX.value = transform.x * canvasWidth;
+    translateY.value = transform.y * canvasHeight;
+    scale.value = transform.scale;
+    rotation.value = transform.rotation;
+  }, [transform.x, transform.y, transform.scale, transform.rotation, canvasWidth, canvasHeight]);
+
   // Update transform callback
   const updateTransform = useCallback((
     x: number,
@@ -82,9 +90,10 @@ export function DraggableOverlay({
     });
   }, [canvasWidth, canvasHeight, onTransformChange]);
 
-  // Pan gesture for moving
+  // Pan gesture for moving - with min distance to distinguish from tap
   const panGesture = useMemo(() => 
     Gesture.Pan()
+      .minDistance(5) // Minimum movement before pan activates (prevents triggering on tap)
       .onStart(() => {
         startX.value = translateX.value;
         startY.value = translateY.value;
@@ -162,17 +171,18 @@ export function DraggableOverlay({
     [updateTransform]
   );
 
-  // Tap gesture for selection
+  // Tap gesture for selection - with max distance to prevent triggering during drag
   const tapGesture = useMemo(() =>
     Gesture.Tap()
+      .maxDuration(250) // Short tap only
       .onEnd(() => {
         runOnJS(onSelect)();
       }),
     [onSelect]
   );
 
-  // Compose all gestures
-  const composedGesture = useMemo(() =>
+  // Compose manipulation gestures (pan, pinch, rotation work simultaneously)
+  const manipulationGestures = useMemo(() =>
     Gesture.Simultaneous(
       panGesture,
       Gesture.Simultaneous(pinchGesture, rotationGesture)
@@ -180,10 +190,11 @@ export function DraggableOverlay({
     [panGesture, pinchGesture, rotationGesture]
   );
 
-  // Final gesture with tap
+  // Final gesture composition using Exclusive - tap only fires if manipulation doesn't activate
+  // This prevents tap from firing during drag/pinch operations
   const allGestures = useMemo(() =>
-    Gesture.Race(composedGesture, tapGesture),
-    [composedGesture, tapGesture]
+    Gesture.Exclusive(manipulationGestures, tapGesture),
+    [manipulationGestures, tapGesture]
   );
 
   // Animated styles

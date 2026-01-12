@@ -2,14 +2,13 @@
  * OverlayActionBar Component
  * 
  * Action bar displayed above the Generate button in the Editor.
- * Contains rows to add Date, Text, and Logo overlays.
+ * Contains compact horizontal buttons to add Date, Text, and Logo overlays.
  * Features premium gating via Superwall.
- * UI styled to match the Remove Watermark toggle row.
  */
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
-import { Calendar, Type, Image as ImageIcon, Crown, ChevronRight } from 'lucide-react-native';
+import { Calendar, Type, Image as ImageIcon, Crown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { OverlayType } from '@/types/overlays';
@@ -26,45 +25,40 @@ interface OverlayActionBarProps {
   onRequestPremium: (featureName: string) => void;
 }
 
-interface OverlayRowProps {
+interface OverlayButtonProps {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   isPremium: boolean;
   disabled?: boolean;
-  isLast?: boolean;
 }
 
-function OverlayRow({ icon, label, onPress, isPremium, disabled, isLast }: OverlayRowProps) {
+function OverlayButton({ icon, label, onPress, isPremium, disabled }: OverlayButtonProps) {
   return (
     <TouchableOpacity
       style={[
-        styles.overlayRow,
-        !isLast && styles.overlayRowBorder,
-        disabled && styles.overlayRowDisabled,
+        styles.overlayButton,
+        disabled && styles.overlayButtonDisabled,
       ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
     >
-      <View style={styles.overlayRowLeft}>
-        {!isPremium && (
-          <Crown size={16} color={Colors.light.accent} style={styles.crownIcon} />
-        )}
-        <View style={styles.overlayIconContainer}>
-          {icon}
+      {/* Crown badge for non-premium users */}
+      {!isPremium && (
+        <View style={styles.crownBadge}>
+          <Crown size={10} color={Colors.light.surface} />
         </View>
-        <Text style={[
-          styles.overlayRowText,
-          disabled && styles.overlayRowTextDisabled,
-        ]}>
-          {label}
-        </Text>
+      )}
+      <View style={styles.iconContainer}>
+        {icon}
       </View>
-      <ChevronRight 
-        size={18} 
-        color={disabled ? Colors.light.textTertiary : Colors.light.textSecondary} 
-      />
+      <Text style={[
+        styles.buttonLabel,
+        disabled && styles.buttonLabelDisabled,
+      ]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -165,37 +159,36 @@ export function OverlayActionBar({
         <Text style={styles.sectionLabel}>Add Overlay</Text>
         {!isPremium && (
           <View style={styles.proBadge}>
-            <Crown size={12} color={Colors.light.surface} />
+            <Crown size={10} color={Colors.light.surface} />
             <Text style={styles.proBadgeText}>PRO</Text>
           </View>
         )}
       </View>
 
-      {/* Overlay Options as Rows */}
-      <View style={styles.rowsContainer}>
-        <OverlayRow
-          icon={<Calendar size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-          label="Add Date"
+      {/* Overlay Options as Horizontal Buttons */}
+      <View style={styles.buttonsRow}>
+        <OverlayButton
+          icon={<Calendar size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
+          label="Date"
           onPress={handleAddDate}
           isPremium={isPremium}
           disabled={disabled}
         />
         
-        <OverlayRow
-          icon={<Type size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-          label="Add Text"
+        <OverlayButton
+          icon={<Type size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
+          label="Text"
           onPress={handleAddText}
           isPremium={isPremium}
           disabled={disabled}
         />
         
-        <OverlayRow
-          icon={<ImageIcon size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-          label="Add Logo"
+        <OverlayButton
+          icon={<ImageIcon size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
+          label="Logo"
           onPress={handleAddLogo}
           isPremium={isPremium}
           disabled={disabled}
-          isLast
         />
       </View>
     </View>
@@ -224,7 +217,7 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: Colors.light.accent,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   proBadgeText: {
@@ -233,50 +226,51 @@ const styles = StyleSheet.create({
     color: Colors.light.surface,
     letterSpacing: 0.5,
   },
-  rowsContainer: {
+  buttonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  overlayButton: {
+    flex: 1,
     backgroundColor: Colors.light.surface,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.light.border,
-    overflow: 'hidden',
-  },
-  overlayRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: Colors.light.surface,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
-  overlayRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  overlayRowDisabled: {
+  overlayButtonDisabled: {
     opacity: 0.5,
   },
-  overlayRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  crownIcon: {
-    marginRight: -4,
-  },
-  overlayIconContainer: {
-    width: 32,
-    height: 32,
+  crownBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 16,
+    height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.light.surfaceSecondary,
+    backgroundColor: Colors.light.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  overlayRowText: {
-    fontSize: 15,
-    fontWeight: '500',
+  iconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.light.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  buttonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
     color: Colors.light.text,
   },
-  overlayRowTextDisabled: {
+  buttonLabelDisabled: {
     color: Colors.light.textTertiary,
   },
 });
