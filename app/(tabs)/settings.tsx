@@ -11,6 +11,8 @@ import {
   Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { 
   Palette, 
   User, 
@@ -25,14 +27,23 @@ import {
   ExternalLink,
   MessageCircle,
   Send,
+  ImageIcon,
+  X,
 } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
 import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { submitFeedback } from "@/services/feedbackService";
+import { 
+  loadBrandKit, 
+  saveBrandLogo, 
+  deleteBrandLogo,
+  updateBrandKitSettings,
+} from "@/services/brandKitService";
+import { BrandKit } from "@/types";
 
 // App configuration - replace with your actual URLs
 const APP_CONFIG = {
@@ -64,6 +75,87 @@ export default function SettingsScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState('');
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
+
+  // Brand Kit state
+  const [brandKit, setBrandKit] = useState<BrandKit | null>(null);
+  const [isLoadingBrandKit, setIsLoadingBrandKit] = useState(true);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+
+  // Load Brand Kit on mount
+  useEffect(() => {
+    const loadBrandKitData = async () => {
+      try {
+        const kit = await loadBrandKit();
+        setBrandKit(kit);
+      } catch (error) {
+        console.error('[Settings] Failed to load brand kit:', error);
+      } finally {
+        setIsLoadingBrandKit(false);
+      }
+    };
+    loadBrandKitData();
+  }, []);
+
+  // Handle Upload Logo
+  const handleUploadLogo = useCallback(async () => {
+    // Premium gate for logo upload
+    if (!isPremium) {
+      await requestPremiumAccess('brand_kit_logo', () => {
+        // After subscription, proceed with upload
+        pickAndUploadLogo();
+      });
+      return;
+    }
+    
+    pickAndUploadLogo();
+  }, [isPremium, requestPremiumAccess]);
+
+  const pickAndUploadLogo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setIsUploadingLogo(true);
+        const updatedKit = await saveBrandLogo(result.assets[0].uri);
+        setBrandKit(updatedKit);
+        Alert.alert('Success', 'Logo saved to your Brand Kit!');
+      }
+    } catch (error) {
+      console.error('[Settings] Failed to upload logo:', error);
+      Alert.alert('Error', 'Failed to save logo. Please try again.');
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  // Handle Remove Logo
+  const handleRemoveLogo = useCallback(async () => {
+    Alert.alert(
+      'Remove Logo',
+      'Are you sure you want to remove your brand logo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updatedKit = await deleteBrandLogo();
+              setBrandKit(updatedKit);
+            } catch (error) {
+              console.error('[Settings] Failed to remove logo:', error);
+              Alert.alert('Error', 'Failed to remove logo. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  }, []);
 
   // Handle Upgrade to Pro button press
   const handleUpgradeToPro = async () => {
@@ -419,52 +511,75 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitleInline}>Brand Kit</Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Soon</Text>
-            </View>
+            {!isPremium && (
+              <View style={styles.proBadge}>
+                <Crown size={10} color={Colors.light.surface} />
+                <Text style={styles.proBadgeText}>PRO</Text>
+              </View>
+            )}
           </View>
-          <View style={[styles.card, styles.cardDisabled]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
-                  <Palette size={18} color="#5AAB61" />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, styles.textDisabled]}>Upload Logo</Text>
-                  <Text style={[styles.settingHint, styles.textDisabled]}>Add your clinic logo</Text>
+          <View style={styles.card}>
+            {/* Logo Section */}
+            {brandKit?.logoUri ? (
+              // Logo is set - show preview
+              <View style={styles.logoPreviewContainer}>
+                <Image
+                  source={{ uri: brandKit.logoUri }}
+                  style={styles.logoPreview}
+                  contentFit="contain"
+                />
+                <View style={styles.logoActions}>
+                  <TouchableOpacity
+                    style={styles.logoChangeButton}
+                    onPress={handleUploadLogo}
+                    disabled={isUploadingLogo}
+                    activeOpacity={0.7}
+                  >
+                    <ImageIcon size={16} color={Colors.light.accent} />
+                    <Text style={styles.logoChangeText}>Change</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.logoRemoveButton}
+                    onPress={handleRemoveLogo}
+                    activeOpacity={0.7}
+                  >
+                    <X size={16} color={Colors.light.error} />
+                    <Text style={styles.logoRemoveText}>Remove</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              <ChevronRight size={20} color={Colors.light.border} />
-            </View>
+            ) : (
+              // No logo - show upload button
+              <TouchableOpacity 
+                style={styles.settingRow} 
+                onPress={handleUploadLogo}
+                disabled={isUploadingLogo}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
+                    {isUploadingLogo ? (
+                      <ActivityIndicator size="small" color="#5AAB61" />
+                    ) : (
+                      <ImageIcon size={18} color="#5AAB61" />
+                    )}
+                  </View>
+                  <View>
+                    <Text style={styles.settingLabel}>Upload Logo</Text>
+                    <Text style={styles.settingHint}>Add your business logo</Text>
+                  </View>
+                </View>
+                <ChevronRight size={20} color={Colors.light.textTertiary} />
+              </TouchableOpacity>
+            )}
             
             <View style={styles.divider} />
             
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#FEF3E6' }]}>
-                  <Palette size={18} color="#E5A43B" />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, styles.textDisabled]}>Brand Color</Text>
-                  <Text style={[styles.settingHint, styles.textDisabled]}>Not set</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.border} />
-            </View>
-            
-            <View style={styles.divider} />
-            
-            <View style={styles.settingRow}>
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#EEE8F8' }]}>
-                  <Palette size={18} color="#8B5CF6" />
-                </View>
-                <View>
-                  <Text style={[styles.settingLabel, styles.textDisabled]}>Auto-apply Logo</Text>
-                  <Text style={[styles.settingHint, styles.textDisabled]}>Add logo to exports</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.border} />
+            {/* Logo Usage Info */}
+            <View style={styles.brandKitInfo}>
+              <Text style={styles.brandKitInfoText}>
+                Your logo will be available as an overlay option when editing templates.
+              </Text>
             </View>
           </View>
         </View>
@@ -625,14 +740,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  comingSoonBadge: {
+  proBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: Colors.light.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 6,
   },
-  comingSoonText: {
-    fontSize: 9,
+  proBadgeText: {
+    fontSize: 10,
     fontWeight: '700' as const,
     color: Colors.light.surface,
     textTransform: 'uppercase',
@@ -642,6 +760,61 @@ const styles = StyleSheet.create({
   },
   textDisabled: {
     color: Colors.light.textTertiary,
+  },
+  
+  // Brand Kit Logo styles
+  logoPreviewContainer: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  logoPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  logoActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 12,
+  },
+  logoChangeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(229, 164, 59, 0.12)',
+  },
+  logoChangeText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: Colors.light.accent,
+  },
+  logoRemoveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: 'rgba(231, 76, 60, 0.12)',
+  },
+  logoRemoveText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: Colors.light.error,
+  },
+  brandKitInfo: {
+    padding: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  brandKitInfoText: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   card: {
     backgroundColor: Colors.light.surface,

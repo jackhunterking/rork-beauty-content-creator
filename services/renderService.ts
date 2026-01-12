@@ -1,9 +1,11 @@
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system';
 import { 
   uploadMultipleTempImages, 
   cleanupSession, 
   generateSessionId,
 } from './tempUploadService';
+import { Overlay } from '@/types/overlays';
 
 /**
  * Render Service - Templated.io Integration
@@ -12,14 +14,20 @@ import {
  * The preview URL returned by renderPreview() IS the final rendered image.
  * Download/Share operations now use this URL directly - no re-rendering needed.
  * 
+ * OVERLAY SUPPORT (Jan 2026):
+ * Overlays are rendered client-side on top of the Templated.io image.
+ * The compositeWithOverlays() function handles the final composition.
+ * 
  * Active Functions:
  * - renderPreview() - Renders template when photos are added/changed
  * - renderPreviewWithNewPhoto() - Convenience wrapper for renderPreview
+ * - compositeWithOverlays() - Client-side overlay composition
  * 
  * Flow:
  * 1. User adds photo → renderPreview() → Returns Templated.io URL
- * 2. User taps Download → Download from preview URL → Save to gallery
- * 3. User taps Share → Download from preview URL → Share sheet
+ * 2. User adds overlays → Overlays rendered as RN components
+ * 3. User taps Generate → compositeWithOverlays() → Final image with overlays
+ * 4. User taps Download → Download final image → Save to gallery
  */
 
 // Templated.io API configuration
@@ -55,6 +63,8 @@ export interface PreviewRenderOptions {
   slotImages: Record<string, string>;
   /** Whether to hide watermark (premium users only) */
   hideWatermark?: boolean;
+  /** Overlays to render (handled client-side) */
+  overlays?: Overlay[];
 }
 
 export interface RenderProgress {
@@ -190,4 +200,164 @@ export async function renderPreviewWithNewPhoto(
     slotImages: allPhotos,
     hideWatermark,
   });
+}
+
+// ============================================
+// Overlay Compositing (Client-Side)
+// ============================================
+
+/**
+ * Options for compositing overlays onto an image
+ */
+export interface CompositeOptions {
+  /** Base image URI (from Templated.io) */
+  baseImageUri: string;
+  /** Overlays to composite */
+  overlays: Overlay[];
+  /** Canvas dimensions */
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+/**
+ * Result of overlay compositing
+ */
+export interface CompositeResult {
+  success: boolean;
+  /** Local file URI of composited image */
+  localUri?: string;
+  error?: string;
+}
+
+/**
+ * Check if there are any overlays to composite
+ */
+export function hasOverlays(overlays?: Overlay[]): boolean {
+  return overlays !== undefined && overlays.length > 0;
+}
+
+/**
+ * Download an image to local storage
+ * 
+ * @param imageUrl - Remote URL to download
+ * @param filename - Local filename (optional)
+ * @returns Local file URI
+ */
+export async function downloadImageToLocal(
+  imageUrl: string,
+  filename?: string
+): Promise<string> {
+  const localFilename = filename || `render_${Date.now()}.jpg`;
+  const localUri = `${FileSystem.cacheDirectory}${localFilename}`;
+  
+  // If already local, return as-is
+  if (imageUrl.startsWith('file://')) {
+    return imageUrl;
+  }
+  
+  // Download the file
+  const downloadResult = await FileSystem.downloadAsync(imageUrl, localUri);
+  
+  if (downloadResult.status !== 200) {
+    throw new Error(`Failed to download image: ${downloadResult.status}`);
+  }
+  
+  return downloadResult.uri;
+}
+
+/**
+ * Note: Client-side overlay compositing is handled by react-native-view-shot
+ * in the Editor component. This captures the entire canvas view including
+ * all overlay components rendered on top.
+ * 
+ * The captured image is then used for download/share operations.
+ * 
+ * For server-side compositing (if Templated.io supports dynamic layers),
+ * we would convert overlays to layer payloads here.
+ */
+
+/**
+ * Convert overlays to Templated.io layer format (for future use)
+ * 
+ * This would be used if Templated.io templates support dynamic text/image layers.
+ * Currently, overlays are rendered client-side.
+ */
+export function overlaysToLayerPayload(
+  overlays: Overlay[],
+  canvasWidth: number,
+  canvasHeight: number
+): Record<string, Record<string, unknown>> {
+  const payload: Record<string, Record<string, unknown>> = {};
+  
+  for (const overlay of overlays) {
+    const layerId = `overlay-${overlay.type}-${overlay.id}`;
+    
+    // Calculate absolute position from relative transform
+    const x = overlay.transform.x * canvasWidth;
+    const y = overlay.transform.y * canvasHeight;
+    
+    if (overlay.type === 'text' || overlay.type === 'date') {
+      // Text overlay
+      const content = overlay.type === 'date' 
+        ? formatDateForOverlay(overlay.date, overlay.format)
+        : overlay.content;
+        
+      payload[layerId] = {
+        text: content,
+        color: overlay.color,
+        font_family: overlay.fontFamily,
+        font_size: overlay.fontSize * overlay.transform.scale,
+        x,
+        y,
+        rotation: overlay.transform.rotation,
+      };
+    } else if (overlay.type === 'logo') {
+      // Logo overlay - would need to upload image first
+      payload[layerId] = {
+        image_url: overlay.imageUri,
+        x,
+        y,
+        width: overlay.originalWidth * overlay.transform.scale,
+        height: overlay.originalHeight * overlay.transform.scale,
+        rotation: overlay.transform.rotation,
+      };
+    }
+  }
+  
+  return payload;
+}
+
+/**
+ * Format date for overlay display
+ */
+function formatDateForOverlay(dateStr: string, format: string): string {
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const month = date.getMonth();
+  const year = date.getFullYear();
+  const shortYear = year.toString().slice(-2);
+  
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const shortMonthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+
+  switch (format) {
+    case 'short':
+      return `${month + 1}/${day}/${shortYear}`;
+    case 'medium':
+      return `${shortMonthNames[month]} ${day}, ${year}`;
+    case 'long':
+      return `${monthNames[month]} ${day}, ${year}`;
+    case 'iso':
+      return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    case 'european':
+      return `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
+    default:
+      return `${monthNames[month]} ${day}, ${year}`;
+  }
 }

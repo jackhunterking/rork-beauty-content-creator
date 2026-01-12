@@ -216,7 +216,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
             ref={cameraRef} 
             style={StyleSheet.absoluteFillObject} 
             facing="back"
-            flash={flashEnabled ? 'on' : 'off'}
+            enableTorch={flashEnabled}
           />
         </View>
       )}

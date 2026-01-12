@@ -1,6 +1,9 @@
 export type ContentType = 'single' | 'carousel' | 'video';
 export type TemplateFormat = '4:5' | '1:1' | '9:16';
 
+// Re-export overlay types for convenience
+export * from './overlays';
+
 // ============================================
 // App Configuration Types (Force Update)
 // ============================================
@@ -475,6 +478,8 @@ export interface Draft {
   // Local file path to cached preview image (client-side only, not in Supabase)
   // Used for instant preview display without network requests
   localPreviewPath?: string | null;
+  // Overlays added to the draft (Pro feature, stored locally)
+  overlays?: Overlay[];
 }
 
 // Database row type for drafts
@@ -565,9 +570,12 @@ export interface CreditTransaction {
 
 export interface BrandKit {
   logoUri?: string;
+  logoWidth?: number;
+  logoHeight?: number;
   primaryColor?: string;
   applyLogoAutomatically: boolean;
   addDisclaimer: boolean;
+  updatedAt?: string;
 }
 
 // ============================================

@@ -10,10 +10,12 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import BottomSheet from '@gorhom/bottom-sheet';
 import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -23,6 +25,26 @@ import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } fro
 import { renderPreview } from '@/services/renderService';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 import { saveRenderedPreview, createDraftDirectories } from '@/services/localStorageService';
+import { 
+  OverlayLayer, 
+  OverlayActionBar, 
+  OverlayStyleSheet 
+} from '@/components/overlays';
+import {
+  Overlay,
+  OverlayType,
+  OverlayTransform,
+  TextOverlay,
+  DateOverlay,
+  createTextOverlay,
+  createDateOverlay,
+  createLogoOverlay,
+  isTextBasedOverlay,
+} from '@/types/overlays';
+import { 
+  saveOverlays, 
+  loadOverlays 
+} from '@/services/overlayPersistenceService';
 
 export default function EditorScreen() {
   const router = useRouter();
@@ -73,6 +95,34 @@ export default function EditorScreen() {
   // Premium status for watermark control
   const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
+
+  // Window dimensions for canvas sizing
+  const { width: screenWidth } = useWindowDimensions();
+  const CANVAS_PADDING = 20;
+  
+  // Overlay state
+  const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const styleSheetRef = useRef<BottomSheet>(null);
+
+  // Calculate canvas dimensions (matching TemplateCanvas logic)
+  const canvasDimensions = useMemo(() => {
+    if (!template) return { width: 0, height: 0 };
+    
+    const maxCanvasWidth = screenWidth - CANVAS_PADDING * 2;
+    const aspectRatio = template.canvasWidth / template.canvasHeight;
+    
+    let width = maxCanvasWidth;
+    let height = width / aspectRatio;
+    
+    const maxHeight = screenWidth * 1.2;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    
+    return { width, height };
+  }, [template, screenWidth]);
 
   // Extract slots from template
   const slots = useMemo(() => 
@@ -127,9 +177,34 @@ export default function EditorScreen() {
       setLocalPreviewPath(null);
       setImagesModifiedSinceLoad(false);
       
+      // Reset overlays when template changes
+      setOverlays([]);
+      setSelectedOverlayId(null);
+      
       currentTemplateIdRef.current = newTemplateId;
     }
   }, [template?.id]);
+
+  // Load overlays when loading a draft
+  useEffect(() => {
+    const loadDraftOverlays = async () => {
+      if (!currentProject.draftId) {
+        return;
+      }
+      
+      try {
+        const savedOverlays = await loadOverlays(currentProject.draftId);
+        if (savedOverlays.length > 0) {
+          console.log(`[Editor] Loaded ${savedOverlays.length} overlays from draft`);
+          setOverlays(savedOverlays);
+        }
+      } catch (error) {
+        console.error('[Editor] Failed to load overlays:', error);
+      }
+    };
+    
+    loadDraftOverlays();
+  }, [currentProject.draftId]);
 
   // Capture initial state when draft/template first loads
   useEffect(() => {
@@ -542,6 +617,118 @@ export default function EditorScreen() {
     });
   }, [isPremium, requestPremiumAccess]);
 
+  // ============================================
+  // Overlay Handlers
+  // ============================================
+
+  // Add a new overlay
+  const handleAddOverlay = useCallback((
+    type: OverlayType,
+    imageData?: { uri: string; width: number; height: number }
+  ) => {
+    let newOverlay: Overlay;
+
+    switch (type) {
+      case 'text':
+        newOverlay = createTextOverlay();
+        break;
+      case 'date':
+        newOverlay = createDateOverlay();
+        break;
+      case 'logo':
+        if (!imageData) {
+          console.warn('[Editor] Logo overlay requires image data');
+          return;
+        }
+        newOverlay = createLogoOverlay(
+          imageData.uri,
+          imageData.width,
+          imageData.height,
+          false // Not from brand kit by default
+        );
+        break;
+      default:
+        return;
+    }
+
+    setOverlays(prev => [...prev, newOverlay]);
+    setSelectedOverlayId(newOverlay.id);
+    
+    // Open style sheet for text-based overlays
+    if (type === 'text' || type === 'date') {
+      setTimeout(() => {
+        styleSheetRef.current?.snapToIndex(0);
+      }, 100);
+    }
+    
+    console.log(`[Editor] Added ${type} overlay:`, newOverlay.id);
+  }, []);
+
+  // Request premium for overlay feature
+  const handleRequestPremiumForOverlay = useCallback(async (featureName: string) => {
+    await requestPremiumAccess(featureName, () => {
+      console.log(`[Editor] ${featureName} unlocked!`);
+    });
+  }, [requestPremiumAccess]);
+
+  // Select an overlay
+  const handleSelectOverlay = useCallback((id: string | null) => {
+    setSelectedOverlayId(id);
+    
+    // Open style sheet if selecting a text-based overlay
+    if (id) {
+      const overlay = overlays.find(o => o.id === id);
+      if (overlay && isTextBasedOverlay(overlay)) {
+        styleSheetRef.current?.snapToIndex(0);
+      }
+    } else {
+      styleSheetRef.current?.close();
+    }
+  }, [overlays]);
+
+  // Update overlay transform (position, scale, rotation)
+  const handleUpdateOverlayTransform = useCallback((id: string, transform: OverlayTransform) => {
+    setOverlays(prev => prev.map(overlay => 
+      overlay.id === id 
+        ? { ...overlay, transform, updatedAt: new Date().toISOString() }
+        : overlay
+    ));
+  }, []);
+
+  // Update overlay properties (for text styling)
+  const handleUpdateOverlayProperties = useCallback((updates: Partial<TextOverlay | DateOverlay>) => {
+    if (!selectedOverlayId) return;
+    
+    setOverlays(prev => prev.map(overlay => 
+      overlay.id === selectedOverlayId
+        ? { ...overlay, ...updates, updatedAt: new Date().toISOString() }
+        : overlay
+    ));
+  }, [selectedOverlayId]);
+
+  // Delete an overlay
+  const handleDeleteOverlay = useCallback((id: string) => {
+    setOverlays(prev => prev.filter(overlay => overlay.id !== id));
+    if (selectedOverlayId === id) {
+      setSelectedOverlayId(null);
+      styleSheetRef.current?.close();
+    }
+    console.log('[Editor] Deleted overlay:', id);
+  }, [selectedOverlayId]);
+
+  // Delete selected overlay (from style sheet)
+  const handleDeleteSelectedOverlay = useCallback(() => {
+    if (selectedOverlayId) {
+      handleDeleteOverlay(selectedOverlayId);
+    }
+  }, [selectedOverlayId, handleDeleteOverlay]);
+
+  // Get currently selected overlay
+  const selectedOverlay = useMemo(() => 
+    overlays.find(o => o.id === selectedOverlayId) || null,
+    [overlays, selectedOverlayId]
+  );
+
   // Perform save draft operation
   const performSaveDraft = useCallback(async (navigateAfterSave: boolean = true) => {
     if (!template) return;
@@ -560,7 +747,7 @@ export default function EditorScreen() {
     }
 
     try {
-      await saveDraft({
+      const savedDraft = await saveDraft({
         templateId: template.id,
         beforeImageUri: beforeUri || null,
         afterImageUri: afterUri || null,
@@ -571,13 +758,24 @@ export default function EditorScreen() {
         localPreviewPath: localPreviewPath,
       });
       
+      // Save overlays locally if there are any
+      if (savedDraft && overlays.length > 0) {
+        try {
+          await saveOverlays(savedDraft.id, overlays);
+          console.log(`[Editor] Saved ${overlays.length} overlays with draft`);
+        } catch (overlayError) {
+          console.error('[Editor] Failed to save overlays:', overlayError);
+          // Non-critical, don't throw
+        }
+      }
+      
       if (navigateAfterSave) {
         router.push('/(tabs)');
       }
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath, overlays]);
 
   // Save draft - shows confirmation dialog first
   const handleSaveDraft = useCallback(() => {
@@ -700,18 +898,45 @@ export default function EditorScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Template Canvas with rendered preview from Templated.io */}
-          <TemplateCanvas
-            template={template}
-            onSlotPress={handleSlotPress}
-            renderedPreviewUri={renderedPreviewUri}
-            isRendering={isRendering}
-            onPreviewError={handlePreviewError}
-            isPremium={isPremium}
-          />
+          <View style={styles.canvasWrapper}>
+            <TemplateCanvas
+              template={template}
+              onSlotPress={handleSlotPress}
+              renderedPreviewUri={renderedPreviewUri}
+              isRendering={isRendering}
+              onPreviewError={handlePreviewError}
+              isPremium={isPremium}
+            />
+            
+            {/* Overlay Layer - renders overlays on top of canvas */}
+            {overlays.length > 0 && canvasDimensions.width > 0 && (
+              <View style={[styles.overlayContainer, { width: canvasDimensions.width, height: canvasDimensions.height }]}>
+                <OverlayLayer
+                  overlays={overlays}
+                  selectedOverlayId={selectedOverlayId}
+                  canvasWidth={canvasDimensions.width}
+                  canvasHeight={canvasDimensions.height}
+                  onSelectOverlay={handleSelectOverlay}
+                  onUpdateOverlayTransform={handleUpdateOverlayTransform}
+                  onDeleteOverlay={handleDeleteOverlay}
+                />
+              </View>
+            )}
+          </View>
         </ScrollView>
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
+          {/* Overlay Action Bar - show when all slots are filled */}
+          {allSlotsFilled && !isRendering && (
+            <OverlayActionBar
+              isPremium={isPremium}
+              disabled={isGenerating || paywallState === 'presenting'}
+              onAddOverlay={handleAddOverlay}
+              onRequestPremium={handleRequestPremiumForOverlay}
+            />
+          )}
+
           {/* Remove Watermark Toggle - only show for FREE users when preview is ready */}
           {allSlotsFilled && !isRendering && !isPremium && !isPremiumLoading && (
             <TouchableOpacity
@@ -801,6 +1026,14 @@ export default function EditorScreen() {
           )}
         </View>
       </SafeAreaView>
+
+      {/* Overlay Style Sheet - for customizing text/date overlays */}
+      <OverlayStyleSheet
+        bottomSheetRef={styleSheetRef}
+        overlay={selectedOverlay}
+        onUpdateOverlay={handleUpdateOverlayProperties}
+        onDeleteOverlay={handleDeleteSelectedOverlay}
+      />
     </View>
   );
 }
@@ -860,6 +1093,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 20,
+  },
+  canvasWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  overlayContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    overflow: 'hidden',
+    borderRadius: 6,
   },
   bottomSection: {
     paddingHorizontal: 20,
