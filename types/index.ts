@@ -2,6 +2,52 @@ export type ContentType = 'single' | 'carousel' | 'video';
 export type TemplateFormat = '4:5' | '1:1' | '9:16';
 
 // ============================================
+// App Configuration Types (Force Update)
+// ============================================
+
+/**
+ * App configuration from Supabase for remote control
+ * Used for forced updates and other app-wide settings
+ */
+export interface AppConfig {
+  id: string;
+  minIosVersion: string;
+  minAndroidVersion: string;
+  forceUpdateEnabled: boolean;
+  updateMessage: string;
+  storeUrlIos: string | null;
+  storeUrlAndroid: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Database row type for app_config (snake_case from Supabase)
+ */
+export interface AppConfigRow {
+  id: string;
+  min_ios_version: string;
+  min_android_version: string;
+  force_update_enabled: boolean;
+  update_message: string;
+  store_url_ios: string | null;
+  store_url_android: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Force update check result
+ */
+export interface ForceUpdateStatus {
+  isRequired: boolean;
+  message: string;
+  storeUrl: string | null;
+  currentVersion: string;
+  minimumVersion: string;
+}
+
+// ============================================
 // Platform & Publishing Types
 // ============================================
 

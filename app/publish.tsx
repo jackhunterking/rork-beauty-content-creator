@@ -13,10 +13,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { Image } from 'expo-image';
-import { 
+import {
   Download, 
   Share2, 
   Check,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -141,6 +143,8 @@ export default function PublishScreen() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isCreatingPortfolio, setIsCreatingPortfolio] = useState(true);
+  const [portfolioSaveError, setPortfolioSaveError] = useState<string | null>(null);
+  const [portfolioSaved, setPortfolioSaved] = useState(false);
 
   // Track if portfolio was created to avoid duplicate creation
   const portfolioCreatedRef = useRef(false);
@@ -172,6 +176,94 @@ export default function PublishScreen() {
     return 'Vertical (9:16) - Perfect for Instagram Stories and TikTok';
   }, [format]);
 
+  // Extract error message for better UX
+  const getErrorMessage = useCallback((error: unknown): string => {
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('format')) {
+        return 'This format is not supported. Please try again.';
+      } else if (msg.includes('authenticated') || msg.includes('user must be')) {
+        return 'Please sign in to save to your portfolio.';
+      } else if (msg.includes('storage') || msg.includes('upload')) {
+        return 'Failed to upload image. Please check your connection.';
+      } else if (msg.includes('network') || msg.includes('fetch')) {
+        return 'Network error. Please check your connection and try again.';
+      }
+    }
+    return 'Failed to save to your portfolio. Please try again.';
+  }, []);
+
+  // Portfolio creation function (reusable for retry)
+  const saveToPortfolio = useCallback(async (): Promise<boolean> => {
+    if (!previewUri || !templateId) {
+      return false;
+    }
+
+    setIsCreatingPortfolio(true);
+    setPortfolioSaveError(null);
+
+    try {
+      console.log('[Publish] Creating portfolio item...');
+      
+      // IMPORTANT: If previewUri is a local file path (file://), we need to upload it
+      // to Supabase storage to get a permanent cloud URL. Local file paths only exist
+      // on the device and will break when app is reinstalled or viewed on another device.
+      let finalImageUrl = previewUri;
+      
+      if (previewUri.startsWith('file://')) {
+        console.log('[Publish] Uploading local preview to cloud storage...');
+        try {
+          // Upload to Supabase storage and get permanent cloud URL
+          const cloudUrl = await uploadToStorage(previewUri, `portfolio-${templateId}`);
+          finalImageUrl = cloudUrl;
+          console.log('[Publish] Preview uploaded to cloud:', cloudUrl);
+        } catch (uploadError) {
+          console.error('[Publish] Failed to upload preview to cloud:', uploadError);
+          throw new Error('Failed to upload image to storage');
+        }
+      } else {
+        console.log('[Publish] Using existing cloud URL:', previewUri);
+      }
+      
+      const item = await createPortfolioItem({
+        draftId,
+        templateId,
+        templateName,
+        imageUrl: finalImageUrl,
+        format,
+        hasWatermark,
+        publishedTo: [],
+      });
+
+      console.log('[Publish] Portfolio item created:', item.id);
+
+      // Refresh portfolio so Portfolio tab shows the new item
+      refreshPortfolio();
+
+      // Delete the draft if it exists (it's now in portfolio)
+      if (draftId) {
+        try {
+          console.log('[Publish] Deleting draft:', draftId);
+          await deleteDraft(draftId);
+          console.log('[Publish] Draft deleted successfully');
+        } catch (error) {
+          console.warn('[Publish] Failed to delete draft:', error);
+        }
+      }
+
+      setPortfolioSaved(true);
+      return true;
+
+    } catch (error) {
+      console.error('[Publish] Failed to create portfolio item:', error);
+      const errorMessage = getErrorMessage(error);
+      setPortfolioSaveError(errorMessage);
+      return false;
+    } finally {
+      setIsCreatingPortfolio(false);
+    }
+  }, [previewUri, templateId, templateName, draftId, format, hasWatermark, deleteDraft, refreshPortfolio, getErrorMessage]);
+
   // Auto-create portfolio item on mount (draft becomes portfolio item)
   useEffect(() => {
     const createPortfolio = async () => {
@@ -181,70 +273,19 @@ export default function PublishScreen() {
       }
 
       portfolioCreatedRef.current = true;
-
-      try {
-        console.log('[Publish] Creating portfolio item...');
-        
-        // IMPORTANT: If previewUri is a local file path (file://), we need to upload it
-        // to Supabase storage to get a permanent cloud URL. Local file paths only exist
-        // on the device and will break when app is reinstalled or viewed on another device.
-        let finalImageUrl = previewUri;
-        
-        if (previewUri.startsWith('file://')) {
-          console.log('[Publish] Uploading local preview to cloud storage...');
-          try {
-            // Upload to Supabase storage and get permanent cloud URL
-            const cloudUrl = await uploadToStorage(previewUri, `portfolio-${templateId}`);
-            finalImageUrl = cloudUrl;
-            console.log('[Publish] Preview uploaded to cloud:', cloudUrl);
-          } catch (uploadError) {
-            console.error('[Publish] Failed to upload preview to cloud:', uploadError);
-            // Fall back to original URL - this will cause issues but better than failing entirely
-            // The user can still share/download from the current session
-          }
-        } else {
-          console.log('[Publish] Using existing cloud URL:', previewUri);
-        }
-        
-        const item = await createPortfolioItem({
-          draftId,
-          templateId,
-          templateName,
-          imageUrl: finalImageUrl,
-          format,
-          hasWatermark,
-          publishedTo: [],
-        });
-
-        console.log('[Publish] Portfolio item created:', item.id);
-
-        // Refresh portfolio so Portfolio tab shows the new item
-        refreshPortfolio();
-
-        // Delete the draft if it exists (it's now in portfolio)
-        if (draftId) {
-          try {
-            console.log('[Publish] Deleting draft:', draftId);
-            await deleteDraft(draftId);
-            console.log('[Publish] Draft deleted successfully');
-          } catch (error) {
-            console.warn('[Publish] Failed to delete draft:', error);
-          }
-        }
-
-        // Note: Don't reset project here - it causes the Editor (still in stack) to redirect
-        // We'll reset when user clicks Done
-
-      } catch (error) {
-        console.error('[Publish] Failed to create portfolio item:', error);
-        Alert.alert('Error', 'Failed to save to your portfolio. Please try again.');
-      } finally {
-        setIsCreatingPortfolio(false);
-      }
+      await saveToPortfolio();
     };
 
     createPortfolio();
-  }, [previewUri, templateId, templateName, draftId, format, hasWatermark, deleteDraft, refreshPortfolio]);
+  }, [previewUri, templateId, saveToPortfolio]);
+
+  // Handle retry portfolio save
+  const handleRetryPortfolioSave = useCallback(async () => {
+    const success = await saveToPortfolio();
+    if (success) {
+      showToastMessage('Saved to portfolio!');
+    }
+  }, [saveToPortfolio, showToastMessage]);
 
   // Show toast and auto-hide
   const showToastMessage = useCallback((message: string) => {
@@ -345,6 +386,32 @@ export default function PublishScreen() {
                 />
               )}
             </View>
+            
+            {/* Portfolio Save Error with Retry */}
+            {portfolioSaveError && !isCreatingPortfolio && (
+              <View style={styles.portfolioErrorContainer}>
+                <View style={styles.portfolioErrorContent}>
+                  <AlertCircle size={18} color={Colors.light.error} />
+                  <Text style={styles.portfolioErrorText}>{portfolioSaveError}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.retryButton}
+                  onPress={handleRetryPortfolioSave}
+                  activeOpacity={0.8}
+                >
+                  <RefreshCw size={14} color={Colors.light.surface} />
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            {/* Portfolio Saved Success */}
+            {portfolioSaved && !portfolioSaveError && !isCreatingPortfolio && (
+              <View style={styles.portfolioSuccessContainer}>
+                <Check size={16} color={Colors.light.success} />
+                <Text style={styles.portfolioSuccessText}>Saved to portfolio</Text>
+              </View>
+            )}
           </View>
 
           {/* Platform Options */}
@@ -562,5 +629,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: Colors.light.surface,
+  },
+
+  // Portfolio Error
+  portfolioErrorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEE8E8',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  portfolioErrorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  portfolioErrorText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.light.error,
+    flex: 1,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.light.error,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.light.surface,
+  },
+
+  // Portfolio Success
+  portfolioSuccessContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(52, 199, 89, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  portfolioSuccessText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.light.success,
   },
 });

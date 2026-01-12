@@ -2,6 +2,12 @@ import { supabase } from '@/lib/supabase';
 import { PortfolioItem, PortfolioRow, TemplateFormat, PublishPlatform } from '@/types';
 
 /**
+ * Supported format values for portfolio items
+ * Must match the database constraint in portfolio table
+ */
+const SUPPORTED_FORMATS: readonly TemplateFormat[] = ['4:5', '1:1', '9:16'] as const;
+
+/**
  * Helper to get the current authenticated user ID
  * Throws an error if no user is authenticated
  */
@@ -87,6 +93,11 @@ export async function getPortfolioItem(id: string): Promise<PortfolioItem | null
  * Automatically associates the item with the current user
  */
 export async function createPortfolioItem(item: Omit<PortfolioItem, 'id' | 'createdAt' | 'userId'>): Promise<PortfolioItem> {
+  // Validate format before attempting database insert
+  if (!SUPPORTED_FORMATS.includes(item.format)) {
+    throw new Error(`Unsupported format: ${item.format}. Supported formats: ${SUPPORTED_FORMATS.join(', ')}`);
+  }
+  
   // Get current user ID to associate with the portfolio item
   const userId = await getCurrentUserId();
   

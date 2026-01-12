@@ -7,6 +7,8 @@ import { SuperwallProvider, useSuperwallEvents, usePlacement } from "expo-superw
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import AnimatedSplash from "@/components/AnimatedSplash";
+import ForceUpdateScreen from "@/components/ForceUpdateScreen";
+import { useForceUpdate } from "@/hooks/useForceUpdate";
 import { 
   hasCompletedOnboarding,
   hasPendingSurveyData,
@@ -165,47 +167,41 @@ function OnboardingFlowHandler({
   }, [splashComplete, isAuthenticated]);
 
   // Listen for Superwall events using the recommended useSuperwallEvents hook
-  // app_install placement fires automatically - we just need to listen for events
+  // IMPORTANT: This hook is for GLOBAL analytics/tracking only, NOT for navigation.
+  // Navigation is handled by the usePlacement hook above, which only fires for
+  // placements registered through that specific hook instance (app_install).
+  // Feature-gating paywalls (e.g., remove_watermark) use their own usePlacement hooks.
   useSuperwallEvents({
-    // Called when paywall is presented
+    // Called when paywall is presented - for logging/analytics only
     onPaywallPresent: (info) => {
-      console.log('[Onboarding] Paywall presented:', info.name);
+      console.log('[Superwall] Paywall presented:', info.name);
     },
     
-    // Called when paywall is dismissed (user tapped Free or completed purchase)
+    // Called when paywall is dismissed - for logging/analytics only
+    // DO NOT navigate here - this fires for ALL paywalls (feature-gating + onboarding)
+    // Navigation for onboarding is handled by usePlacement.onDismiss above
     onPaywallDismiss: (info, result) => {
-      console.log('[Onboarding] Paywall dismissed:', info.name, 'Result:', result);
-      // Navigate to auth screen after paywall is dismissed
-      // Use replace to prevent going back to non-authenticated state
-      if (!hasNavigatedToAuth.current) {
-        hasNavigatedToAuth.current = true;
-        router.replace('/auth/onboarding-auth');
-      }
+      console.log('[Superwall] Paywall dismissed:', info.name, 'Result:', result);
     },
     
-    // Called when paywall is skipped (user already completed onboarding)
+    // Called when paywall is skipped (user already completed onboarding or has subscription)
     onPaywallSkip: (reason) => {
-      console.log('[Onboarding] Paywall skipped:', reason);
+      console.log('[Superwall] Paywall skipped:', reason);
       // Mark as complete since Superwall determined they don't need to see it
       setOnboardingComplete(true);
       onOnboardingComplete();
     },
     
-    // Called on error
+    // Called on error - for logging only
+    // DO NOT navigate here - this fires for ALL paywalls
     onPaywallError: (error) => {
-      console.error('[Onboarding] Paywall error:', error);
-      // On error, still go to auth
-      // Use replace to prevent going back to non-authenticated state
-      if (!hasNavigatedToAuth.current) {
-        hasNavigatedToAuth.current = true;
-        router.replace('/auth/onboarding-auth');
-      }
+      console.error('[Superwall] Paywall error:', error);
     },
     
-    // Capture all Superwall events including survey responses
+    // Capture all Superwall events including survey responses - for analytics
     onSuperwallEvent: async (eventInfo) => {
       const eventName = eventInfo.event?.event || eventInfo.event;
-      console.log('[Onboarding] Superwall event:', eventName);
+      console.log('[Superwall] Event:', eventName);
       
       // Capture survey response events and user attribute changes
       // Superwall sets attributes when user selects industry/goal options
@@ -215,9 +211,9 @@ function OnboardingFlowHandler({
         try {
           const surveyData = parseSuperWallSurveyData(eventInfo.params || {});
           await storePendingSurveyData(surveyData);
-          console.log('[Onboarding] Captured survey data:', surveyData);
+          console.log('[Superwall] Captured survey data:', surveyData);
         } catch (error) {
-          console.error('[Onboarding] Error storing survey data:', error);
+          console.error('[Superwall] Error storing survey data:', error);
         }
       }
     },
@@ -301,6 +297,16 @@ function RootLayoutInner() {
   const [splashComplete, setSplashComplete] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
+  // Force update check - runs after splash completes
+  const {
+    isUpdateRequired,
+    updateMessage,
+    storeUrl,
+    currentVersion,
+    minimumVersion,
+    hasChecked: forceUpdateChecked,
+  } = useForceUpdate(splashComplete);
+
   const handleSplashAnimationEnd = useCallback(() => {
     setShowAnimatedSplash(false);
     setSplashComplete(true);
@@ -310,14 +316,26 @@ function RootLayoutInner() {
     setOnboardingComplete(true);
   }, []);
 
+  // If force update is required, block the entire app
+  if (forceUpdateChecked && isUpdateRequired) {
+    return (
+      <ForceUpdateScreen
+        message={updateMessage}
+        storeUrl={storeUrl}
+        currentVersion={currentVersion}
+        minimumVersion={minimumVersion}
+      />
+    );
+  }
+
   return (
     <AppProvider>
       <RootLayoutNav />
       {showAnimatedSplash && (
         <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
       )}
-      {/* Onboarding flow handler - runs after splash */}
-      {!onboardingComplete && (
+      {/* Onboarding flow handler - runs after splash and force update check */}
+      {!onboardingComplete && forceUpdateChecked && (
         <OnboardingFlowHandler 
           splashComplete={splashComplete}
           onOnboardingComplete={handleOnboardingComplete}

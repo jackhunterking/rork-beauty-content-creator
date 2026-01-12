@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowD
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { ImagePlus, ChevronLeft } from "lucide-react-native";
+import { ImagePlus, ChevronLeft, Zap, ZapOff } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { processImageForDimensions } from "@/utils/imageProcessing";
@@ -33,6 +33,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [flashEnabled, setFlashEnabled] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
@@ -179,6 +180,10 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     }
   }, [previewUri, handleRetake, onBack]);
 
+  const toggleFlash = useCallback(() => {
+    setFlashEnabled(prev => !prev);
+  }, []);
+
   // Permission not yet determined
   if (!permission) {
     return <View style={styles.container} />;
@@ -211,6 +216,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
             ref={cameraRef} 
             style={StyleSheet.absoluteFillObject} 
             facing="back"
+            flash={flashEnabled ? 'on' : 'off'}
           />
         </View>
       )}
@@ -268,7 +274,13 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
             
-            <View style={styles.spacerLarge} />
+            <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
+              {flashEnabled ? (
+                <Zap size={22} color={Colors.light.accent} />
+              ) : (
+                <ZapOff size={22} color={Colors.light.surface} />
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </SafeAreaView>
@@ -331,9 +343,6 @@ const styles = StyleSheet.create({
   spacer: {
     width: 40,
   },
-  spacerLarge: {
-    width: 50,
-  },
   dimensionBadge: {
     backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: 12,
@@ -353,6 +362,14 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   importButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(60,60,60,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  flashButton: {
     width: 50,
     height: 50,
     borderRadius: 25,

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import {
   FolderOpen,
   Plus,
@@ -302,6 +303,7 @@ const BottomSheet = ({
 };
 
 export default function PortfolioScreen() {
+  const router = useRouter();
   const {
     portfolio,
     isPortfolioLoading,
@@ -424,8 +426,8 @@ export default function PortfolioScreen() {
 
   // Handle start creating
   const handleStartCreating = useCallback(() => {
-    // Navigate to create tab - handled by tab navigation
-  }, []);
+    router.push('/(tabs)');
+  }, [router]);
 
   // Render a portfolio card (clean, no overlays)
   const renderPortfolioCard = useCallback(

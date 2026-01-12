@@ -712,33 +712,27 @@ export default function EditorScreen() {
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
-          {/* Remove Watermark Toggle - only show when preview is ready */}
-          {allSlotsFilled && !isRendering && (
+          {/* Remove Watermark Toggle - only show for FREE users when preview is ready */}
+          {allSlotsFilled && !isRendering && !isPremium && !isPremiumLoading && (
             <TouchableOpacity
-              style={[
-                styles.watermarkToggleRow,
-                isPremium && styles.watermarkToggleRowActive,
-              ]}
+              style={styles.watermarkToggleRow}
               onPress={handleRemoveWatermarkToggle}
-              disabled={isPremium || isPremiumLoading || paywallState === 'presenting'}
+              disabled={paywallState === 'presenting'}
               activeOpacity={0.7}
             >
               <View style={styles.watermarkToggleLeft}>
                 <Crown 
                   size={18} 
-                  color={isPremium ? Colors.light.accent : Colors.light.textSecondary} 
+                  color={Colors.light.textSecondary} 
                 />
-                <Text style={[
-                  styles.watermarkToggleText,
-                  isPremium && styles.watermarkToggleTextActive,
-                ]}>
+                <Text style={styles.watermarkToggleText}>
                   Remove Watermark
                 </Text>
               </View>
               <Switch
-                value={isPremium}
+                value={false}
                 onValueChange={handleRemoveWatermarkToggle}
-                disabled={isPremium || isPremiumLoading || paywallState === 'presenting'}
+                disabled={paywallState === 'presenting'}
                 trackColor={{ 
                   false: Colors.light.border, 
                   true: Colors.light.accent 
@@ -912,10 +906,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.light.border,
   },
-  watermarkToggleRowActive: {
-    borderColor: Colors.light.accent,
-    backgroundColor: 'rgba(201, 168, 124, 0.08)',
-  },
   watermarkToggleLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -925,10 +915,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: Colors.light.textSecondary,
-  },
-  watermarkToggleTextActive: {
-    color: Colors.light.text,
-    fontWeight: '600',
   },
   errorContainer: {
     flexDirection: 'row',
