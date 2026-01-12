@@ -15,7 +15,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import BottomSheet from '@gorhom/bottom-sheet';
+import ViewShot from 'react-native-view-shot';
 import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -104,6 +106,13 @@ export default function EditorScreen() {
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const styleSheetRef = useRef<BottomSheet>(null);
+  
+  // Track initial overlay state for change detection
+  const initialOverlaysRef = useRef<Overlay[]>([]);
+  const hasSetInitialOverlaysRef = useRef(false);
+  
+  // ViewShot ref for capturing canvas with overlays
+  const viewShotRef = useRef<ViewShot>(null);
 
   // Calculate canvas dimensions (matching TemplateCanvas logic)
   const canvasDimensions = useMemo(() => {
@@ -180,6 +189,8 @@ export default function EditorScreen() {
       // Reset overlays when template changes
       setOverlays([]);
       setSelectedOverlayId(null);
+      initialOverlaysRef.current = [];
+      hasSetInitialOverlaysRef.current = false;
       
       currentTemplateIdRef.current = newTemplateId;
     }
@@ -189,6 +200,11 @@ export default function EditorScreen() {
   useEffect(() => {
     const loadDraftOverlays = async () => {
       if (!currentProject.draftId) {
+        // No draft - set initial state as empty
+        if (!hasSetInitialOverlaysRef.current) {
+          initialOverlaysRef.current = [];
+          hasSetInitialOverlaysRef.current = true;
+        }
         return;
       }
       
@@ -198,8 +214,19 @@ export default function EditorScreen() {
           console.log(`[Editor] Loaded ${savedOverlays.length} overlays from draft`);
           setOverlays(savedOverlays);
         }
+        // Set initial overlay state for change detection
+        if (!hasSetInitialOverlaysRef.current) {
+          initialOverlaysRef.current = savedOverlays;
+          hasSetInitialOverlaysRef.current = true;
+          console.log(`[Editor] Captured initial overlay state: ${savedOverlays.length} overlays`);
+        }
       } catch (error) {
         console.error('[Editor] Failed to load overlays:', error);
+        // Set empty initial state on error
+        if (!hasSetInitialOverlaysRef.current) {
+          initialOverlaysRef.current = [];
+          hasSetInitialOverlaysRef.current = true;
+        }
       }
     };
     
@@ -409,29 +436,55 @@ export default function EditorScreen() {
     }
   }, [template, router]);
 
-  // Check if user has made any ACTUAL changes since opening
+  // Check if user has made any ACTUAL changes since opening (including overlays)
   const hasUnsavedChanges = useMemo(() => {
-    if (capturedCount === 0) return false;
-    if (!hasSetInitialStateRef.current) return false;
-    
-    const initialState = initialCapturedImagesRef.current;
-    
-    const allSlotIds = new Set([
-      ...Object.keys(capturedImages),
-      ...Object.keys(initialState),
-    ]);
-    
-    for (const slotId of allSlotIds) {
-      const currentUri = capturedImages[slotId]?.uri || null;
-      const initialUri = initialState[slotId] || null;
+    // Check image changes
+    if (capturedCount > 0 && hasSetInitialStateRef.current) {
+      const initialState = initialCapturedImagesRef.current;
       
-      if (currentUri !== initialUri) {
+      const allSlotIds = new Set([
+        ...Object.keys(capturedImages),
+        ...Object.keys(initialState),
+      ]);
+      
+      for (const slotId of allSlotIds) {
+        const currentUri = capturedImages[slotId]?.uri || null;
+        const initialUri = initialState[slotId] || null;
+        
+        if (currentUri !== initialUri) {
+          return true;
+        }
+      }
+    }
+    
+    // Check overlay changes
+    if (hasSetInitialOverlaysRef.current) {
+      const initialOverlays = initialOverlaysRef.current;
+      
+      // Different number of overlays means changes
+      if (overlays.length !== initialOverlays.length) {
         return true;
+      }
+      
+      // Check if any overlay was modified
+      for (let i = 0; i < overlays.length; i++) {
+        const current = overlays[i];
+        const initial = initialOverlays.find(o => o.id === current.id);
+        
+        if (!initial) {
+          // New overlay added
+          return true;
+        }
+        
+        // Check if overlay was modified (compare updatedAt)
+        if (current.updatedAt !== initial.updatedAt) {
+          return true;
+        }
       }
     }
     
     return false;
-  }, [capturedImages, capturedCount]);
+  }, [capturedImages, capturedCount, overlays]);
 
   // Handle back navigation confirmation
   const showBackConfirmation = useCallback(() => {
@@ -439,6 +492,14 @@ export default function EditorScreen() {
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
     const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
+
+    // Build capturedImageUris map with ALL slot images for proper save
+    const capturedImageUris: Record<string, string> = {};
+    for (const [slotId, media] of Object.entries(capturedImages)) {
+      if (media?.uri) {
+        capturedImageUris[slotId] = media.uri;
+      }
+    }
 
     Alert.alert(
       'Unsaved Changes',
@@ -463,15 +524,28 @@ export default function EditorScreen() {
           onPress: async () => {
             if (!template) return;
             try {
-              await saveDraft({
+              const savedDraft = await saveDraft({
                 templateId: template.id,
                 beforeImageUri: beforeUri || null,
                 afterImageUri: afterUri || null,
                 existingDraftId: currentProject.draftId || undefined,
+                capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
                 renderedPreviewUrl: renderedPreviewUri,
                 wasRenderedAsPremium: isPremium,
                 localPreviewPath: localPreviewPath,
               });
+              
+              // Save overlays with the draft
+              if (savedDraft && overlays.length > 0) {
+                try {
+                  await saveOverlays(savedDraft.id, overlays);
+                  console.log(`[Editor] Saved ${overlays.length} overlays via back button`);
+                } catch (overlayError) {
+                  console.error('[Editor] Failed to save overlays:', overlayError);
+                  // Non-critical, continue navigation
+                }
+              }
+              
               allowNavigationRef.current = true;
               router.back();
             } catch (error) {
@@ -482,7 +556,7 @@ export default function EditorScreen() {
       ],
       { cancelable: true }
     );
-  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath]);
+  }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath, overlays]);
 
   // Handle back button press with unsaved changes check
   const handleBackPress = useCallback(() => {
@@ -807,6 +881,42 @@ export default function EditorScreen() {
     );
   }, [template, capturedCount, performSaveDraft]);
 
+  // Capture the canvas with overlays using ViewShot
+  const captureCanvasWithOverlays = useCallback(async (): Promise<string | null> => {
+    if (!viewShotRef.current) {
+      console.warn('[Editor] ViewShot ref not available');
+      return null;
+    }
+    
+    try {
+      // Deselect any selected overlay before capture to hide selection UI
+      setSelectedOverlayId(null);
+      
+      // Small delay to ensure selection UI is hidden
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Capture the view
+      const uri = await viewShotRef.current.capture();
+      
+      if (uri) {
+        // Save the captured image to a permanent location
+        const filename = `canvas_overlay_${Date.now()}.jpg`;
+        const destUri = `${FileSystem.cacheDirectory}${filename}`;
+        
+        // Move from temp to cache
+        await FileSystem.copyAsync({ from: uri, to: destUri });
+        
+        console.log('[Editor] Captured canvas with overlays:', destUri);
+        return destUri;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[Editor] Failed to capture canvas:', error);
+      return null;
+    }
+  }, []);
+
   // Handle Generate button - show animation then navigate to publish screen
   const handleGenerate = useCallback(async () => {
     if (!canProceed || !template || isGenerating) return;
@@ -825,6 +935,22 @@ export default function EditorScreen() {
       }
     }
     
+    // Determine final preview URI
+    // If there are overlays, capture the canvas with overlays
+    // Otherwise, use the rendered preview from Templated.io
+    let finalPreviewUri = renderedPreviewUri || '';
+    
+    if (overlays.length > 0) {
+      console.log('[Editor] Capturing canvas with overlays for final generation');
+      const capturedUri = await captureCanvasWithOverlays();
+      if (capturedUri) {
+        finalPreviewUri = capturedUri;
+        console.log('[Editor] Using captured canvas URI:', finalPreviewUri);
+      } else {
+        console.warn('[Editor] Capture failed, falling back to rendered preview');
+      }
+    }
+    
     // After animation delay, navigate to publish screen
     // Use replace() so Editor is removed from stack and won't react to state changes
     setTimeout(() => {
@@ -834,7 +960,7 @@ export default function EditorScreen() {
           draftId: currentProject.draftId || '',
           templateId: template.id,
           templateName: template.name,
-          previewUri: renderedPreviewUri || '',
+          previewUri: finalPreviewUri,
           format: template.format,
           hasWatermark: (!isPremium).toString(),
         }
@@ -842,8 +968,8 @@ export default function EditorScreen() {
       
       // Reset generating state after navigation
       setTimeout(() => setIsGenerating(false), 500);
-    }, 1500);
-  }, [canProceed, currentProject.draftId, template, renderedPreviewUri, isPremium, router, isGenerating, hasUnsavedChanges, performSaveDraft]);
+    }, 1000); // Reduced delay since we already waited for capture
+  }, [canProceed, currentProject.draftId, template, renderedPreviewUri, isPremium, router, isGenerating, hasUnsavedChanges, performSaveDraft, overlays, captureCanvasWithOverlays]);
 
   if (!template) {
     return null;
@@ -899,29 +1025,40 @@ export default function EditorScreen() {
         >
           {/* Template Canvas with rendered preview from Templated.io */}
           <View style={styles.canvasWrapper}>
-            <TemplateCanvas
-              template={template}
-              onSlotPress={handleSlotPress}
-              renderedPreviewUri={renderedPreviewUri}
-              isRendering={isRendering}
-              onPreviewError={handlePreviewError}
-              isPremium={isPremium}
-            />
-            
-            {/* Overlay Layer - renders overlays on top of canvas */}
-            {overlays.length > 0 && canvasDimensions.width > 0 && (
-              <View style={[styles.overlayContainer, { width: canvasDimensions.width, height: canvasDimensions.height }]}>
-                <OverlayLayer
-                  overlays={overlays}
-                  selectedOverlayId={selectedOverlayId}
-                  canvasWidth={canvasDimensions.width}
-                  canvasHeight={canvasDimensions.height}
-                  onSelectOverlay={handleSelectOverlay}
-                  onUpdateOverlayTransform={handleUpdateOverlayTransform}
-                  onDeleteOverlay={handleDeleteOverlay}
-                />
-              </View>
-            )}
+            {/* ViewShot wrapper for capturing canvas with overlays */}
+            <ViewShot
+              ref={viewShotRef}
+              options={{
+                format: 'jpg',
+                quality: 0.95,
+                result: 'tmpfile',
+              }}
+              style={[styles.canvasAndOverlayWrapper, { width: canvasDimensions.width, height: canvasDimensions.height }]}
+            >
+              <TemplateCanvas
+                template={template}
+                onSlotPress={handleSlotPress}
+                renderedPreviewUri={renderedPreviewUri}
+                isRendering={isRendering}
+                onPreviewError={handlePreviewError}
+                isPremium={isPremium}
+              />
+              
+              {/* Overlay Layer - renders overlays on top of canvas */}
+              {canvasDimensions.width > 0 && (
+                <View style={[styles.overlayContainer, { width: canvasDimensions.width, height: canvasDimensions.height }]}>
+                  <OverlayLayer
+                    overlays={overlays}
+                    selectedOverlayId={selectedOverlayId}
+                    canvasWidth={canvasDimensions.width}
+                    canvasHeight={canvasDimensions.height}
+                    onSelectOverlay={handleSelectOverlay}
+                    onUpdateOverlayTransform={handleUpdateOverlayTransform}
+                    onDeleteOverlay={handleDeleteOverlay}
+                  />
+                </View>
+              )}
+            </ViewShot>
           </View>
         </ScrollView>
 
@@ -1098,12 +1235,17 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
   },
+  // Canvas and overlay container wrapper - ensures overlay aligns with canvas
+  canvasAndOverlayWrapper: {
+    position: 'relative',
+  },
   overlayContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     overflow: 'hidden',
     borderRadius: 6,
+    pointerEvents: 'box-none',
   },
   bottomSection: {
     paddingHorizontal: 20,

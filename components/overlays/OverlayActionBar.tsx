@@ -2,13 +2,14 @@
  * OverlayActionBar Component
  * 
  * Action bar displayed above the Generate button in the Editor.
- * Contains buttons to add Date, Text, and Logo overlays.
+ * Contains rows to add Date, Text, and Logo overlays.
  * Features premium gating via Superwall.
+ * UI styled to match the Remove Watermark toggle row.
  */
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
-import { Calendar, Type, Image as ImageIcon, Crown } from 'lucide-react-native';
+import { Calendar, Type, Image as ImageIcon, Crown, ChevronRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { OverlayType } from '@/types/overlays';
@@ -25,39 +26,45 @@ interface OverlayActionBarProps {
   onRequestPremium: (featureName: string) => void;
 }
 
-interface ActionButtonProps {
+interface OverlayRowProps {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
   isPremium: boolean;
   disabled?: boolean;
+  isLast?: boolean;
 }
 
-function ActionButton({ icon, label, onPress, isPremium, disabled }: ActionButtonProps) {
+function OverlayRow({ icon, label, onPress, isPremium, disabled, isLast }: OverlayRowProps) {
   return (
     <TouchableOpacity
       style={[
-        styles.actionButton,
-        disabled && styles.actionButtonDisabled,
+        styles.overlayRow,
+        !isLast && styles.overlayRowBorder,
+        disabled && styles.overlayRowDisabled,
       ]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.7}
     >
-      <View style={styles.iconContainer}>
-        {icon}
+      <View style={styles.overlayRowLeft}>
         {!isPremium && (
-          <View style={styles.crownBadge}>
-            <Crown size={10} color={Colors.light.surface} />
-          </View>
+          <Crown size={16} color={Colors.light.accent} style={styles.crownIcon} />
         )}
+        <View style={styles.overlayIconContainer}>
+          {icon}
+        </View>
+        <Text style={[
+          styles.overlayRowText,
+          disabled && styles.overlayRowTextDisabled,
+        ]}>
+          {label}
+        </Text>
       </View>
-      <Text style={[
-        styles.actionLabel,
-        disabled && styles.actionLabelDisabled,
-      ]}>
-        {label}
-      </Text>
+      <ChevronRight 
+        size={18} 
+        color={disabled ? Colors.light.textTertiary : Colors.light.textSecondary} 
+      />
     </TouchableOpacity>
   );
 }
@@ -153,36 +160,43 @@ export function OverlayActionBar({
 
   return (
     <View style={styles.container}>
-      <View style={styles.divider} />
-      
-      <View style={styles.actionsRow}>
+      {/* Section Header */}
+      <View style={styles.headerRow}>
         <Text style={styles.sectionLabel}>Add Overlay</Text>
+        {!isPremium && (
+          <View style={styles.proBadge}>
+            <Crown size={12} color={Colors.light.surface} />
+            <Text style={styles.proBadgeText}>PRO</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Overlay Options as Rows */}
+      <View style={styles.rowsContainer}>
+        <OverlayRow
+          icon={<Calendar size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
+          label="Add Date"
+          onPress={handleAddDate}
+          isPremium={isPremium}
+          disabled={disabled}
+        />
         
-        <View style={styles.buttonsContainer}>
-          <ActionButton
-            icon={<Calendar size={20} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-            label="Date"
-            onPress={handleAddDate}
-            isPremium={isPremium}
-            disabled={disabled}
-          />
-          
-          <ActionButton
-            icon={<Type size={20} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-            label="Text"
-            onPress={handleAddText}
-            isPremium={isPremium}
-            disabled={disabled}
-          />
-          
-          <ActionButton
-            icon={<ImageIcon size={20} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
-            label="Logo"
-            onPress={handleAddLogo}
-            isPremium={isPremium}
-            disabled={disabled}
-          />
-        </View>
+        <OverlayRow
+          icon={<Type size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
+          label="Add Text"
+          onPress={handleAddText}
+          isPremium={isPremium}
+          disabled={disabled}
+        />
+        
+        <OverlayRow
+          icon={<ImageIcon size={18} color={disabled ? Colors.light.textTertiary : Colors.light.text} />}
+          label="Add Logo"
+          onPress={handleAddLogo}
+          isPremium={isPremium}
+          disabled={disabled}
+          isLast
+        />
       </View>
     </View>
   );
@@ -192,67 +206,77 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 12,
   },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginBottom: 12,
-  },
-  actionsRow: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
   sectionLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.light.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
   },
-  buttonsContainer: {
+  proBadge: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  actionButton: {
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    gap: 4,
+    backgroundColor: Colors.light.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  actionButtonDisabled: {
+  proBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.light.surface,
+    letterSpacing: 0.5,
+  },
+  rowsContainer: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    overflow: 'hidden',
+  },
+  overlayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.light.surface,
+  },
+  overlayRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.border,
+  },
+  overlayRowDisabled: {
     opacity: 0.5,
   },
-  iconContainer: {
-    position: 'relative',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  overlayRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  crownIcon: {
+    marginRight: -4,
+  },
+  overlayIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     backgroundColor: Colors.light.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
   },
-  crownBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: Colors.light.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.light.surface,
-  },
-  actionLabel: {
-    fontSize: 12,
+  overlayRowText: {
+    fontSize: 15,
     fontWeight: '500',
     color: Colors.light.text,
   },
-  actionLabelDisabled: {
+  overlayRowTextDisabled: {
     color: Colors.light.textTertiary,
   },
 });

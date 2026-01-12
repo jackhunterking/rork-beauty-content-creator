@@ -2,7 +2,7 @@
  * OverlayStyleSheet Component
  * 
  * Bottom sheet for customizing text and date overlay styles.
- * Includes font picker, color picker, size slider, and date format picker.
+ * Includes font picker, color picker, size slider/input, and date format picker.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -14,8 +14,9 @@ import {
   ScrollView,
   TextInput,
   Platform,
+  Keyboard,
 } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -43,7 +44,7 @@ interface OverlayStyleSheetProps {
   onDeleteOverlay: () => void;
 }
 
-// Slider component for font size
+// Slider component for font size with editable input
 interface SliderProps {
   value: number;
   min: number;
@@ -53,31 +54,72 @@ interface SliderProps {
 }
 
 function SimpleSlider({ value, min, max, step, onChange }: SliderProps) {
+  const [inputValue, setInputValue] = useState(value.toString());
+  const [isEditing, setIsEditing] = useState(false);
   const percentage = ((value - min) / (max - min)) * 100;
   
   const handlePress = useCallback((event: { nativeEvent: { locationX: number } }, width: number) => {
     const newPercentage = Math.max(0, Math.min(100, (event.nativeEvent.locationX / width) * 100));
     const newValue = min + (newPercentage / 100) * (max - min);
     const steppedValue = Math.round(newValue / step) * step;
-    onChange(Math.max(min, Math.min(max, steppedValue)));
+    const clampedValue = Math.max(min, Math.min(max, steppedValue));
+    onChange(clampedValue);
+    setInputValue(clampedValue.toString());
   }, [min, max, step, onChange]);
 
+  // Handle direct input change
+  const handleInputChange = useCallback((text: string) => {
+    // Allow only numbers
+    const numericText = text.replace(/[^0-9]/g, '');
+    setInputValue(numericText);
+  }, []);
+
+  // Handle input submit/blur
+  const handleInputSubmit = useCallback(() => {
+    setIsEditing(false);
+    const numValue = parseInt(inputValue, 10);
+    if (!isNaN(numValue)) {
+      const clampedValue = Math.max(min, Math.min(max, numValue));
+      onChange(clampedValue);
+      setInputValue(clampedValue.toString());
+    } else {
+      setInputValue(value.toString());
+    }
+    Keyboard.dismiss();
+  }, [inputValue, min, max, value, onChange]);
+
+  // Sync input value when value prop changes (e.g., from slider)
+  React.useEffect(() => {
+    if (!isEditing) {
+      setInputValue(value.toString());
+    }
+  }, [value, isEditing]);
+
   return (
-    <View 
-      style={styles.sliderContainer}
-      onLayout={(e) => {
-        // Store width for calculations
-      }}
-    >
+    <View style={styles.sliderContainer}>
       <TouchableOpacity
         style={styles.sliderTrack}
-        onPress={(e) => handlePress(e, 280)}
+        onPress={(e) => handlePress(e, 220)}
         activeOpacity={1}
       >
         <View style={[styles.sliderFill, { width: `${percentage}%` }]} />
         <View style={[styles.sliderThumb, { left: `${percentage}%` }]} />
       </TouchableOpacity>
-      <Text style={styles.sliderValue}>{value}pt</Text>
+      <View style={styles.sizeInputContainer}>
+        <TextInput
+          style={styles.sizeInput}
+          value={inputValue}
+          onChangeText={handleInputChange}
+          onFocus={() => setIsEditing(true)}
+          onBlur={handleInputSubmit}
+          onSubmitEditing={handleInputSubmit}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          selectTextOnFocus
+          maxLength={3}
+        />
+        <Text style={styles.sizeUnit}>pt</Text>
+      </View>
     </View>
   );
 }
@@ -173,177 +215,186 @@ export function OverlayStyleSheet({
       snapPoints={snapPoints}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
     >
-      <BottomSheetView style={styles.content}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {overlay.type === 'date' ? 'Date Style' : 'Text Style'}
-            </Text>
+      <BottomSheetScrollView 
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>
+            {overlay.type === 'date' ? 'Date Style' : 'Text Style'}
+          </Text>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={onDeleteOverlay}
+            activeOpacity={0.7}
+          >
+            <Trash2 size={18} color={Colors.light.error} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Text Input (for text overlays) */}
+        {overlay.type === 'text' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Text</Text>
+            <TextInput
+              style={styles.textInput}
+              value={(overlay as TextOverlay).content}
+              onChangeText={handleTextChange}
+              placeholder="Enter your text"
+              placeholderTextColor={Colors.light.textTertiary}
+              multiline
+              maxLength={100}
+            />
+          </View>
+        )}
+
+        {/* Date Picker (for date overlays) */}
+        {overlay.type === 'date' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Date</Text>
             <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={onDeleteOverlay}
+              style={styles.dateButton}
+              onPress={() => setShowDatePicker(true)}
               activeOpacity={0.7}
             >
-              <Trash2 size={18} color={Colors.light.error} />
+              <Text style={styles.dateButtonText}>
+                {new Date((overlay as DateOverlay).date).toLocaleDateString()}
+              </Text>
             </TouchableOpacity>
-          </View>
-
-          {/* Text Input (for text overlays) */}
-          {overlay.type === 'text' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Text</Text>
-              <TextInput
-                style={styles.textInput}
-                value={(overlay as TextOverlay).content}
-                onChangeText={handleTextChange}
-                placeholder="Enter your text"
-                placeholderTextColor={Colors.light.textTertiary}
-                multiline
-                maxLength={100}
-              />
-            </View>
-          )}
-
-          {/* Date Picker (for date overlays) */}
-          {overlay.type === 'date' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Date</Text>
-              <TouchableOpacity
-                style={styles.dateButton}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.dateButtonText}>
-                  {new Date((overlay as DateOverlay).date).toLocaleDateString()}
-                </Text>
-              </TouchableOpacity>
-              
-              {showDatePicker && (
+            
+            {showDatePicker && (
+              <View style={styles.datePickerContainer}>
                 <DateTimePicker
                   value={new Date((overlay as DateOverlay).date)}
                   mode="date"
                   display={Platform.OS === 'ios' ? 'inline' : 'default'}
                   onChange={handleDateChange}
+                  style={styles.datePicker}
                 />
-              )}
-
-              {/* Date Format Picker */}
-              <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Format</Text>
-              <View style={styles.formatOptions}>
-                {DATE_FORMAT_OPTIONS.map((format) => (
-                  <TouchableOpacity
-                    key={format.id}
-                    style={[
-                      styles.formatOption,
-                      (overlay as DateOverlay).format === format.id && styles.formatOptionSelected,
-                    ]}
-                    onPress={() => handleDateFormatChange(format.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.formatLabel,
-                      (overlay as DateOverlay).format === format.id && styles.formatLabelSelected,
-                    ]}>
-                      {format.example}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Font Picker */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Font</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.fontScroll}
-            >
-              {FONT_OPTIONS.map((font) => (
+            {/* Date Format Picker */}
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Format</Text>
+            <View style={styles.formatOptions}>
+              {DATE_FORMAT_OPTIONS.map((format) => (
                 <TouchableOpacity
-                  key={font.id}
+                  key={format.id}
                   style={[
-                    styles.fontOption,
-                    textOverlay.fontFamily === font.id && styles.fontOptionSelected,
+                    styles.formatOption,
+                    (overlay as DateOverlay).format === format.id && styles.formatOptionSelected,
                   ]}
-                  onPress={() => handleFontChange(font.id)}
+                  onPress={() => handleDateFormatChange(format.id)}
                   activeOpacity={0.7}
                 >
                   <Text style={[
-                    styles.fontLabel,
-                    textOverlay.fontFamily === font.id && styles.fontLabelSelected,
+                    styles.formatLabel,
+                    (overlay as DateOverlay).format === format.id && styles.formatLabelSelected,
                   ]}>
-                    {font.label}
+                    {format.example}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Color Picker */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Color</Text>
-            <View style={styles.colorGrid}>
-              {COLOR_PRESETS.map((color) => (
-                <TouchableOpacity
-                  key={color}
-                  style={[
-                    styles.colorOption,
-                    { backgroundColor: color },
-                    textOverlay.color === color && styles.colorOptionSelected,
-                  ]}
-                  onPress={() => handleColorChange(color)}
-                  activeOpacity={0.7}
-                >
-                  {textOverlay.color === color && (
-                    <Check 
-                      size={16} 
-                      color={isLightColor(color) ? '#000' : '#FFF'} 
-                    />
-                  )}
                 </TouchableOpacity>
               ))}
             </View>
           </View>
+        )}
 
-          {/* Font Size Slider */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Size</Text>
-            <SimpleSlider
-              value={textOverlay.fontSize}
-              min={FONT_SIZE_CONSTRAINTS.min}
-              max={FONT_SIZE_CONSTRAINTS.max}
-              step={FONT_SIZE_CONSTRAINTS.step}
-              onChange={handleFontSizeChange}
-            />
-          </View>
+        {/* Font Picker */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Font</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.fontScroll}
+            nestedScrollEnabled
+          >
+            {FONT_OPTIONS.map((font) => (
+              <TouchableOpacity
+                key={font.id}
+                style={[
+                  styles.fontOption,
+                  textOverlay.fontFamily === font.id && styles.fontOptionSelected,
+                ]}
+                onPress={() => handleFontChange(font.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={[
+                  styles.fontLabel,
+                  textOverlay.fontFamily === font.id && styles.fontLabelSelected,
+                ]}>
+                  {font.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-          {/* Text Shadow Toggle */}
-          <View style={styles.section}>
-            <TouchableOpacity
-              style={styles.toggleRow}
-              onPress={handleShadowToggle}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.toggleLabel}>Text Shadow</Text>
-              <View style={[
-                styles.toggle,
-                textOverlay.textShadow && styles.toggleActive,
-              ]}>
-                {textOverlay.textShadow && (
-                  <Check size={14} color={Colors.light.surface} />
+        {/* Color Picker */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Color</Text>
+          <View style={styles.colorGrid}>
+            {COLOR_PRESETS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: color },
+                  textOverlay.color === color && styles.colorOptionSelected,
+                ]}
+                onPress={() => handleColorChange(color)}
+                activeOpacity={0.7}
+              >
+                {textOverlay.color === color && (
+                  <Check 
+                    size={16} 
+                    color={isLightColor(color) ? '#000' : '#FFF'} 
+                  />
                 )}
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            ))}
           </View>
+        </View>
 
-          {/* Bottom padding */}
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </BottomSheetView>
+        {/* Font Size Slider with Input */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Size</Text>
+          <SimpleSlider
+            value={textOverlay.fontSize}
+            min={FONT_SIZE_CONSTRAINTS.min}
+            max={FONT_SIZE_CONSTRAINTS.max}
+            step={FONT_SIZE_CONSTRAINTS.step}
+            onChange={handleFontSizeChange}
+          />
+        </View>
+
+        {/* Text Shadow Toggle */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.toggleRow}
+            onPress={handleShadowToggle}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.toggleLabel}>Text Shadow</Text>
+            <View style={[
+              styles.toggle,
+              textOverlay.textShadow && styles.toggleActive,
+            ]}>
+              {textOverlay.textShadow && (
+                <Check size={14} color={Colors.light.surface} />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom padding for safe scrolling */}
+        <View style={{ height: 60 }} />
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 }
@@ -364,6 +415,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  scrollContent: {
+    paddingBottom: 20,
   },
   emptyContent: {
     flex: 1,
@@ -420,6 +474,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: Colors.light.text,
+  },
+  // Date picker container - ensures full width
+  datePickerContainer: {
+    width: '100%',
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  datePicker: {
+    width: '100%',
   },
   formatOptions: {
     flexDirection: 'row',
@@ -525,12 +588,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
-  sliderValue: {
-    fontSize: 14,
+  // Size input styles
+  sizeInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 70,
+  },
+  sizeInput: {
+    fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
-    width: 50,
-    textAlign: 'right',
+    textAlign: 'center',
+    minWidth: 30,
+    paddingVertical: 2,
+  },
+  sizeUnit: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginLeft: 2,
   },
   toggleRow: {
     flexDirection: 'row',
