@@ -301,7 +301,7 @@ const BottomSheet = ({
   );
 };
 
-export default function WorkScreen() {
+export default function PortfolioScreen() {
   const {
     portfolio,
     isPortfolioLoading,
@@ -458,7 +458,7 @@ export default function WorkScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Work</Text>
+        <Text style={styles.title}>Portfolio</Text>
       </View>
 
       {/* Format Filter Row */}
@@ -500,11 +500,11 @@ export default function WorkScreen() {
             <FolderOpen size={48} color={Colors.light.textTertiary} />
           </View>
           <Text style={styles.emptyTitle}>
-            {portfolio.length === 0 ? 'Build your portfolio' : `No ${selectedFormat} works yet`}
+            {portfolio.length === 0 ? 'Build your portfolio' : `No ${selectedFormat} items yet`}
           </Text>
           <Text style={styles.emptyText}>
             {portfolio.length === 0 
-              ? 'Your finished creations will appear here. Start creating to showcase your work!'
+              ? 'Your finished creations will appear here. Start creating to showcase your portfolio!'
               : `You haven't created any ${selectedFormat === '1:1' ? 'square' : 'vertical'} content yet.`
             }
           </Text>

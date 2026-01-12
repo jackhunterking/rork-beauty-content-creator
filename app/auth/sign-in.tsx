@@ -129,7 +129,7 @@ export default function SignInScreen() {
           <View style={styles.header}>
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>
-              Sign in to sync your work across devices
+              Sign in to sync your portfolio across devices
             </Text>
           </View>
 

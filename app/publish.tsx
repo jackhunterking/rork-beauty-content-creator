@@ -172,7 +172,7 @@ export default function PublishScreen() {
     return 'Vertical (9:16) - Perfect for Instagram Stories and TikTok';
   }, [format]);
 
-  // Auto-create portfolio item on mount (draft becomes work)
+  // Auto-create portfolio item on mount (draft becomes portfolio item)
   useEffect(() => {
     const createPortfolio = async () => {
       if (portfolioCreatedRef.current || !previewUri || !templateId) {
@@ -218,10 +218,10 @@ export default function PublishScreen() {
 
         console.log('[Publish] Portfolio item created:', item.id);
 
-        // Refresh portfolio so Work tab shows the new item
+        // Refresh portfolio so Portfolio tab shows the new item
         refreshPortfolio();
 
-        // Delete the draft if it exists (it's now a work)
+        // Delete the draft if it exists (it's now in portfolio)
         if (draftId) {
           try {
             console.log('[Publish] Deleting draft:', draftId);
@@ -237,7 +237,7 @@ export default function PublishScreen() {
 
       } catch (error) {
         console.error('[Publish] Failed to create portfolio item:', error);
-        Alert.alert('Error', 'Failed to save your work. Please try again.');
+        Alert.alert('Error', 'Failed to save to your portfolio. Please try again.');
       } finally {
         setIsCreatingPortfolio(false);
       }

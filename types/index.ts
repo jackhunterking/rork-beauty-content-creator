@@ -27,7 +27,7 @@ export interface PlatformOption {
 
 /**
  * Portfolio item - created when user completes publish flow
- * Represents finished work that appears in the Work tab
+ * Represents finished creations that appear in the Portfolio tab
  */
 export interface PortfolioItem {
   id: string;
@@ -339,6 +339,9 @@ export interface Template {
   
   // Available themes for this template (future)
   themes?: TemplateTheme[];
+  
+  // Whether this template requires Pro subscription
+  isPremium: boolean;
 }
 
 // Templated.io layer structure
@@ -393,6 +396,8 @@ export interface TemplateRow {
   watermarked_preview_url: string | null;
   // Source of truth for layers
   layers_json: TemplatedLayer[] | null;
+  // Whether this template requires Pro subscription
+  is_premium: boolean;
 }
 
 // ============================================
@@ -530,6 +535,10 @@ export interface UserProfile {
   avatarUrl?: string;
   createdAt: string;
   updatedAt: string;
+  // Onboarding survey data
+  industry?: string;
+  goal?: string;
+  onboardingCompletedAt?: string;
 }
 
 /**
@@ -543,7 +552,39 @@ export interface ProfileRow {
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
+  // Onboarding survey data
+  industry: string | null;
+  goal: string | null;
+  onboarding_completed_at: string | null;
 }
+
+/**
+ * Onboarding survey data collected from Superwall
+ */
+export interface OnboardingSurveyData {
+  industry: string;
+  goal: string;
+}
+
+/**
+ * Industry options for onboarding survey
+ */
+export type OnboardingIndustry = 
+  | 'beauty_wellness'
+  | 'medical_aesthetic'
+  | 'body_art'
+  | 'fitness_health'
+  | 'photography'
+  | 'other';
+
+/**
+ * Goal options for onboarding survey (single selection)
+ */
+export type OnboardingGoal = 
+  | 'get_customers'
+  | 'online_presence'
+  | 'showcase_work'
+  | 'stand_out';
 
 /**
  * Auth provider types supported

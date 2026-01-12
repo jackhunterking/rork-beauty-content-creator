@@ -96,6 +96,8 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     framePreviewUrl,
     // Source of truth for dynamic slots
     layersJson: row.layers_json || undefined,
+    // Premium template flag - requires Pro subscription when true
+    isPremium: row.is_premium ?? false,
   };
 }
 

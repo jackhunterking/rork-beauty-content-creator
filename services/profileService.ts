@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { UserProfile, ProfileRow } from '@/types';
+import { UserProfile, ProfileRow, OnboardingSurveyData } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 
@@ -21,6 +21,10 @@ function transformProfile(row: ProfileRow): UserProfile {
     avatarUrl: row.avatar_url ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    // Onboarding fields
+    industry: row.industry ?? undefined,
+    goal: row.goal ?? undefined,
+    onboardingCompletedAt: row.onboarding_completed_at ?? undefined,
   };
 }
 
@@ -249,5 +253,61 @@ export async function deleteAllUserData(userId: string): Promise<{ success: bool
   } catch (error: any) {
     console.error('[Profile] Error deleting user data:', error);
     return { success: false, error: error.message || 'Failed to delete user data' };
+  }
+}
+
+/**
+ * Save onboarding survey data to user profile
+ * Called after user completes onboarding flow and authenticates
+ */
+export async function saveOnboardingData(
+  userId: string,
+  surveyData: OnboardingSurveyData
+): Promise<{ success: boolean; profile?: UserProfile; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        industry: surveyData.industry,
+        goal: surveyData.goal,
+        onboarding_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[Profile] Error saving onboarding data:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log('[Profile] Saved onboarding data for user:', userId);
+    return { success: true, profile: transformProfile(data as ProfileRow) };
+  } catch (error: any) {
+    console.error('[Profile] Error saving onboarding data:', error);
+    return { success: false, error: error.message || 'Failed to save onboarding data' };
+  }
+}
+
+/**
+ * Check if user has completed onboarding
+ */
+export async function hasUserCompletedOnboarding(userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('onboarding_completed_at')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) {
+      return false;
+    }
+
+    return !!data.onboarding_completed_at;
+  } catch (error) {
+    console.error('[Profile] Error checking onboarding status:', error);
+    return false;
   }
 }

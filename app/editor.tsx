@@ -543,7 +543,7 @@ export default function EditorScreen() {
   }, [isPremium, requestPremiumAccess]);
 
   // Perform save draft operation
-  const performSaveDraft = useCallback(async () => {
+  const performSaveDraft = useCallback(async (navigateAfterSave: boolean = true) => {
     if (!template) return;
 
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
@@ -551,18 +551,29 @@ export default function EditorScreen() {
     const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
     const afterUri = afterSlot ? capturedImages[afterSlot.layerId]?.uri : null;
 
+    // Build capturedImageUris map with ALL slot images
+    const capturedImageUris: Record<string, string> = {};
+    for (const [slotId, media] of Object.entries(capturedImages)) {
+      if (media?.uri) {
+        capturedImageUris[slotId] = media.uri;
+      }
+    }
+
     try {
       await saveDraft({
         templateId: template.id,
         beforeImageUri: beforeUri || null,
         afterImageUri: afterUri || null,
         existingDraftId: currentProject.draftId || undefined,
+        capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
         renderedPreviewUrl: renderedPreviewUri,
         wasRenderedAsPremium: isPremium,
         localPreviewPath: localPreviewPath,
       });
       
-      router.push('/(tabs)');
+      if (navigateAfterSave) {
+        router.push('/(tabs)');
+      }
     } catch (error) {
       console.error('Failed to save draft:', error);
     }
@@ -599,11 +610,22 @@ export default function EditorScreen() {
   }, [template, capturedCount, performSaveDraft]);
 
   // Handle Generate button - show animation then navigate to publish screen
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!canProceed || !template || isGenerating) return;
     
     // Start generation animation
     setIsGenerating(true);
+    
+    // Auto-save draft if there are unsaved changes (without navigation)
+    // This ensures all captured images are persisted before going to publish
+    if (hasUnsavedChanges) {
+      try {
+        await performSaveDraft(false);
+      } catch (error) {
+        console.error('Failed to auto-save before generate:', error);
+        // Continue to publish even if save fails - images are still in memory
+      }
+    }
     
     // After animation delay, navigate to publish screen
     // Use replace() so Editor is removed from stack and won't react to state changes
@@ -623,7 +645,7 @@ export default function EditorScreen() {
       // Reset generating state after navigation
       setTimeout(() => setIsGenerating(false), 500);
     }, 1500);
-  }, [canProceed, currentProject.draftId, template, renderedPreviewUri, isPremium, router, isGenerating]);
+  }, [canProceed, currentProject.draftId, template, renderedPreviewUri, isPremium, router, isGenerating, hasUnsavedChanges, performSaveDraft]);
 
   if (!template) {
     return null;

@@ -1,10 +1,51 @@
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Plus, FolderOpen, Settings } from "lucide-react-native";
-import React from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View, ActivityIndicator } from "react-native";
 import Colors from "@/constants/colors";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { hasCompletedOnboarding } from "@/services/onboardingService";
 
 export default function TabLayout() {
+  const { isAuthenticated, isLoading, user } = useAuthContext();
+  const router = useRouter();
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+
+  // Check if onboarding is complete
+  useEffect(() => {
+    hasCompletedOnboarding(user?.id).then(setOnboardingDone);
+  }, [user?.id]);
+
+  // Redirect to auth screen if not authenticated and onboarding not complete
+  useEffect(() => {
+    // Wait until we have all the info we need
+    if (isLoading || onboardingDone === null) return;
+    
+    // If user hasn't completed onboarding and isn't authenticated, redirect to auth
+    if (!isAuthenticated && !onboardingDone) {
+      router.replace('/auth/onboarding-auth');
+    }
+  }, [isLoading, isAuthenticated, onboardingDone, router]);
+
+  // Show loading state while checking auth status
+  // This blocks access to tabs until we confirm authentication
+  if (isLoading || onboardingDone === null) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+      </View>
+    );
+  }
+
+  // Block access if not authenticated and onboarding not complete
+  if (!isAuthenticated && !onboardingDone) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Colors.light.accent} />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -29,7 +70,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          title: "Work",
+          title: "Portfolio",
           tabBarIcon: ({ color }) => <FolderOpen color={color} size={22} />,
         }}
       />
@@ -45,6 +86,12 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.background,
+  },
   tabBar: {
     backgroundColor: Colors.light.surface,
     borderTopColor: Colors.light.borderLight,

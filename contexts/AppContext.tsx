@@ -11,7 +11,7 @@ import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
 
 const STORAGE_KEYS = {
-  WORK: 'beauty_work',
+  LEGACY_PORTFOLIO: 'beauty_work', // Keep same key for backwards compatibility
   BRAND_KIT: 'beauty_brand_kit',
 };
 
@@ -28,7 +28,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   
   // Local state for optimistic updates
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [work, setWork] = useState<SavedAsset[]>([]);
+  const [legacyPortfolio, setLegacyPortfolio] = useState<SavedAsset[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [brandKit, setBrandKit] = useState<BrandKit>({
@@ -79,11 +79,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setTemplates(realtimeTemplates);
   }, [realtimeTemplates]);
 
-  // Legacy work query (kept for backwards compatibility)
-  const workQuery = useQuery({
-    queryKey: ['work'],
+  // Legacy portfolio query (kept for backwards compatibility)
+  const legacyPortfolioQuery = useQuery({
+    queryKey: ['legacyPortfolio'],
     queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.WORK);
+      const stored = await AsyncStorage.getItem(STORAGE_KEYS.LEGACY_PORTFOLIO);
       return stored ? (JSON.parse(stored) as SavedAsset[]) : [];
     },
   });
@@ -114,8 +114,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   });
 
   useEffect(() => {
-    if (workQuery.data) setWork(workQuery.data);
-  }, [workQuery.data]);
+    if (legacyPortfolioQuery.data) setLegacyPortfolio(legacyPortfolioQuery.data);
+  }, [legacyPortfolioQuery.data]);
 
   useEffect(() => {
     if (brandKitQuery.data) setBrandKit(brandKitQuery.data);
@@ -146,28 +146,28 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, [templates]);
 
-  // Legacy save to work mutation (kept for backwards compatibility)
-  const saveToWorkMutation = useMutation({
+  // Legacy save to portfolio mutation (kept for backwards compatibility)
+  const saveToLegacyPortfolioMutation = useMutation({
     mutationFn: async (asset: SavedAsset) => {
-      const updated = [asset, ...work];
-      await AsyncStorage.setItem(STORAGE_KEYS.WORK, JSON.stringify(updated));
+      const updated = [asset, ...legacyPortfolio];
+      await AsyncStorage.setItem(STORAGE_KEYS.LEGACY_PORTFOLIO, JSON.stringify(updated));
       return updated;
     },
     onSuccess: (data) => {
-      setWork(data);
-      queryClient.invalidateQueries({ queryKey: ['work'] });
+      setLegacyPortfolio(data);
+      queryClient.invalidateQueries({ queryKey: ['legacyPortfolio'] });
     },
   });
 
-  const deleteFromWorkMutation = useMutation({
+  const deleteFromLegacyPortfolioMutation = useMutation({
     mutationFn: async (assetId: string) => {
-      const updated = work.filter(a => a.id !== assetId);
-      await AsyncStorage.setItem(STORAGE_KEYS.WORK, JSON.stringify(updated));
+      const updated = legacyPortfolio.filter(a => a.id !== assetId);
+      await AsyncStorage.setItem(STORAGE_KEYS.LEGACY_PORTFOLIO, JSON.stringify(updated));
       return updated;
     },
     onSuccess: (data) => {
-      setWork(data);
-      queryClient.invalidateQueries({ queryKey: ['work'] });
+      setLegacyPortfolio(data);
+      queryClient.invalidateQueries({ queryKey: ['legacyPortfolio'] });
     },
   });
 
@@ -190,6 +190,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeImageUri, 
       afterImageUri,
       existingDraftId,
+      capturedImageUris,
       renderedPreviewUrl,
       wasRenderedAsPremium,
       localPreviewPath,
@@ -198,6 +199,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeImageUri: string | null; 
       afterImageUri: string | null;
       existingDraftId?: string;
+      capturedImageUris?: Record<string, string>;
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;
@@ -207,7 +209,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         beforeImageUri, 
         afterImageUri, 
         existingDraftId,
-        undefined,
+        capturedImageUris,
         renderedPreviewUrl,
         wasRenderedAsPremium,
         localPreviewPath
@@ -401,27 +403,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const capturedImages: CapturedImages = {};
     const slotStates: SlotStates = {};
     
+    // Initialize all slots as empty
     slots.forEach(slot => {
       slotStates[slot.layerId] = { state: 'empty' };
     });
     
-    if (draft.capturedImageUrls) {
-      for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
-        const slot = slots.find(s => s.layerId === layerId);
-        if (slot && url) {
-          capturedImages[layerId] = {
-            uri: url,
-            width: slot.width,
-            height: slot.height,
-          };
-          slotStates[layerId] = { state: 'ready' };
-        }
-      }
-    }
-    
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     
+    // Step 1: Load from legacy before/after fields first (as fallback for old drafts)
     if (draft.beforeImageUrl && beforeSlot) {
       capturedImages[beforeSlot.layerId] = {
         uri: draft.beforeImageUrl,
@@ -440,16 +430,33 @@ export const [AppProvider, useApp] = createContextHook(() => {
       slotStates[afterSlot.layerId] = { state: 'ready' };
     }
     
-    const beforeMedia = draft.beforeImageUrl && template.beforeSlot ? {
-      uri: draft.beforeImageUrl,
-      width: template.beforeSlot.width,
-      height: template.beforeSlot.height,
+    // Step 2: Load from capturedImageUrls (overrides legacy fields for newer drafts)
+    // This ensures the most recent saved data takes precedence
+    if (draft.capturedImageUrls) {
+      for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
+        const slot = slots.find(s => s.layerId === layerId);
+        if (slot && url) {
+          capturedImages[layerId] = {
+            uri: url,
+            width: slot.width,
+            height: slot.height,
+          };
+          slotStates[layerId] = { state: 'ready' };
+        }
+      }
+    }
+    
+    // Derive beforeMedia and afterMedia from the loaded capturedImages
+    const beforeMedia = beforeSlot && capturedImages[beforeSlot.layerId] ? {
+      uri: capturedImages[beforeSlot.layerId].uri,
+      width: beforeSlot.width,
+      height: beforeSlot.height,
     } : null;
     
-    const afterMedia = draft.afterImageUrl && template.afterSlot ? {
-      uri: draft.afterImageUrl,
-      width: template.afterSlot.width,
-      height: template.afterSlot.height,
+    const afterMedia = afterSlot && capturedImages[afterSlot.layerId] ? {
+      uri: capturedImages[afterSlot.layerId].uri,
+      width: afterSlot.width,
+      height: afterSlot.height,
     } : null;
     
     setSlotStatesMap(slotStates);
@@ -486,8 +493,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     templatesError,
     refetchTemplates,
     
-    // Legacy work state (kept for backwards compatibility)
-    work,
+    // Legacy portfolio state (kept for backwards compatibility)
+    legacyPortfolio,
     
     // Portfolio state (new)
     portfolio,
@@ -501,7 +508,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     brandKit,
     currentProject,
     selectedFormat,
-    isLoading: isTemplatesLoading || workQuery.isLoading,
+    isLoading: isTemplatesLoading || legacyPortfolioQuery.isLoading,
     
     // Slot state management
     slotStates,
@@ -513,8 +520,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Actions
     toggleFavourite,
-    saveToWork: (asset: SavedAsset) => saveToWorkMutation.mutate(asset),
-    deleteFromWork: (id: string) => deleteFromWorkMutation.mutate(id),
+    saveToLegacyPortfolio: (asset: SavedAsset) => saveToLegacyPortfolioMutation.mutate(asset),
+    deleteFromLegacyPortfolio: (id: string) => deleteFromLegacyPortfolioMutation.mutate(id),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,
     setFormat,
@@ -537,6 +544,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       beforeImageUri: string | null; 
       afterImageUri: string | null;
       existingDraftId?: string;
+      capturedImageUris?: Record<string, string>;
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;

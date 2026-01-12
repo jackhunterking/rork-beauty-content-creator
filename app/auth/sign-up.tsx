@@ -123,7 +123,7 @@ export default function SignUpScreen() {
           <View style={styles.header}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>
-              Sign up to sync your work and access premium features
+              Sign up to sync your portfolio and access premium features
             </Text>
           </View>
 

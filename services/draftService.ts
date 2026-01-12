@@ -4,6 +4,32 @@ import { uploadDraftImage, deleteDraftImages } from './storageService';
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory } from './localStorageService';
 
 /**
+ * Helper to check if a URI is already uploaded to Supabase Storage
+ * Returns true if the URI is a Supabase storage URL, false if it's a local file
+ */
+function isSupabaseStorageUrl(uri: string | null | undefined): boolean {
+  if (!uri) return false;
+  
+  // Check for common Supabase storage URL patterns
+  // Pattern 1: Contains 'supabase.co/storage'
+  // Pattern 2: Contains the project ID followed by '.supabase.co'
+  const isSupabaseUrl = (
+    uri.includes('supabase.co/storage') ||
+    uri.includes('.supabase.co/') ||
+    // Also check for direct storage URLs
+    (uri.startsWith('https://') && uri.includes('/storage/v1/object/'))
+  );
+  
+  // Local files start with 'file://' or are absolute paths starting with '/'
+  const isLocalFile = uri.startsWith('file://') || (uri.startsWith('/') && !uri.startsWith('//'));
+  
+  // If it's explicitly a local file, it's not a Supabase URL
+  if (isLocalFile) return false;
+  
+  return isSupabaseUrl;
+}
+
+/**
  * Convert database row (snake_case) to Draft type (camelCase)
  */
 function mapRowToDraft(row: DraftRow): Draft {
@@ -243,31 +269,40 @@ export async function saveDraftWithImages(
 
     // Handle legacy before/after format
     // Upload before image if it's a new local file
-    if (beforeImageUri && !beforeImageUri.includes('supabase')) {
+    if (beforeImageUri && !isSupabaseStorageUrl(beforeImageUri)) {
+      console.log('[DraftService] Uploading before image from local:', beforeImageUri.substring(0, 50));
       beforeImageUrl = await uploadDraftImage(draft.id, beforeImageUri, 'before');
     } else if (beforeImageUri === null) {
       beforeImageUrl = null;
+    } else if (beforeImageUri) {
+      // Keep existing Supabase URL
+      beforeImageUrl = beforeImageUri;
     }
 
     // Upload after image if it's a new local file
-    if (afterImageUri && !afterImageUri.includes('supabase')) {
+    if (afterImageUri && !isSupabaseStorageUrl(afterImageUri)) {
+      console.log('[DraftService] Uploading after image from local:', afterImageUri.substring(0, 50));
       afterImageUrl = await uploadDraftImage(draft.id, afterImageUri, 'after');
     } else if (afterImageUri === null) {
       afterImageUrl = null;
+    } else if (afterImageUri) {
+      // Keep existing Supabase URL
+      afterImageUrl = afterImageUri;
     }
 
     // Handle new dynamic captured images format
     if (capturedImageUris) {
-      for (const [slotId, localUri] of Object.entries(capturedImageUris)) {
-        if (localUri && !localUri.includes('supabase')) {
+      for (const [slotId, uri] of Object.entries(capturedImageUris)) {
+        if (uri && !isSupabaseStorageUrl(uri)) {
           // Upload new local image
-          const publicUrl = await uploadDraftImage(draft.id, localUri, slotId);
+          console.log(`[DraftService] Uploading slot ${slotId} from local:`, uri.substring(0, 50));
+          const publicUrl = await uploadDraftImage(draft.id, uri, slotId);
           capturedImageUrls[slotId] = publicUrl;
-        } else if (localUri) {
+        } else if (uri) {
           // Keep existing Supabase URL
-          capturedImageUrls[slotId] = localUri;
+          capturedImageUrls[slotId] = uri;
         }
-        // If localUri is empty/null, the slot will be removed from capturedImageUrls
+        // If uri is empty/null, the slot will be removed from capturedImageUrls
       }
     }
 

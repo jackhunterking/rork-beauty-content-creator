@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  TextInput,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { 
@@ -17,12 +19,12 @@ import {
   Check, 
   LogOut,
   Trash2,
-  HelpCircle,
-  Mail,
   FileText,
   Shield,
   RefreshCw,
   ExternalLink,
+  MessageCircle,
+  Send,
 } from "lucide-react-native";
 import React, { useState } from "react";
 import { useRouter } from "expo-router";
@@ -30,13 +32,12 @@ import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
 import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
+import { submitFeedback } from "@/services/feedbackService";
 
 // App configuration - replace with your actual URLs
 const APP_CONFIG = {
-  supportEmail: 'support@beautycontentcreator.com',
-  helpCenterUrl: 'https://beautycontentcreator.com/help',
-  privacyPolicyUrl: 'https://beautycontentcreator.com/privacy',
-  termsOfServiceUrl: 'https://beautycontentcreator.com/terms',
+  privacyPolicyUrl: 'https://www.resulta.app/privacy',
+  termsOfServiceUrl: 'https://www.resulta.app/terms',
 };
 
 export default function SettingsScreen() {
@@ -58,6 +59,11 @@ export default function SettingsScreen() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
+  
+  // Feedback state
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
   // Handle Upgrade to Pro button press
   const handleUpgradeToPro = async () => {
@@ -159,15 +165,28 @@ export default function SettingsScreen() {
     );
   };
 
+  // Handle Send Feedback
+  const handleSendFeedback = async () => {
+    if (!feedbackMessage.trim() || isSendingFeedback) return;
+    
+    Keyboard.dismiss();
+    setIsSendingFeedback(true);
+    
+    const result = await submitFeedback(feedbackMessage);
+    
+    setIsSendingFeedback(false);
+    
+    if (result.success) {
+      setFeedbackMessage('');
+      setFeedbackSent(true);
+      // Reset success message after 3 seconds
+      setTimeout(() => setFeedbackSent(false), 3000);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to send message');
+    }
+  };
+
   // Handle Support Links
-  const handleHelpCenter = () => {
-    Linking.openURL(APP_CONFIG.helpCenterUrl);
-  };
-
-  const handleContactSupport = () => {
-    Linking.openURL(`mailto:${APP_CONFIG.supportEmail}?subject=Beauty Content Creator Support`);
-  };
-
   const handlePrivacyPolicy = () => {
     Linking.openURL(APP_CONFIG.privacyPolicyUrl);
   };
@@ -387,7 +406,7 @@ export default function SettingsScreen() {
                   </View>
                   <View>
                     <Text style={styles.settingLabel}>Sign In</Text>
-                    <Text style={styles.settingHint}>Sync your work across devices</Text>
+                    <Text style={styles.settingHint}>Sync your portfolio across devices</Text>
                   </View>
                 </View>
                 <ChevronRight size={20} color={Colors.light.textTertiary} />
@@ -450,46 +469,66 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Feedback Section */}
+        <View style={styles.section}>
+          <View style={styles.card}>
+            <View style={styles.feedbackHeader}>
+              <View style={styles.feedbackIconContainer}>
+                <MessageCircle size={24} color={Colors.light.accent} />
+              </View>
+              <View style={styles.feedbackHeaderText}>
+                <Text style={styles.feedbackTitle}>We'd love to hear from you!</Text>
+                <Text style={styles.feedbackSubtitle}>Got feedback or need help?</Text>
+              </View>
+            </View>
+            
+            {feedbackSent ? (
+              <View style={styles.feedbackSuccessContainer}>
+                <Check size={24} color={Colors.light.success} />
+                <Text style={styles.feedbackSuccessText}>Thank you for your message!</Text>
+              </View>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.feedbackInput}
+                  placeholder="Type your message here..."
+                  placeholderTextColor={Colors.light.textTertiary}
+                  value={feedbackMessage}
+                  onChangeText={setFeedbackMessage}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  maxLength={2000}
+                  editable={!isSendingFeedback}
+                />
+                
+                <TouchableOpacity
+                  style={[
+                    styles.feedbackButton,
+                    (!feedbackMessage.trim() || isSendingFeedback) && styles.feedbackButtonDisabled,
+                  ]}
+                  onPress={handleSendFeedback}
+                  disabled={!feedbackMessage.trim() || isSendingFeedback}
+                  activeOpacity={0.8}
+                >
+                  {isSendingFeedback ? (
+                    <ActivityIndicator size="small" color={Colors.light.surface} />
+                  ) : (
+                    <>
+                      <Send size={18} color={Colors.light.surface} />
+                      <Text style={styles.feedbackButtonText}>Send Message</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
         {/* Support Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
+          <Text style={styles.sectionTitle}>Legal</Text>
           <View style={styles.card}>
-            <TouchableOpacity 
-              style={styles.settingRow} 
-              onPress={handleHelpCenter}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#E3F2FD' }]}>
-                  <HelpCircle size={18} color="#2196F3" />
-                </View>
-                <View>
-                  <Text style={styles.settingLabel}>Help Center</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.textTertiary} />
-            </TouchableOpacity>
-            
-            <View style={styles.divider} />
-            
-            <TouchableOpacity 
-              style={styles.settingRow} 
-              onPress={handleContactSupport}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#E8F5E9' }]}>
-                  <Mail size={18} color="#4CAF50" />
-                </View>
-                <View>
-                  <Text style={styles.settingLabel}>Contact Us</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.textTertiary} />
-            </TouchableOpacity>
-            
-            <View style={styles.divider} />
-            
             <TouchableOpacity 
               style={styles.settingRow} 
               onPress={handlePrivacyPolicy}
@@ -789,5 +828,79 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 13,
     color: Colors.light.textTertiary,
+  },
+  
+  // Feedback styles
+  feedbackHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    gap: 14,
+  },
+  feedbackIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(229, 164, 59, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackHeaderText: {
+    flex: 1,
+  },
+  feedbackTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.light.text,
+    letterSpacing: -0.3,
+  },
+  feedbackSubtitle: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  feedbackInput: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 14,
+    minHeight: 100,
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: 12,
+    fontSize: 15,
+    color: Colors.light.text,
+    borderWidth: 1,
+    borderColor: Colors.light.borderLight,
+  },
+  feedbackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.light.accent,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  feedbackButtonDisabled: {
+    opacity: 0.5,
+  },
+  feedbackButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.light.surface,
+  },
+  feedbackSuccessContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+  },
+  feedbackSuccessText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.light.success,
   },
 });
