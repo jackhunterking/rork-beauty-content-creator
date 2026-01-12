@@ -4,6 +4,20 @@ import { uploadDraftImage, deleteDraftImages } from './storageService';
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory } from './localStorageService';
 
 /**
+ * Helper to get the current authenticated user ID
+ * Throws an error if no user is authenticated
+ */
+async function getCurrentUserId(): Promise<string> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  
+  if (error || !user) {
+    throw new Error('User must be authenticated to access drafts');
+  }
+  
+  return user.id;
+}
+
+/**
  * Helper to check if a URI is already uploaded to Supabase Storage
  * Returns true if the URI is a Supabase storage URL, false if it's a local file
  */
@@ -35,6 +49,7 @@ function isSupabaseStorageUrl(uri: string | null | undefined): boolean {
 function mapRowToDraft(row: DraftRow): Draft {
   return {
     id: row.id,
+    userId: row.user_id,
     templateId: row.template_id,
     // Legacy fields for backwards compatibility
     beforeImageUrl: row.before_image_url,
@@ -51,10 +66,14 @@ function mapRowToDraft(row: DraftRow): Draft {
 }
 
 /**
- * Fetch all drafts
+ * Fetch all drafts for the current user
  * Also checks for locally cached preview files and adds them to the draft objects
+ * Note: RLS policies ensure only the user's own drafts are returned
  */
 export async function fetchDrafts(): Promise<Draft[]> {
+  // Ensure user is authenticated (RLS will handle filtering)
+  await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
@@ -90,8 +109,12 @@ export async function fetchDrafts(): Promise<Draft[]> {
 /**
  * Fetch a single draft by ID
  * Also checks for locally cached preview file and adds it to the draft object
+ * Note: RLS policies ensure only the user's own draft can be fetched
  */
 export async function fetchDraftById(id: string): Promise<Draft | null> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
@@ -121,9 +144,13 @@ export async function fetchDraftById(id: string): Promise<Draft | null> {
 }
 
 /**
- * Fetch draft by template ID (returns the most recent one)
+ * Fetch draft by template ID for the current user (returns the most recent one)
+ * Note: RLS policies ensure only the user's own drafts are searched
  */
 export async function fetchDraftByTemplateId(templateId: string): Promise<Draft | null> {
+  // Ensure user is authenticated (RLS will handle filtering)
+  await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('drafts')
     .select('*')
@@ -145,6 +172,7 @@ export async function fetchDraftByTemplateId(templateId: string): Promise<Draft 
 
 /**
  * Create a new draft (without images initially)
+ * Automatically associates the draft with the current user
  */
 export async function createDraft(
   templateId: string,
@@ -152,9 +180,13 @@ export async function createDraft(
   afterImageUrl: string | null = null,
   capturedImageUrls: Record<string, string> | null = null
 ): Promise<Draft> {
+  // Get current user ID to associate with the draft
+  const userId = await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('drafts')
     .insert({
+      user_id: userId,
       template_id: templateId,
       before_image_url: beforeImageUrl,
       after_image_url: afterImageUrl,
@@ -173,6 +205,7 @@ export async function createDraft(
 
 /**
  * Update an existing draft
+ * Note: RLS policies ensure only the user's own draft can be updated
  */
 export async function updateDraft(
   id: string,
@@ -184,6 +217,9 @@ export async function updateDraft(
     wasRenderedAsPremium?: boolean | null;
   }
 ): Promise<Draft> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
   const updateData: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
@@ -252,12 +288,12 @@ export async function saveDraftWithImages(
       }
       draft = existingDraft;
     } else {
-      // Check if there's an existing draft for this template
+      // Check if there's an existing draft for this template (for current user)
       const existingDraft = await fetchDraftByTemplateId(templateId);
       if (existingDraft) {
         draft = existingDraft;
       } else {
-        // Create a new draft first to get the ID
+        // Create a new draft first to get the ID (user_id will be set automatically)
         draft = await createDraft(templateId);
       }
     }
@@ -329,9 +365,13 @@ export async function saveDraftWithImages(
 
 /**
  * Delete a draft and its associated images (both remote and local)
+ * Note: RLS policies ensure only the user's own draft can be deleted
  */
 export async function deleteDraft(id: string): Promise<void> {
   try {
+    // Ensure user is authenticated (RLS will handle authorization)
+    await getCurrentUserId();
+    
     // Delete images from Supabase storage
     await deleteDraftImages(id);
 
@@ -362,9 +402,13 @@ export async function deleteDraft(id: string): Promise<void> {
 }
 
 /**
- * Get draft count
+ * Get draft count for the current user
+ * Note: RLS policies ensure only the user's own drafts are counted
  */
 export async function getDraftCount(): Promise<number> {
+  // Ensure user is authenticated (RLS will handle filtering)
+  await getCurrentUserId();
+  
   const { count, error } = await supabase
     .from('drafts')
     .select('*', { count: 'exact', head: true });

@@ -2,11 +2,26 @@ import { supabase } from '@/lib/supabase';
 import { PortfolioItem, PortfolioRow, TemplateFormat, PublishPlatform } from '@/types';
 
 /**
+ * Helper to get the current authenticated user ID
+ * Throws an error if no user is authenticated
+ */
+async function getCurrentUserId(): Promise<string> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  
+  if (error || !user) {
+    throw new Error('User must be authenticated to access portfolio');
+  }
+  
+  return user.id;
+}
+
+/**
  * Convert database row (snake_case) to PortfolioItem type (camelCase)
  */
 function mapRowToPortfolioItem(row: PortfolioRow): PortfolioItem {
   return {
     id: row.id,
+    userId: row.user_id,
     draftId: row.draft_id || undefined,
     templateId: row.template_id,
     templateName: row.template_name,
@@ -21,9 +36,13 @@ function mapRowToPortfolioItem(row: PortfolioRow): PortfolioItem {
 }
 
 /**
- * Fetch all portfolio items, sorted by creation date (most recent first)
+ * Fetch all portfolio items for the current user, sorted by creation date (most recent first)
+ * Note: RLS policies ensure only the user's own items are returned
  */
 export async function fetchPortfolioItems(): Promise<PortfolioItem[]> {
+  // Ensure user is authenticated (RLS will handle filtering)
+  await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('portfolio')
     .select('*')
@@ -39,8 +58,12 @@ export async function fetchPortfolioItems(): Promise<PortfolioItem[]> {
 
 /**
  * Fetch a single portfolio item by ID
+ * Note: RLS policies ensure only the user's own item can be fetched
  */
 export async function getPortfolioItem(id: string): Promise<PortfolioItem | null> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('portfolio')
     .select('*')
@@ -61,11 +84,16 @@ export async function getPortfolioItem(id: string): Promise<PortfolioItem | null
 /**
  * Create a new portfolio item
  * Called when user completes the publish flow
+ * Automatically associates the item with the current user
  */
-export async function createPortfolioItem(item: Omit<PortfolioItem, 'id' | 'createdAt'>): Promise<PortfolioItem> {
+export async function createPortfolioItem(item: Omit<PortfolioItem, 'id' | 'createdAt' | 'userId'>): Promise<PortfolioItem> {
+  // Get current user ID to associate with the portfolio item
+  const userId = await getCurrentUserId();
+  
   const { data, error } = await supabase
     .from('portfolio')
     .insert({
+      user_id: userId,
       draft_id: item.draftId || null,
       template_id: item.templateId,
       template_name: item.templateName,
@@ -90,11 +118,15 @@ export async function createPortfolioItem(item: Omit<PortfolioItem, 'id' | 'crea
 /**
  * Update a portfolio item's published platforms
  * Used when user shares to additional platforms
+ * Note: RLS policies ensure only the user's own item can be updated
  */
 export async function updatePortfolioItemPlatforms(
   id: string,
   newPlatform: PublishPlatform
 ): Promise<PortfolioItem> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
   // First get current platforms
   const current = await getPortfolioItem(id);
   if (!current) {
@@ -123,8 +155,12 @@ export async function updatePortfolioItemPlatforms(
 
 /**
  * Delete a portfolio item
+ * Note: RLS policies ensure only the user's own item can be deleted
  */
 export async function deletePortfolioItem(id: string): Promise<void> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
   const { error } = await supabase
     .from('portfolio')
     .delete()
@@ -137,9 +173,13 @@ export async function deletePortfolioItem(id: string): Promise<void> {
 }
 
 /**
- * Get portfolio item count
+ * Get portfolio item count for the current user
+ * Note: RLS policies ensure only the user's own items are counted
  */
 export async function getPortfolioCount(): Promise<number> {
+  // Ensure user is authenticated (RLS will handle filtering)
+  await getCurrentUserId();
+  
   const { count, error } = await supabase
     .from('portfolio')
     .select('*', { count: 'exact', head: true });

@@ -31,6 +31,7 @@ export interface PlatformOption {
  */
 export interface PortfolioItem {
   id: string;
+  userId: string;  // Owner of the portfolio item - links to auth.users
   draftId?: string;
   templateId: string;
   templateName: string;
@@ -55,6 +56,7 @@ export interface PortfolioItem {
  */
 export interface PortfolioRow {
   id: string;
+  user_id: string;  // Owner of the portfolio item - links to auth.users
   draft_id: string | null;
   template_id: string;
   template_name: string;
@@ -410,6 +412,7 @@ export interface TemplateRow {
  */
 export interface Draft {
   id: string;
+  userId: string;  // Owner of the draft - links to auth.users
   templateId: string;
   // Legacy fields - kept for backwards compatibility
   beforeImageUrl: string | null;  // Supabase Storage URL
@@ -431,6 +434,7 @@ export interface Draft {
 // Database row type for drafts
 export interface DraftRow {
   id: string;
+  user_id: string;  // Owner of the draft - links to auth.users
   template_id: string;
   // Legacy fields - kept for backwards compatibility
   before_image_url: string | null;

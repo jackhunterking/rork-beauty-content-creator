@@ -183,6 +183,7 @@ export async function deleteAvatar(userId: string): Promise<{ success: boolean; 
 /**
  * Export all user data (GDPR compliance)
  * Returns a JSON object with all user data
+ * Note: RLS policies ensure only the user's own data is returned
  */
 export async function exportUserData(userId: string): Promise<{ 
   success: boolean; 
@@ -197,15 +198,19 @@ export async function exportUserData(userId: string): Promise<{
       .eq('id', userId)
       .single();
 
-    // Fetch portfolio items
+    // Fetch portfolio items (RLS will filter to user's own items)
+    // Also explicitly filter by user_id for defense in depth
     const { data: portfolio } = await supabase
       .from('portfolio')
-      .select('*');
+      .select('*')
+      .eq('user_id', userId);
 
-    // Fetch drafts
+    // Fetch drafts (RLS will filter to user's own drafts)
+    // Also explicitly filter by user_id for defense in depth
     const { data: drafts } = await supabase
       .from('drafts')
-      .select('*');
+      .select('*')
+      .eq('user_id', userId);
 
     // Compile all data
     const exportData = {
@@ -228,22 +233,23 @@ export async function exportUserData(userId: string): Promise<{
  */
 export async function deleteAllUserData(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    // Delete portfolio items
+    // Delete portfolio items - filter by user_id column (not id)
     await supabase
       .from('portfolio')
       .delete()
-      .eq('id', userId); // Assuming RLS handles user scoping
+      .eq('user_id', userId);
 
-    // Delete drafts
+    // Delete drafts - filter by user_id column (not id)
     await supabase
       .from('drafts')
       .delete()
-      .eq('id', userId);
+      .eq('user_id', userId);
 
     // Delete avatar from storage
     await deleteAvatar(userId);
 
     // Delete profile (this might cascade delete due to foreign key)
+    // Profile id equals user id from auth.users
     await supabase
       .from('profiles')
       .delete()
