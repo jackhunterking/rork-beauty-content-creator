@@ -8,9 +8,13 @@
  * the main draft metadata remains in Supabase.
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Overlay } from '@/types/overlays';
 import { getDraftDirectory, createDraftDirectories } from './localStorageService';
+
+// Encoding type constants - use string literals for expo-file-system/legacy compatibility
+const ENCODING_UTF8 = 'utf8' as const;
+const ENCODING_BASE64 = 'base64' as const;
 
 const OVERLAYS_FILENAME = 'overlays.json';
 
@@ -48,7 +52,7 @@ export async function saveOverlays(
     const data = JSON.stringify(overlays, null, 2);
     
     await FileSystem.writeAsStringAsync(filePath, data, {
-      encoding: FileSystem.EncodingType.UTF8,
+      encoding: ENCODING_UTF8,
     });
     
     console.log(`[OverlayPersistence] Successfully saved ${overlays.length} overlays for draft:`, draftId);
@@ -79,7 +83,7 @@ export async function loadOverlays(draftId: string): Promise<Overlay[]> {
     }
     
     const data = await FileSystem.readAsStringAsync(filePath, {
-      encoding: FileSystem.EncodingType.UTF8,
+      encoding: ENCODING_UTF8,
     });
     
     const overlays = JSON.parse(data) as Overlay[];

@@ -19,6 +19,8 @@ interface TemplateCanvasProps {
   onPreviewError?: () => void;
   /** Whether user has premium status - affects which preview is shown */
   isPremium?: boolean;
+  /** Called when the preview image has loaded and is ready for capture */
+  onPreviewLoad?: () => void;
 }
 
 /**
@@ -39,6 +41,7 @@ export function TemplateCanvas({
   isRendering = false,
   onPreviewError,
   isPremium = false,
+  onPreviewLoad,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
   const { width: screenWidth } = useWindowDimensions();
@@ -112,6 +115,13 @@ export function TemplateCanvas({
           style={styles.previewImage}
           contentFit="cover"
           transition={200}
+          onLoad={() => {
+            // Notify parent that the preview image has loaded
+            if (onPreviewLoad) {
+              console.log('[TemplateCanvas] Preview image loaded:', previewUrl?.substring(0, 50) + '...');
+              onPreviewLoad();
+            }
+          }}
           onError={() => {
             // If the rendered preview fails to load (e.g., expired URL),
             // notify parent to trigger a fresh render

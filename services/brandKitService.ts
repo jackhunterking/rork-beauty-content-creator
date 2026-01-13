@@ -11,12 +11,17 @@
  * - Offline: Gracefully fall back to local cache when network unavailable
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BrandKit, BrandKitRow } from '@/types';
 import { supabase } from '@/lib/supabase';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { decode } from 'base64-arraybuffer';
+import { logErrorRemotely } from './remoteLogService';
+
+// Encoding type constants - use string literals for expo-file-system/legacy compatibility
+const ENCODING_UTF8 = 'utf8' as const;
+const ENCODING_BASE64 = 'base64' as const;
 
 // Storage keys
 const BRAND_KIT_STORAGE_KEY = '@beauty_app_brand_kit';
@@ -468,7 +473,7 @@ async function uploadLogoToStorage(localUri: string): Promise<string> {
   let base64: string;
   try {
     base64 = await FileSystem.readAsStringAsync(localUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: ENCODING_BASE64,
     });
     console.log('[BrandKit] File read as base64, length:', base64.length);
   } catch (readError) {
@@ -676,12 +681,16 @@ export async function syncBrandKit(): Promise<void> {
 
 /**
  * Save a logo image to the brand kit
- * CRITICAL: Saves locally FIRST, then uploads to cloud
- * This ensures the temp file from ImageManipulator isn't cleaned up before we can use it
- * Returns detailed result for better UI feedback
+ * 
+ * APPROACH (v6 - with remote logging and base64 write):
+ * 1. Read source image as base64 FIRST (before any processing that might clean up temp files)
+ * 2. Process with ImageManipulator (if not SVG)
+ * 3. Write directly to local storage using base64 (not copy/move which fails on iOS)
+ * 4. Upload to Supabase
+ * 5. Every step is logged remotely to Supabase for debugging TestFlight issues
  */
 export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResult> {
-  console.log('[BrandKit] ========== Starting logo save ==========');
+  console.log('[BrandKit] ========== Starting logo save (v6) ==========');
   console.log('[BrandKit] Source URI:', sourceUri.substring(0, 100) + '...');
   
   let savedToCloud = false;
@@ -690,164 +699,258 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
   let logoUrl: string | undefined;
   let localLogoPath: string | undefined;
   
-  try {
-    // Step 1: Ensure local directory exists
-    await ensureBrandKitDirectory();
-    console.log('[BrandKit] Step 1: Directory ready');
-
-    // Step 2: Normalize the image URI (convert ph://, content:// to file://)
-    console.log('[BrandKit] Step 2: Normalizing image...');
-    let normalized: { uri: string; width: number; height: number };
+  // Log step tracking for remote debugging
+  const logStep = async (step: string, details: Record<string, any>, isError = false) => {
+    console.log(`[BrandKit] ${step}:`, details);
     try {
-      normalized = await normalizeImageUri(sourceUri);
-      console.log('[BrandKit] Step 2: Image normalized');
-      console.log('[BrandKit] Dimensions:', normalized.width, 'x', normalized.height);
-      console.log('[BrandKit] Normalized URI:', normalized.uri.substring(0, 100) + '...');
-    } catch (normalizeError) {
-      const details = normalizeError instanceof Error ? normalizeError.message : 'Unknown error';
-      console.error('[BrandKit] Step 2 FAILED:', details);
-      throw new BrandKitError(
-        'IMAGE_PROCESSING_FAILED',
-        'Failed to process the selected image',
-        details
+      await logErrorRemotely(
+        isError ? 'BRAND_KIT_ERROR' : 'BRAND_KIT_DEBUG',
+        step,
+        {
+          ...details,
+          sourceUri: sourceUri.substring(0, 100),
+          timestamp: new Date().toISOString(),
+        }
       );
+    } catch (logError) {
+      console.warn('[BrandKit] Failed to log remotely:', logError);
+    }
+  };
+  
+  try {
+    await logStep('Step 0: Starting', { version: 'v6', approach: 'base64-write' });
+    
+    // Step 1: Ensure local directory exists
+    try {
+      await ensureBrandKitDirectory();
+      await logStep('Step 1: Directory created', { path: BRAND_KIT_DIRECTORY });
+    } catch (dirError) {
+      const errorMsg = dirError instanceof Error ? dirError.message : 'Unknown error';
+      await logStep('Step 1 FAILED: Directory creation', { error: errorMsg }, true);
+      throw dirError;
     }
 
-    // Step 3: IMMEDIATELY save locally (before temp file can be cleaned up)
-    // This is critical - ImageManipulator creates temp files that may be cleaned up
-    console.log('[BrandKit] Step 3: Saving locally FIRST (critical step)...');
-    const logoPath = getLogoPath();
+    // Step 2: Determine if we need ImageManipulator (skip for SVGs)
+    const isSvg = isSvgFile(sourceUri);
+    await logStep('Step 2: Image type detection', { 
+      isSvg, 
+      uriScheme: sourceUri.split(':')[0],
+      extension: sourceUri.split('.').pop(),
+    });
+
+    let processedBase64: string;
+    let width: number;
+    let height: number;
+    let fileExtension = 'jpg';
     
-    // Delete existing local logo
+    if (isSvg) {
+      // For SVGs, read directly without ImageManipulator
+      await logStep('Step 3: Reading SVG directly', {});
+      try {
+        processedBase64 = await FileSystem.readAsStringAsync(sourceUri, {
+          encoding: ENCODING_BASE64,
+        });
+        width = 200;
+        height = 200;
+        fileExtension = 'svg';
+        await logStep('Step 3: SVG read successfully', { 
+          base64Length: processedBase64.length,
+        });
+      } catch (svgReadError) {
+        const errorMsg = svgReadError instanceof Error ? svgReadError.message : 'Unknown error';
+        await logStep('Step 3 FAILED: SVG read error', { error: errorMsg }, true);
+        throw new BrandKitError('FILE_READ_ERROR', 'Failed to read SVG file', errorMsg);
+      }
+    } else {
+      // For other images, use ImageManipulator
+      await logStep('Step 3: Processing with ImageManipulator', { format: 'JPEG' });
+      
+      try {
+        // Process the image with ImageManipulator
+        const manipResult = await ImageManipulator.manipulateAsync(
+          sourceUri,
+          [], // No transformations
+          { 
+            format: ImageManipulator.SaveFormat.JPEG,
+            compress: 0.9,
+          }
+        );
+        
+        width = manipResult.width;
+        height = manipResult.height;
+        
+        await logStep('Step 3: ImageManipulator success', { 
+          resultUri: manipResult.uri.substring(0, 80),
+          width,
+          height,
+        });
+        
+        // CRITICAL: Immediately read the processed file as base64
+        // This captures the data before iOS can clean up the temp file
+        await logStep('Step 4: Reading processed image as base64', {});
+        
+        try {
+          processedBase64 = await FileSystem.readAsStringAsync(manipResult.uri, {
+            encoding: ENCODING_BASE64,
+          });
+          
+          await logStep('Step 4: Base64 read successful', { 
+            base64Length: processedBase64.length,
+          });
+        } catch (readError) {
+          const errorMsg = readError instanceof Error ? readError.message : 'Unknown error';
+          await logStep('Step 4 FAILED: Base64 read failed', { 
+            error: errorMsg,
+            tempFileUri: manipResult.uri.substring(0, 80),
+          }, true);
+          
+          // Try to check if file exists
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(manipResult.uri);
+            await logStep('Step 4 DEBUG: File info check', { 
+              exists: fileInfo.exists,
+              size: (fileInfo as any).size,
+            });
+          } catch (infoError) {
+            await logStep('Step 4 DEBUG: File info failed', { 
+              error: infoError instanceof Error ? infoError.message : 'Unknown',
+            });
+          }
+          
+          throw new BrandKitError('FILE_READ_ERROR', 'Processed image could not be read', errorMsg);
+        }
+      } catch (manipError) {
+        if (manipError instanceof BrandKitError) throw manipError;
+        
+        const errorMsg = manipError instanceof Error ? manipError.message : 'Unknown error';
+        await logStep('Step 3 FAILED: ImageManipulator error', { error: errorMsg }, true);
+        throw new BrandKitError('IMAGE_PROCESSING_FAILED', 'Failed to process image', errorMsg);
+      }
+    }
+
+    // Step 5: Write base64 directly to local storage
+    // This is more reliable than copy/move on iOS
+    const logoPath = `${BRAND_KIT_DIRECTORY}brand_logo.${fileExtension}`;
+    
+    await logStep('Step 5: Writing to local storage', { 
+      logoPath,
+      base64Length: processedBase64.length,
+      approach: 'writeAsStringAsync',
+    });
+    
     try {
+      // Delete existing file first
       const existingInfo = await FileSystem.getInfoAsync(logoPath);
       if (existingInfo.exists) {
         await FileSystem.deleteAsync(logoPath, { idempotent: true });
-        console.log('[BrandKit] Step 3: Deleted existing logo');
+        await logStep('Step 5: Deleted existing file', {});
       }
-    } catch (deleteError) {
-      console.warn('[BrandKit] Step 3: Could not delete existing file:', deleteError);
-    }
-
-    // Verify the normalized file exists before copying
-    const normalizedFileInfo = await FileSystem.getInfoAsync(normalized.uri);
-    console.log('[BrandKit] Step 3: Normalized file exists:', normalizedFileInfo.exists);
-    if (!normalizedFileInfo.exists) {
-      throw new BrandKitError(
-        'FILE_READ_ERROR',
-        'Processed image file not found',
-        'The image may have been cleaned up. Please try again.'
-      );
-    }
-
-    // Copy/move the normalized image to permanent local storage
-    try {
-      await FileSystem.copyAsync({
-        from: normalized.uri,
-        to: logoPath,
+      
+      // Write base64 directly to file
+      await FileSystem.writeAsStringAsync(logoPath, processedBase64, {
+        encoding: ENCODING_BASE64,
       });
+      
+      // Verify the file was written
+      const verifyInfo = await FileSystem.getInfoAsync(logoPath);
+      if (!verifyInfo.exists) {
+        throw new Error('File verification failed - file does not exist after write');
+      }
+      
       localLogoPath = logoPath;
       savedLocally = true;
-      console.log('[BrandKit] Step 3: Logo saved locally via copy');
-    } catch (copyError) {
-      console.warn('[BrandKit] Step 3: Copy failed, trying move:', copyError);
-      try {
-        await FileSystem.moveAsync({
-          from: normalized.uri,
-          to: logoPath,
-        });
-        localLogoPath = logoPath;
-        savedLocally = true;
-        console.log('[BrandKit] Step 3: Logo saved locally via move');
-      } catch (moveError) {
-        const errorMsg = moveError instanceof Error ? moveError.message : 'Unknown error';
-        console.error('[BrandKit] Step 3 FAILED: Local save failed:', errorMsg);
-        throw new BrandKitError(
-          'LOCAL_CACHE_FAILED',
-          'Failed to save logo locally',
-          errorMsg
-        );
-      }
+      
+      await logStep('Step 5: Local write SUCCESS', { 
+        exists: verifyInfo.exists,
+        size: (verifyInfo as any).size || 'unknown',
+      });
+    } catch (writeError) {
+      const errorMsg = writeError instanceof Error ? writeError.message : 'Unknown error';
+      await logStep('Step 5 FAILED: Local write error', { error: errorMsg }, true);
+      throw new BrandKitError('LOCAL_CACHE_FAILED', 'Failed to save logo locally', errorMsg);
     }
 
-    // Verify the local file was saved successfully
-    const savedFileInfo = await FileSystem.getInfoAsync(logoPath);
-    if (!savedFileInfo.exists) {
-      throw new BrandKitError(
-        'LOCAL_CACHE_FAILED',
-        'Failed to save logo locally',
-        'File was copied but verification failed'
-      );
-    }
-    console.log('[BrandKit] Step 3: Local save verified, size:', (savedFileInfo as any).size || 'unknown');
-
-    // Step 4: Check if user is authenticated
+    // Step 6: Check authentication for cloud upload
     const userId = await getCurrentUserId();
-    console.log('[BrandKit] Step 4: Auth check - userId:', userId ? 'present' : 'null');
+    await logStep('Step 6: Auth check', { 
+      isAuthenticated: !!userId,
+    });
 
-    // Step 5: Upload to Supabase (if authenticated) - use the LOCAL file, not the temp file
-    if (userId) {
-      console.log('[BrandKit] Step 5: Uploading to Supabase Storage...');
+    // Step 7: Upload to Supabase (if authenticated)
+    if (userId && localLogoPath) {
+      await logStep('Step 7: Starting cloud upload', {});
+      
       try {
-        // Upload from the LOCAL file (guaranteed to exist), not the temp normalized file
         logoUrl = await uploadLogoToStorage(localLogoPath);
         savedToCloud = true;
-        console.log('[BrandKit] Step 5: Uploaded to Supabase successfully');
-        console.log('[BrandKit] Step 5: Logo URL:', logoUrl?.substring(0, 100) + '...');
+        
+        await logStep('Step 7: Cloud upload SUCCESS', { 
+          hasUrl: !!logoUrl,
+        });
       } catch (uploadError) {
-        // Log the detailed error but don't fail - we already saved locally
+        const errorDetails = uploadError instanceof BrandKitError 
+          ? { code: uploadError.code, details: uploadError.details }
+          : { error: uploadError instanceof Error ? uploadError.message : 'Unknown' };
+        
+        await logStep('Step 7: Cloud upload failed (non-fatal)', errorDetails);
+        
         if (uploadError instanceof BrandKitError) {
-          console.warn('[BrandKit] Step 5: Cloud upload failed:', uploadError.code, uploadError.details);
           warning = uploadError.getUserFriendlyMessage();
         } else {
-          const errorMsg = uploadError instanceof Error ? uploadError.message : 'Unknown error';
-          console.warn('[BrandKit] Step 5: Cloud upload failed:', errorMsg);
           warning = 'Cloud upload failed. Logo saved locally only.';
         }
       }
 
-      // Step 6: Save metadata to Supabase database
+      // Step 8: Save metadata to Supabase database
       if (savedToCloud && logoUrl) {
-        console.log('[BrandKit] Step 6: Saving metadata to Supabase...');
+        await logStep('Step 8: Saving metadata to database', {});
+        
         try {
           const dbResult = await upsertToSupabase({
             logo_url: logoUrl,
-            logo_width: normalized.width,
-            logo_height: normalized.height,
+            logo_width: width,
+            logo_height: height,
           });
-          if (dbResult) {
-            console.log('[BrandKit] Step 6: Metadata saved to Supabase');
-          } else {
-            console.warn('[BrandKit] Step 6: Database upsert returned null');
-            if (!warning) {
-              warning = 'Logo uploaded but settings may not be synced.';
-            }
+          
+          await logStep('Step 8: Database save ' + (dbResult ? 'SUCCESS' : 'returned null'), {
+            hasResult: !!dbResult,
+          });
+          
+          if (!dbResult && !warning) {
+            warning = 'Logo uploaded but settings may not be synced.';
           }
         } catch (dbError) {
           const errorMsg = dbError instanceof Error ? dbError.message : 'Unknown error';
-          console.error('[BrandKit] Step 6: Database error:', errorMsg);
+          await logStep('Step 8: Database error (non-fatal)', { error: errorMsg });
           if (!warning) {
             warning = 'Logo uploaded but settings failed to save.';
           }
         }
       }
+    } else if (!userId) {
+      warning = 'Sign in to sync your logo across devices.';
+      await logStep('Step 7: Skipped cloud upload - not authenticated', {});
     }
 
-    // Step 7: Update local brand kit cache
-    console.log('[BrandKit] Step 7: Updating local brand kit metadata...');
+    // Step 9: Update local brand kit metadata cache
+    await logStep('Step 9: Updating local metadata cache', {});
+    
     const currentBrandKit = await loadFromLocalCache() || getDefaultBrandKit();
     const updatedBrandKit: BrandKit = {
       ...currentBrandKit,
-      logoUri: localLogoPath, // Always use local path - we saved locally first
-      logoWidth: normalized.width,
-      logoHeight: normalized.height,
+      logoUri: localLogoPath,
+      logoWidth: width,
+      logoHeight: height,
       updatedAt: new Date().toISOString(),
     };
 
     await saveToLocalCache(updatedBrandKit);
-    console.log('[BrandKit] Step 7: Local metadata saved');
-    console.log('[BrandKit] ========== Logo save completed ==========');
-    console.log('[BrandKit] Result: savedToCloud=', savedToCloud, ', savedLocally=', savedLocally);
+    
+    await logStep('COMPLETE: Logo save finished', { 
+      savedLocally,
+      savedToCloud,
+      hasWarning: !!warning,
+    });
 
     return {
       success: true,
@@ -860,9 +963,11 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
     console.error('[BrandKit] ========== Logo save FAILED ==========');
     
     if (error instanceof BrandKitError) {
-      console.error('[BrandKit] Error code:', error.code);
-      console.error('[BrandKit] Error message:', error.message);
-      console.error('[BrandKit] Error details:', error.details);
+      await logStep('FAILED: BrandKitError', { 
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      }, true);
       
       return {
         success: false,
@@ -874,7 +979,7 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
     }
     
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[BrandKit] Unexpected error:', errorMessage);
+    await logStep('FAILED: Unexpected error', { error: errorMessage }, true);
     
     return {
       success: false,

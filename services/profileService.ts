@@ -3,6 +3,10 @@ import { UserProfile, ProfileRow, OnboardingSurveyData } from '@/types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
 
+// Encoding type constants - use string literals for expo-file-system/legacy compatibility
+const ENCODING_UTF8 = 'utf8' as const;
+const ENCODING_BASE64 = 'base64' as const;
+
 /**
  * Profile Service
  * 
@@ -95,7 +99,7 @@ export async function uploadAvatar(
   try {
     // Read the file as base64
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: ENCODING_BASE64,
     });
 
     // Determine file extension

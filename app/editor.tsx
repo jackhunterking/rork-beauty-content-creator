@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import BottomSheet from '@gorhom/bottom-sheet';
 import ViewShot from 'react-native-view-shot';
 import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-native';
@@ -118,6 +118,30 @@ export default function EditorScreen() {
   
   // ViewShot ref for capturing canvas with overlays
   const viewShotRef = useRef<ViewShot>(null);
+  
+  // Track when the preview image is loaded and ready for capture
+  // Use a ref so we can check it inside async callbacks without stale closure issues
+  const isPreviewImageLoadedRef = useRef(false);
+  
+  // Also track with state for UI updates if needed
+  const [isPreviewImageLoaded, setIsPreviewImageLoaded] = useState(false);
+  
+  // Reset preview loaded state when rendered preview URI changes
+  useEffect(() => {
+    if (renderedPreviewUri) {
+      // Reset loaded state when a new preview URL is set
+      // The image will set it to true via onLoad callback
+      isPreviewImageLoadedRef.current = false;
+      setIsPreviewImageLoaded(false);
+    }
+  }, [renderedPreviewUri]);
+  
+  // Handler for when preview image loads
+  const handlePreviewImageLoad = useCallback(() => {
+    console.log('[Editor] Preview image loaded');
+    isPreviewImageLoadedRef.current = true;
+    setIsPreviewImageLoaded(true);
+  }, []);
 
   // Calculate canvas dimensions (matching TemplateCanvas logic)
   const canvasDimensions = useMemo(() => {
@@ -590,8 +614,21 @@ export default function EditorScreen() {
           onPress: async () => {
             if (!template) return;
             try {
-              // Step 1: Save the draft first to ensure we have a draft ID
-              // This is the same flow as performSaveDraft()
+              // CRITICAL: Capture the preview with overlays FIRST, BEFORE any save operations
+              // This prevents race conditions where state updates from saving cause the canvas to re-render
+              let capturedPreviewPath: string | null = null;
+              
+              if (overlays.length > 0 && renderedPreviewUri) {
+                console.log('[Editor] Back save: Capturing canvas with overlays BEFORE save...');
+                capturedPreviewPath = await captureCanvasWithOverlays();
+                if (capturedPreviewPath) {
+                  console.log('[Editor] Back save: Preview captured to temp location:', capturedPreviewPath);
+                } else {
+                  console.warn('[Editor] Back save: Failed to capture preview with overlays');
+                }
+              }
+              
+              // Step 2: Save the draft to get/confirm the draft ID
               const savedDraft = await saveDraft({
                 templateId: template.id,
                 beforeImageUri: beforeUri || null,
@@ -612,13 +649,13 @@ export default function EditorScreen() {
               
               console.log('[Editor] Draft saved via back button:', savedDraft.id);
               
-              // Step 2: If there are overlays, capture and save with the draft ID
-              if (overlays.length > 0 && renderedPreviewUri) {
-                console.log('[Editor] Capturing preview with overlays for draft:', savedDraft.id);
-                const capturedPreview = await captureCanvasWithOverlays(savedDraft.id);
-                if (capturedPreview) {
-                  console.log('[Editor] Preview with overlays saved to:', capturedPreview);
-                  // Update the draft with the new preview path
+              // Step 3: If we captured a preview with overlays, move it to the correct location
+              if (capturedPreviewPath) {
+                console.log('[Editor] Back save: Saving captured preview to draft renders directory:', savedDraft.id);
+                const permanentPath = await saveLocalPreviewFile(savedDraft.id, capturedPreviewPath, 'default');
+                if (permanentPath) {
+                  console.log('[Editor] Back save: Preview with overlays saved to:', permanentPath);
+                  // Update the draft with the correct preview path
                   await saveDraft({
                     templateId: template.id,
                     beforeImageUri: beforeUri || null,
@@ -627,12 +664,12 @@ export default function EditorScreen() {
                     capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
                     renderedPreviewUrl: renderedPreviewUri,
                     wasRenderedAsPremium: isPremium,
-                    localPreviewPath: capturedPreview,
+                    localPreviewPath: permanentPath,
                   });
                 }
               }
               
-              // Step 3: Always save overlays (even if empty to clear old ones)
+              // Step 4: Always save overlays (even if empty to clear old ones)
               try {
                 await saveOverlays(savedDraft.id, overlays);
                 console.log(`[Editor] Saved ${overlays.length} overlays via back button`);
@@ -712,7 +749,7 @@ export default function EditorScreen() {
   const chooseFromLibrary = useCallback(
     async (slotId: string) => {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         quality: 0.9,
         allowsEditing: false,
       });
@@ -1026,8 +1063,21 @@ export default function EditorScreen() {
     console.log('[Editor] Slots to save:', Object.keys(capturedImageUris));
 
     try {
-      // Step 1: Save the draft first to ensure we have a draft ID
-      // This is critical because we need the draft ID to save the preview to the correct location
+      // CRITICAL: Capture the preview with overlays FIRST, BEFORE any save operations
+      // This prevents race conditions where state updates from saving cause the canvas to re-render
+      let capturedPreviewPath: string | null = null;
+      
+      if (overlays.length > 0 && renderedPreviewUri) {
+        console.log('[Editor] Step 1: Capturing canvas with overlays BEFORE save...');
+        capturedPreviewPath = await captureCanvasWithOverlays();
+        if (capturedPreviewPath) {
+          console.log('[Editor] Preview captured to temp location:', capturedPreviewPath);
+        } else {
+          console.warn('[Editor] Failed to capture preview with overlays');
+        }
+      }
+      
+      // Step 2: Save the draft to get/confirm the draft ID
       const savedDraft = await saveDraft({
         templateId: template.id,
         beforeImageUri: beforeUri || null,
@@ -1036,7 +1086,7 @@ export default function EditorScreen() {
         capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
         renderedPreviewUrl: renderedPreviewUri,
         wasRenderedAsPremium: isPremium,
-        localPreviewPath: localPreviewPath, // Initial save with existing preview
+        localPreviewPath: localPreviewPath, // Use existing preview initially
       });
       
       console.log('[Editor] Draft saved successfully:', savedDraft?.id);
@@ -1046,33 +1096,30 @@ export default function EditorScreen() {
         return;
       }
       
-      // Step 2: If there are overlays, capture the canvas with overlays NOW that we have the draft ID
-      // This ensures the preview is saved to the correct location (drafts/{draftId}/renders/default.jpg)
+      // Step 3: If we captured a preview with overlays, move it to the correct location
       let finalPreviewPath = localPreviewPath;
       
-      if (overlays.length > 0 && renderedPreviewUri) {
-        console.log('[Editor] Capturing canvas with overlays for draft:', savedDraft.id);
-        const capturedPreview = await captureCanvasWithOverlays(savedDraft.id);
-        if (capturedPreview) {
-          finalPreviewPath = capturedPreview;
-          console.log('[Editor] Preview with overlays saved to:', capturedPreview);
+      if (capturedPreviewPath) {
+        console.log('[Editor] Step 3: Saving captured preview to draft renders directory:', savedDraft.id);
+        const permanentPath = await saveLocalPreviewFile(savedDraft.id, capturedPreviewPath, 'default');
+        if (permanentPath) {
+          finalPreviewPath = permanentPath;
+          console.log('[Editor] Preview with overlays saved to:', permanentPath);
           
-          // Step 3: Update the draft with the correct preview path if it changed
-          if (finalPreviewPath !== localPreviewPath) {
-            console.log('[Editor] Updating draft with new preview path');
-            await saveDraft({
-              templateId: template.id,
-              beforeImageUri: beforeUri || null,
-              afterImageUri: afterUri || null,
-              existingDraftId: savedDraft.id,
-              capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
-              renderedPreviewUrl: renderedPreviewUri,
-              wasRenderedAsPremium: isPremium,
-              localPreviewPath: finalPreviewPath,
-            });
-          }
+          // Update the draft with the correct preview path
+          console.log('[Editor] Updating draft with new preview path');
+          await saveDraft({
+            templateId: template.id,
+            beforeImageUri: beforeUri || null,
+            afterImageUri: afterUri || null,
+            existingDraftId: savedDraft.id,
+            capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
+            renderedPreviewUrl: renderedPreviewUri,
+            wasRenderedAsPremium: isPremium,
+            localPreviewPath: finalPreviewPath,
+          });
         } else {
-          console.warn('[Editor] Failed to capture preview with overlays, using original');
+          console.warn('[Editor] Failed to save preview to permanent location');
         }
       }
       
@@ -1127,20 +1174,61 @@ export default function EditorScreen() {
   }, [template, capturedCount, performSaveDraft]);
 
   // Capture the canvas with overlays using ViewShot
-  // If draftId is provided, saves directly to the correct renders directory
-  // Otherwise saves to cache directory (for temporary use)
-  const captureCanvasWithOverlays = useCallback(async (draftId?: string): Promise<string | null> => {
+  // Returns the captured file path (in cache directory)
+  // The caller is responsible for moving it to the correct location after getting the draft ID
+  const captureCanvasWithOverlays = useCallback(async (): Promise<string | null> => {
     if (!viewShotRef.current) {
       console.warn('[Editor] ViewShot ref not available');
       return null;
     }
     
+    // Check that we have a rendered preview to capture
+    if (!renderedPreviewUri) {
+      console.warn('[Editor] No rendered preview available to capture');
+      return null;
+    }
+    
     try {
-      // Deselect any selected overlay before capture to hide selection UI
-      setSelectedOverlayId(null);
+      // Store current selection to restore later if needed
+      const wasSelected = selectedOverlayId;
       
-      // Small delay to ensure selection UI is hidden
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Deselect any selected overlay before capture to hide selection UI
+      if (wasSelected) {
+        setSelectedOverlayId(null);
+      }
+      
+      console.log('[Editor] Preparing to capture canvas with overlays...');
+      console.log('[Editor] Current state: renderedPreviewUri exists:', !!renderedPreviewUri);
+      console.log('[Editor] Current state: isPreviewImageLoaded (ref):', isPreviewImageLoadedRef.current);
+      console.log('[Editor] Current state: overlays count:', overlays.length);
+      
+      // Wait for the preview image to be loaded if it isn't already
+      // This ensures we capture the rendered preview, not a placeholder
+      // Use the ref to check the current value (avoids stale closure)
+      if (!isPreviewImageLoadedRef.current) {
+        console.log('[Editor] Waiting for preview image to load...');
+        // Wait up to 3 seconds for the image to load
+        const maxWaitTime = 3000;
+        const checkInterval = 100;
+        let waitedTime = 0;
+        
+        while (!isPreviewImageLoadedRef.current && waitedTime < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, checkInterval));
+          waitedTime += checkInterval;
+        }
+        
+        if (!isPreviewImageLoadedRef.current) {
+          console.warn('[Editor] Preview image did not load within timeout, proceeding anyway');
+        } else {
+          console.log('[Editor] Preview image loaded after', waitedTime, 'ms');
+        }
+      }
+      
+      // Wait for React to re-render without selection UI and ensure image is displayed
+      // Use a longer delay to ensure the view is fully updated
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log('[Editor] Capturing canvas now...');
       
       // Capture the view
       const uri = await viewShotRef.current.capture();
@@ -1150,19 +1238,8 @@ export default function EditorScreen() {
         return null;
       }
       
-      // If we have a draft ID, save directly to the correct location
-      if (draftId) {
-        console.log('[Editor] Saving captured preview to draft renders directory:', draftId);
-        const savedPath = await saveLocalPreviewFile(draftId, uri, 'default');
-        if (savedPath) {
-          console.log('[Editor] Captured canvas with overlays saved to:', savedPath);
-          return savedPath;
-        } else {
-          console.warn('[Editor] Failed to save to renders directory, falling back to cache');
-        }
-      }
-      
-      // Fallback: save to cache directory for temporary use
+      // Save to cache directory for temporary use
+      // The file will be moved to the correct location after draft is saved
       const filename = `canvas_overlay_${Date.now()}.jpg`;
       const destUri = `${FileSystem.cacheDirectory}${filename}`;
       
@@ -1175,7 +1252,7 @@ export default function EditorScreen() {
       console.error('[Editor] Failed to capture canvas:', error);
       return null;
     }
-  }, []);
+  }, [renderedPreviewUri, selectedOverlayId, overlays.length]);
 
   // Handle Generate button - show animation then navigate to publish screen
   const handleGenerate = useCallback(async () => {
@@ -1184,11 +1261,27 @@ export default function EditorScreen() {
     // Start generation animation
     setIsGenerating(true);
     
+    // CRITICAL: Capture the preview with overlays FIRST, BEFORE any save operations
+    // This prevents race conditions where state updates from saving cause the canvas to re-render
+    let capturedPreviewUri: string | null = null;
+    
+    if (overlays.length > 0 && renderedPreviewUri) {
+      console.log('[Editor] Generate: Capturing canvas with overlays BEFORE save...');
+      capturedPreviewUri = await captureCanvasWithOverlays();
+      if (capturedPreviewUri) {
+        console.log('[Editor] Generate: Preview captured:', capturedPreviewUri);
+      } else {
+        console.warn('[Editor] Generate: Failed to capture preview with overlays');
+      }
+    }
+    
     // Auto-save draft if there are unsaved changes (without navigation)
     // This ensures all captured images are persisted before going to publish
-    // performSaveDraft will also capture overlays and save to the correct location
     if (hasUnsavedChanges) {
       try {
+        // If we captured a preview, we need to save it properly
+        // But performSaveDraft will capture again, so let's just call it
+        // and handle the preview separately
         await performSaveDraft(false);
       } catch (error) {
         console.error('Failed to auto-save before generate:', error);
@@ -1197,28 +1290,10 @@ export default function EditorScreen() {
     }
     
     // Determine final preview URI
-    // If there are overlays, capture the canvas with overlays using the draft ID
-    // Otherwise, use the rendered preview from Templated.io
-    let finalPreviewUri = renderedPreviewUri || '';
+    // Use the captured preview if we have one, otherwise use the rendered preview
+    let finalPreviewUri = capturedPreviewUri || renderedPreviewUri || '';
     
-    if (overlays.length > 0 && currentProject.draftId) {
-      console.log('[Editor] Capturing canvas with overlays for final generation');
-      const capturedUri = await captureCanvasWithOverlays(currentProject.draftId);
-      if (capturedUri) {
-        finalPreviewUri = capturedUri;
-        console.log('[Editor] Using captured canvas URI:', finalPreviewUri);
-      } else {
-        console.warn('[Editor] Capture failed, falling back to rendered preview');
-      }
-    } else if (overlays.length > 0) {
-      // No draft ID yet, capture to cache
-      console.log('[Editor] Capturing canvas with overlays to cache (no draft ID)');
-      const capturedUri = await captureCanvasWithOverlays();
-      if (capturedUri) {
-        finalPreviewUri = capturedUri;
-        console.log('[Editor] Using captured canvas URI from cache:', finalPreviewUri);
-      }
-    }
+    console.log('[Editor] Generate: Final preview URI:', finalPreviewUri.substring(0, 50) + '...');
     
     // After animation delay, navigate to publish screen
     // Use replace() so Editor is removed from stack and won't react to state changes
@@ -1312,6 +1387,7 @@ export default function EditorScreen() {
                   isRendering={isRendering}
                   onPreviewError={handlePreviewError}
                   isPremium={isPremium}
+                  onPreviewLoad={handlePreviewImageLoad}
                 />
                 
                 {/* Overlay Layer - renders overlays on top of canvas */}

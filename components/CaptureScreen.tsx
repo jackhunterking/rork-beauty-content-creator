@@ -328,7 +328,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     if (!slot) return;
     
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.9,
       allowsEditing: false,
     });
@@ -428,8 +428,9 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 
       {/* LAYER 2: Frame Mask Overlay (z-index: 2) */}
       {/* Black mask around the frame, with camera/preview visible inside */}
+      {/* pointerEvents="none" when in preview mode to allow gestures to reach the image */}
       {slot && (
-        <View style={styles.maskLayer}>
+        <View style={styles.maskLayer} pointerEvents={previewUri ? "none" : "auto"}>
           {/* FrameOverlay shows the mask - we handle preview image separately for gestures */}
           <FrameOverlay 
             slot={slot} 
@@ -466,7 +467,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
       )}
 
       {/* LAYER 3: UI Controls (z-index: 3) - always on top */}
-      <SafeAreaView style={styles.controlsLayer} edges={['top', 'bottom']}>
+      {/* pointerEvents="box-none" allows touch events to pass through to layers below */}
+      <SafeAreaView style={styles.controlsLayer} edges={['top', 'bottom']} pointerEvents="box-none">
         {/* Top Bar */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
@@ -482,8 +484,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
           )}
         </View>
 
-        {/* Flexible space */}
-        <View style={styles.flex} />
+        {/* Flexible space - pointerEvents="none" to not block gesture detection */}
+        <View style={styles.flex} pointerEvents="none" />
 
         {/* Bottom Controls */}
         {previewUri ? (
