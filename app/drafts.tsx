@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   StyleSheet,
   View,
@@ -11,49 +12,51 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { Image as ImageIcon, Square, RectangleVertical, Clock } from 'lucide-react-native';
+import { useRouter, Stack } from 'expo-router';
+import { Image as ImageIcon, Square, RectangleVertical, RectangleHorizontal, Clock, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, Template, TemplateFormat } from '@/types';
 import { extractSlots } from '@/utils/slotParser';
 import { getDraftPreviewUri } from '@/services/imageUtils';
+import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
-// Dynamic tile height based on format
+// Dynamic tile height based on format - uses centralized config
 const getTileHeight = (format: TemplateFormat) => {
-  switch (format) {
-    case '4:5':
-      return TILE_WIDTH * 1.25; // 4:5 ratio (Instagram Posts)
-    case '9:16':
-      return TILE_WIDTH * 1.78; // 9:16 ratio (Stories/Reels)
-    case '1:1':
+  const config = getFormatById(format);
+  if (config) {
+    // Use inverse of aspect ratio to get height multiplier
+    return TILE_WIDTH / config.aspectRatio;
+  }
+  // Fallback to square
+  return TILE_WIDTH;
+};
+
+// Helper to get icon component for a format config
+const getFormatIcon = (config: FormatConfig, active: boolean) => {
+  const color = active ? Colors.light.accentDark : Colors.light.text;
+  switch (config.icon) {
+    case 'square':
+      return <Square size={18} color={color} />;
+    case 'landscape':
+      return <RectangleHorizontal size={18} color={color} />;
+    case 'portrait':
     default:
-      return TILE_WIDTH; // 1:1 ratio (Square)
+      return <RectangleVertical size={18} color={color} />;
   }
 };
 
-const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.ReactNode; label: string }[] = [
-  { 
-    format: '4:5', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '4:5' 
-  },
-  { 
-    format: '1:1', 
-    icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '1:1' 
-  },
-  { 
-    format: '9:16', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '9:16' 
-  },
-];
+// Generate format filters dynamically from centralized config
+const formatFilters = getAllFormats().map(config => ({
+  format: config.id as TemplateFormat,
+  icon: (active: boolean) => getFormatIcon(config, active),
+  label: config.id,
+}));
 
 // Format relative time
 const formatTimeAgo = (dateString: string) => {
@@ -79,10 +82,33 @@ export default function DraftsScreen() {
     templates,
     loadDraft,
     isDraftsLoading,
+    refreshDrafts,
   } = useApp();
 
-  // Local state for format filter
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('4:5');
+  // DEBUG: Log drafts and templates on every render
+  console.log('[DraftsScreen] Render:', {
+    draftsCount: drafts.length,
+    templatesCount: templates.length,
+    isDraftsLoading,
+    draftIds: drafts.map(d => d.id.substring(0, 8)),
+    draftTemplateIds: drafts.map(d => d.templateId.substring(0, 8)),
+  });
+
+  // Refresh drafts whenever the screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[DraftsScreen] Screen focused - refreshing drafts');
+      refreshDrafts();
+    }, [refreshDrafts])
+  );
+
+  // Local state for format filter - use centralized default
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>(getDefaultFormat() as TemplateFormat);
+
+  // Handle back navigation explicitly - always go to Create tab
+  const handleBackPress = useCallback(() => {
+    router.replace('/(tabs)');
+  }, [router]);
 
   // Get template for a draft
   const getTemplateForDraft = useCallback((templateId: string) => 
@@ -111,10 +137,29 @@ export default function DraftsScreen() {
 
   // Filter drafts by format
   const filteredDrafts = useMemo(() => {
-    return drafts.filter(draft => {
+    // DEBUG: Log each draft's template matching
+    const results = drafts.map(draft => {
       const template = getTemplateForDraft(draft.templateId);
-      return template?.format === selectedFormat;
+      const matches = template?.format === selectedFormat;
+      console.log('[DraftsScreen] Draft filter:', {
+        draftId: draft.id.substring(0, 8),
+        templateId: draft.templateId.substring(0, 8),
+        templateFound: !!template,
+        templateFormat: template?.format,
+        selectedFormat,
+        matches,
+      });
+      return { draft, matches };
     });
+    
+    const filtered = results.filter(r => r.matches).map(r => r.draft);
+    console.log('[DraftsScreen] Filter result:', {
+      selectedFormat,
+      totalDrafts: drafts.length,
+      matchingDrafts: filtered.length,
+    });
+    
+    return filtered;
   }, [drafts, selectedFormat, getTemplateForDraft]);
 
   // Handle format filter selection
@@ -134,6 +179,22 @@ export default function DraftsScreen() {
   if (isDraftsLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['bottom']}>
+        <Stack.Screen
+          options={{
+            title: 'Drafts',
+            headerBackVisible: false,
+            headerLeft: () => (
+              <TouchableOpacity
+                style={styles.headerBackButton}
+                onPress={handleBackPress}
+                activeOpacity={0.7}
+              >
+                <ChevronLeft size={24} color={Colors.light.text} />
+                <Text style={styles.headerBackText}>Back</Text>
+              </TouchableOpacity>
+            ),
+          }}
+        />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.light.accent} />
           <Text style={styles.loadingText}>Loading drafts...</Text>
@@ -144,6 +205,22 @@ export default function DraftsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      <Stack.Screen
+        options={{
+          title: 'Drafts',
+          headerBackVisible: false,
+          headerLeft: () => (
+            <TouchableOpacity
+              style={styles.headerBackButton}
+              onPress={handleBackPress}
+              activeOpacity={0.7}
+            >
+              <ChevronLeft size={24} color={Colors.light.text} />
+              <Text style={styles.headerBackText}>Back</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
       {/* Format Filter Row */}
       <View style={styles.filterSection}>
         <View style={styles.filterRow}>
@@ -183,7 +260,7 @@ export default function DraftsScreen() {
           <Text style={styles.emptyText}>
             {drafts.length === 0 
               ? 'Your saved drafts will appear here. Start creating and save your progress!'
-              : `You don't have any ${selectedFormat === '1:1' ? 'square' : 'vertical'} drafts yet.`
+              : `You don't have any ${getFormatLabel(selectedFormat)} drafts yet.`
             }
           </Text>
         </View>
@@ -211,6 +288,7 @@ export default function DraftsScreen() {
                 >
                   {previewUri ? (
                     <Image
+                      key={`draft-preview-${draft.id}-${draft.updatedAt}`}
                       source={{ uri: previewUri }}
                       style={styles.draftThumbnail}
                       contentFit="cover"
@@ -249,6 +327,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.light.background,
+  },
+  headerBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingRight: 8,
+    marginLeft: -8,
+  },
+  headerBackText: {
+    fontSize: 17,
+    fontWeight: '400' as const,
+    color: Colors.light.text,
+    marginLeft: -2,
   },
   loadingContainer: {
     flex: 1,

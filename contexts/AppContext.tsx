@@ -9,6 +9,8 @@ import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as delete
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { getDefaultFormat } from '@/constants/formats';
 
 const STORAGE_KEYS = {
   LEGACY_PORTFOLIO: 'beauty_work', // Keep same key for backwards compatibility
@@ -17,6 +19,9 @@ const STORAGE_KEYS = {
 
 export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
+  
+  // Get authentication status to gate queries that require auth
+  const { isAuthenticated } = useAuthContext();
   
   // Use real-time templates hook instead of React Query
   const { 
@@ -37,7 +42,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   });
   
   // Selected format filter (4:5, 1:1, or 9:16)
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('4:5');
+  // Use centralized default format
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>(getDefaultFormat() as TemplateFormat);
 
   // Per-slot state management
   const [slotStates, setSlotStatesMap] = useState<SlotStates>({});
@@ -76,6 +82,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Sync real-time templates to local state
   useEffect(() => {
+    console.log('[AppContext] Syncing templates from realtime:', {
+      count: realtimeTemplates.length,
+      templateIds: realtimeTemplates.slice(0, 5).map(t => t.id.substring(0, 8)),
+      formats: realtimeTemplates.reduce((acc, t) => {
+        acc[t.format] = (acc[t.format] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+    });
     setTemplates(realtimeTemplates);
   }, [realtimeTemplates]);
 
@@ -99,19 +113,29 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  // Fetch drafts from Supabase
+  // Fetch drafts from Supabase - only when user is authenticated
   const draftsQuery = useQuery({
-    queryKey: ['drafts'],
+    queryKey: ['drafts', isAuthenticated],
     queryFn: fetchDrafts,
     staleTime: 30 * 1000,
+    enabled: isAuthenticated, // Only fetch when user is logged in
   });
 
-  // Fetch portfolio from Supabase
+  // Fetch portfolio from Supabase - only when user is authenticated
   const portfolioQuery = useQuery({
-    queryKey: ['portfolio'],
+    queryKey: ['portfolio', isAuthenticated],
     queryFn: fetchPortfolioItems,
     staleTime: 30 * 1000,
+    enabled: isAuthenticated, // Only fetch when user is logged in
   });
+
+  // Clear drafts and portfolio when user logs out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setDrafts([]);
+      setPortfolio([]);
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (legacyPortfolioQuery.data) setLegacyPortfolio(legacyPortfolioQuery.data);
@@ -122,8 +146,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [brandKitQuery.data]);
 
   useEffect(() => {
-    if (draftsQuery.data) setDrafts(draftsQuery.data);
-  }, [draftsQuery.data]);
+    if (draftsQuery.data) {
+      console.log('[AppContext] Updating drafts from query:', {
+        count: draftsQuery.data.length,
+        draftIds: draftsQuery.data.map(d => d.id.substring(0, 8)),
+        isStale: draftsQuery.isStale,
+        isFetching: draftsQuery.isFetching,
+      });
+      setDrafts(draftsQuery.data);
+    }
+  }, [draftsQuery.data, draftsQuery.isStale, draftsQuery.isFetching]);
 
   useEffect(() => {
     if (portfolioQuery.data) setPortfolio(portfolioQuery.data);
@@ -216,6 +248,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
       );
     },
     onSuccess: (savedDraft) => {
+      console.log('[AppContext] Draft saved successfully, invalidating queries:', {
+        draftId: savedDraft.id,
+        templateId: savedDraft.templateId,
+      });
       setCurrentProject(prev => ({ 
         ...prev, 
         draftId: savedDraft.id,
@@ -224,6 +260,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         localPreviewPath: savedDraft.localPreviewPath || null,
       }));
       queryClient.invalidateQueries({ queryKey: ['drafts'] });
+      console.log('[AppContext] Drafts query invalidated');
     },
   });
 
@@ -409,6 +446,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Load a draft into the current project
   const loadDraft = useCallback((draft: Draft, template: Template) => {
+    console.log('[AppContext] Loading draft:', {
+      draftId: draft.id,
+      templateId: template.id,
+      beforeImageUrl: draft.beforeImageUrl?.substring(0, 50),
+      afterImageUrl: draft.afterImageUrl?.substring(0, 50),
+      capturedImageUrls: draft.capturedImageUrls ? Object.keys(draft.capturedImageUrls) : [],
+    });
+    
     const slots = extractSlots(template);
     
     const capturedImages: CapturedImages = {};
@@ -469,6 +514,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       width: afterSlot.width,
       height: afterSlot.height,
     } : null;
+    
+    console.log('[AppContext] Draft loaded - capturedImages:', {
+      slotIds: Object.keys(capturedImages),
+      beforeSlotHasImage: beforeSlot ? !!capturedImages[beforeSlot.layerId]?.uri : 'no before slot',
+      afterSlotHasImage: afterSlot ? !!capturedImages[afterSlot.layerId]?.uri : 'no after slot',
+    });
     
     setSlotStatesMap(slotStates);
     setComposedPreviewUri(null);

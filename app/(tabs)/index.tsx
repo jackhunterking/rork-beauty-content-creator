@@ -2,30 +2,29 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Press
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, Clock, Lock } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal, Clock, Lock } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
 import { ContentType, Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
 import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
+import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
-// Dynamic tile height based on format
+// Dynamic tile height based on format - uses centralized config
 const getTileHeight = (format: TemplateFormat) => {
-  switch (format) {
-    case '4:5':
-      return TILE_WIDTH * 1.25; // 4:5 ratio (Instagram Posts)
-    case '9:16':
-      return TILE_WIDTH * 1.78; // 9:16 ratio (Stories/Reels)
-    case '1:1':
-    default:
-      return TILE_WIDTH; // 1:1 ratio (Square)
+  const config = getFormatById(format);
+  if (config) {
+    // Use inverse of aspect ratio to get height multiplier (width / height = aspectRatio)
+    return TILE_WIDTH / config.aspectRatio;
   }
+  // Fallback to square
+  return TILE_WIDTH;
 };
 
 const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; disabled?: boolean }[] = [
@@ -34,23 +33,26 @@ const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; d
   { type: 'video', icon: <Video size={20} color={Colors.light.textTertiary} />, label: 'Video', disabled: true },
 ];
 
-const formatFilters: { format: TemplateFormat; icon: (active: boolean) => React.ReactNode; label: string }[] = [
-  { 
-    format: '4:5', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '4:5' 
-  },
-  { 
-    format: '1:1', 
-    icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '1:1' 
-  },
-  { 
-    format: '9:16', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '9:16' 
-  },
-];
+// Helper to get icon component for a format config
+const getFormatIcon = (config: FormatConfig, active: boolean) => {
+  const color = active ? Colors.light.accentDark : Colors.light.text;
+  switch (config.icon) {
+    case 'square':
+      return <Square size={18} color={color} />;
+    case 'landscape':
+      return <RectangleHorizontal size={18} color={color} />;
+    case 'portrait':
+    default:
+      return <RectangleVertical size={18} color={color} />;
+  }
+};
+
+// Generate format filters dynamically from centralized config
+const formatFilters = getAllFormats().map(config => ({
+  format: config.id as TemplateFormat,
+  icon: (active: boolean) => getFormatIcon(config, active),
+  label: config.id,
+}));
 
 export default function CreateScreen() {
   const router = useRouter();

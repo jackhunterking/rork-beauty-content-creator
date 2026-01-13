@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Template, TemplateRow, TemplateFormat } from '@/types';
+import { detectFormatFromDimensions } from '@/constants/formats';
 
 // Default placeholder image for slots without custom placeholders
 const DEFAULT_BEFORE_PLACEHOLDER = 'https://placehold.co/400x600/1a1a1a/ffffff?text=%2B%0ABefore';
@@ -19,25 +20,8 @@ function addCacheBuster(url: string | null | undefined, timestamp: string): stri
   return `${url}${separator}v=${new Date(timestamp).getTime()}`;
 }
 
-/**
- * Auto-detect template format based on canvas dimensions
- * 1:1: aspect ratio ~1.0 (e.g., 1080x1080)
- * 4:5: aspect ratio ~0.8 (e.g., 1080x1350) - Instagram Posts
- * 9:16: aspect ratio ~0.5625 (e.g., 1080x1920) - Stories/Reels
- */
-function detectFormatFromDimensions(width: number, height: number): TemplateFormat {
-  const aspectRatio = width / height;
-  // 1:1 is square (aspect ratio ~1.0)
-  if (aspectRatio >= 0.95 && aspectRatio <= 1.05) {
-    return '1:1';
-  }
-  // 4:5 is portrait for Instagram posts (aspect ratio ~0.8)
-  if (aspectRatio >= 0.75 && aspectRatio < 0.95) {
-    return '4:5';
-  }
-  // 9:16 is vertical for Stories/Reels (aspect ratio ~0.5625)
-  return '9:16';
-}
+// Format detection moved to @/constants/formats.ts for centralized management
+// Use: import { detectFormatFromDimensions } from '@/constants/formats';
 
 /**
  * Convert database row (snake_case) to Template type (camelCase)
@@ -83,7 +67,7 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     supports: row.supports,
     isFavourite: row.is_favourite,
     isActive: row.is_active,
-    format: detectFormatFromDimensions(row.canvas_width, row.canvas_height),
+    format: detectFormatFromDimensions(row.canvas_width, row.canvas_height) as TemplateFormat,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // Templated.io integration fields

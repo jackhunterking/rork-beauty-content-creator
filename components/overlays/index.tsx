@@ -11,3 +11,5 @@ export { OverlayActionBar } from './OverlayActionBar';
 export { OverlayStyleSheet } from './OverlayStyleSheet';
 export { OverlayLayer } from './OverlayLayer';
 export { ScaleSlider } from './ScaleSlider';
+export { LogoPickerModal } from './LogoPickerModal';
+export { LogoActionSheet } from './LogoActionSheet';

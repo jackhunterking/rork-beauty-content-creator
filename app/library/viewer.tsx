@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Share2, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { getFormatLabel } from '@/constants/formats';
 
 const { width } = Dimensions.get('window');
 
@@ -118,7 +119,7 @@ export default function PortfolioViewerScreen() {
             <X size={22} color={Colors.light.text} />
           </TouchableOpacity>
           <View style={styles.meta}>
-            <Text style={styles.metaFormat}>{item.format === '4:5' ? 'Portrait' : item.format === '1:1' ? 'Square' : 'Vertical'}</Text>
+            <Text style={styles.metaFormat}>{getFormatLabel(item.format)}</Text>
             <Text style={styles.metaDate}>{formattedDate}</Text>
           </View>
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>

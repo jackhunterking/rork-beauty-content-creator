@@ -27,23 +27,25 @@ import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { createPortfolioItem } from '@/services/portfolioService';
 import { uploadToStorage } from '@/services/imageUploadService';
+import { getAllFormatIds, getFormatById, getFormatLabel, getDefaultFormat } from '@/constants/formats';
 
 const { width } = Dimensions.get('window');
 const PREVIEW_PADDING = 40;
 
 // Platform options - simplified to Save to Photos and Share
+// Supported formats use centralized config so new formats are automatically included
 const PLATFORM_OPTIONS: PlatformOption[] = [
   { 
     id: 'download', 
     name: 'Save to Photos', 
     icon: 'download', 
-    supportedFormats: ['1:1', '9:16'] 
+    supportedFormats: getAllFormatIds() as TemplateFormat[]
   },
   { 
     id: 'share', 
     name: 'Share', 
     icon: 'share', 
-    supportedFormats: ['1:1', '9:16'] 
+    supportedFormats: getAllFormatIds() as TemplateFormat[]
   },
 ];
 
@@ -134,7 +136,7 @@ export default function PublishScreen() {
   const templateId = params.templateId;
   const templateName = params.templateName || 'Untitled';
   const previewUri = params.previewUri;
-  const format = (params.format || '1:1') as TemplateFormat;
+  const format = (params.format || getDefaultFormat()) as TemplateFormat;
   const hasWatermark = params.hasWatermark === 'true';
 
   // State
@@ -149,31 +151,46 @@ export default function PublishScreen() {
   // Track if portfolio was created to avoid duplicate creation
   const portfolioCreatedRef = useRef(false);
 
-  // Calculate preview dimensions based on format
+  // Calculate preview dimensions based on format - uses centralized config
   const previewDimensions = useMemo(() => {
     const maxWidth = width - PREVIEW_PADDING * 2;
-    if (format === '9:16') {
-      const height = Math.min(maxWidth * (16 / 9), 350);
-      return { width: height * (9 / 16), height };
+    const config = getFormatById(format);
+    
+    if (!config) {
+      // Fallback to square
+      const squareSize = Math.min(maxWidth, 300);
+      return { width: squareSize, height: squareSize };
     }
-    if (format === '4:5') {
-      const height = Math.min(maxWidth * (5 / 4), 350);
-      return { width: height * (4 / 5), height };
+    
+    // Calculate dimensions based on aspect ratio
+    // For tall formats (aspectRatio < 1), constrain by height
+    // For wide formats (aspectRatio >= 1), constrain by width
+    if (config.aspectRatio < 1) {
+      // Portrait/vertical - constrain by height
+      const maxHeight = 350;
+      const height = maxHeight;
+      const widthFromHeight = height * config.aspectRatio;
+      return { width: Math.min(widthFromHeight, maxWidth), height };
+    } else {
+      // Square or landscape - constrain by width
+      const previewWidth = Math.min(maxWidth, 300);
+      const previewHeight = previewWidth / config.aspectRatio;
+      return { width: previewWidth, height: previewHeight };
     }
-    // 1:1
-    const squareSize = Math.min(maxWidth, 300);
-    return { width: squareSize, height: squareSize };
   }, [format]);
 
-  // Get format display text
+  // Get format display text - uses centralized config
   const formatDisplayText = useMemo(() => {
-    if (format === '4:5') {
-      return 'Portrait (4:5) - Perfect for Instagram Posts';
+    const config = getFormatById(format);
+    if (!config) {
+      return `${format} format`;
     }
-    if (format === '1:1') {
-      return 'Square (1:1) - Perfect for Facebook and carousel posts';
+    
+    // Use description if available, otherwise construct from label
+    if (config.description) {
+      return `${config.label} (${config.id}) - ${config.description}`;
     }
-    return 'Vertical (9:16) - Perfect for Instagram Stories and TikTok';
+    return `${config.label} (${config.id})`;
   }, [format]);
 
   // Extract error message for better UX

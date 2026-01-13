@@ -7,12 +7,10 @@
  */
 
 import React, { useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Text } from 'react-native';
 import { Calendar, Type, Image as ImageIcon, Crown } from 'lucide-react-native';
-import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 import { OverlayType } from '@/types/overlays';
-import { getBrandLogo } from '@/services/brandKitService';
 
 interface OverlayActionBarProps {
   /** Whether the user has premium status */
@@ -23,6 +21,8 @@ interface OverlayActionBarProps {
   onAddOverlay: (type: OverlayType, imageData?: { uri: string; width: number; height: number }) => void;
   /** Called when premium feature is requested by free user. Includes callback to execute if premium is granted. */
   onRequestPremium: (featureName: string, onPremiumGranted?: () => void) => void;
+  /** Called when user wants to open the logo picker modal */
+  onRequestLogoModal: () => void;
 }
 
 interface OverlayButtonProps {
@@ -68,44 +68,8 @@ export function OverlayActionBar({
   disabled = false,
   onAddOverlay,
   onRequestPremium,
+  onRequestLogoModal,
 }: OverlayActionBarProps) {
-  // Helper function to add logo (shared between premium and post-subscription flows)
-  const addLogoOverlay = useCallback(async () => {
-    // Check if user has a brand kit logo
-    const brandLogo = await getBrandLogo();
-
-    if (brandLogo) {
-      // Ask user if they want to use brand kit logo or pick new one
-      Alert.alert(
-        'Add Logo',
-        'Would you like to use your Brand Kit logo or choose a different image?',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Brand Kit Logo',
-            onPress: () => {
-              onAddOverlay('logo', {
-                uri: brandLogo.uri,
-                width: brandLogo.width,
-                height: brandLogo.height,
-              });
-            },
-          },
-          {
-            text: 'Choose Image',
-            onPress: () => pickLogoImage(),
-          },
-        ]
-      );
-    } else {
-      // No brand kit logo, pick from library
-      pickLogoImage();
-    }
-  }, [onAddOverlay]);
-
   // Handle Date overlay button press
   const handleAddDate = useCallback(() => {
     if (!isPremium) {
@@ -127,39 +91,16 @@ export function OverlayActionBar({
   }, [isPremium, onAddOverlay, onRequestPremium]);
 
   // Handle Logo overlay button press
-  const handleAddLogo = useCallback(async () => {
+  const handleAddLogo = useCallback(() => {
     if (!isPremium) {
-      // Pass callback to add logo overlay after subscription is granted
-      onRequestPremium('add_logo_overlay', () => addLogoOverlay());
+      // Pass callback to open logo picker modal after subscription is granted
+      onRequestPremium('add_logo_overlay', onRequestLogoModal);
       return;
     }
 
-    // User is premium, proceed with logo selection
-    await addLogoOverlay();
-  }, [isPremium, onRequestPremium, addLogoOverlay]);
-
-  // Pick logo image from library
-  const pickLogoImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.9,
-        allowsEditing: false,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        onAddOverlay('logo', {
-          uri: asset.uri,
-          width: asset.width,
-          height: asset.height,
-        });
-      }
-    } catch (error) {
-      console.error('[OverlayActionBar] Failed to pick logo image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    }
-  }, [onAddOverlay]);
+    // User is premium, request to open logo picker modal
+    onRequestLogoModal();
+  }, [isPremium, onRequestPremium, onRequestLogoModal]);
 
   return (
     <View style={styles.container}>

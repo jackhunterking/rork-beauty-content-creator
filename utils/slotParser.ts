@@ -154,7 +154,7 @@ export function allSlotsCaptured(
   capturedImages: CapturedImages
 ): boolean {
   if (slots.length === 0) return false;
-  return slots.every(slot => capturedImages[slot.layerId]?.uri);
+  return slots.every(slot => hasValidCapturedImage(slot.layerId, capturedImages));
 }
 
 /**
@@ -164,7 +164,7 @@ export function getCapturedSlotCount(
   slots: Slot[],
   capturedImages: CapturedImages
 ): number {
-  return slots.filter(slot => capturedImages[slot.layerId]?.uri).length;
+  return slots.filter(slot => hasValidCapturedImage(slot.layerId, capturedImages)).length;
 }
 
 /**
@@ -174,7 +174,7 @@ export function getNextSlotToCapture(
   slots: Slot[],
   capturedImages: CapturedImages
 ): Slot | undefined {
-  return slots.find(slot => !capturedImages[slot.layerId]?.uri);
+  return slots.find(slot => !hasValidCapturedImage(slot.layerId, capturedImages));
 }
 
 /**
@@ -183,6 +183,22 @@ export function getNextSlotToCapture(
 export function hasValidSlots(template: Template): boolean {
   const slots = extractSlots(template);
   return slots.length > 0;
+}
+
+/**
+ * Check if a slot has a valid captured image
+ * Performs robust validation to ensure the URI is a valid non-empty string
+ * 
+ * @param slotId - The slot layer ID to check
+ * @param capturedImages - Map of captured images by layer ID
+ * @returns true if the slot has a valid captured image URI
+ */
+export function hasValidCapturedImage(
+  slotId: string,
+  capturedImages: CapturedImages
+): boolean {
+  const uri = capturedImages[slotId]?.uri;
+  return typeof uri === 'string' && uri.trim().length > 0;
 }
 
 /**

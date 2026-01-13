@@ -1,5 +1,14 @@
 export type ContentType = 'single' | 'carousel' | 'video';
-export type TemplateFormat = '4:5' | '1:1' | '9:16';
+
+/**
+ * Template format type
+ * 
+ * Common formats: '4:5', '1:1', '9:16', '16:9'
+ * Add new formats in constants/formats.ts - they'll be automatically supported.
+ * 
+ * Using string type for extensibility while maintaining common format suggestions.
+ */
+export type TemplateFormat = '4:5' | '1:1' | '9:16' | '16:9' | (string & {});
 
 // Re-export overlay types for convenience
 export * from './overlays';

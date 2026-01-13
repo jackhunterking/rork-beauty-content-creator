@@ -72,7 +72,8 @@ function mapRowToDraft(row: DraftRow): Draft {
  */
 export async function fetchDrafts(): Promise<Draft[]> {
   // Ensure user is authenticated (RLS will handle filtering)
-  await getCurrentUserId();
+  const userId = await getCurrentUserId();
+  console.log('[DraftService] Fetching drafts for user:', userId.substring(0, 8));
   
   const { data, error } = await supabase
     .from('drafts')
@@ -83,6 +84,12 @@ export async function fetchDrafts(): Promise<Draft[]> {
     console.error('Error fetching drafts:', error);
     throw error;
   }
+
+  console.log('[DraftService] Fetched drafts from Supabase:', {
+    count: data?.length || 0,
+    draftIds: data?.map(d => d.id.substring(0, 8)) || [],
+    templateIds: data?.map(d => d.template_id.substring(0, 8)) || [],
+  });
 
   // Map database rows to Draft objects and check for local preview files
   const drafts = (data as DraftRow[]).map(mapRowToDraft);
@@ -327,19 +334,26 @@ export async function saveDraftWithImages(
     }
 
     // Handle new dynamic captured images format
-    if (capturedImageUris) {
+    // IMPORTANT: If capturedImageUris is provided, it replaces the entire capturedImageUrls
+    // This ensures slots that were removed are actually cleared
+    if (capturedImageUris !== undefined) {
+      // Start fresh - only include slots that are explicitly provided
+      const newCapturedImageUrls: Record<string, string> = {};
+      
       for (const [slotId, uri] of Object.entries(capturedImageUris)) {
         if (uri && !isSupabaseStorageUrl(uri)) {
           // Upload new local image
           console.log(`[DraftService] Uploading slot ${slotId} from local:`, uri.substring(0, 50));
           const publicUrl = await uploadDraftImage(draft.id, uri, slotId);
-          capturedImageUrls[slotId] = publicUrl;
+          newCapturedImageUrls[slotId] = publicUrl;
         } else if (uri) {
           // Keep existing Supabase URL
-          capturedImageUrls[slotId] = uri;
+          newCapturedImageUrls[slotId] = uri;
         }
-        // If uri is empty/null, the slot will be removed from capturedImageUrls
+        // If uri is empty/null/undefined, the slot won't be included
       }
+      
+      capturedImageUrls = newCapturedImageUrls;
     }
 
     // Update the draft with the new URLs including preview cache

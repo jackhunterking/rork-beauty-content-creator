@@ -20,6 +20,7 @@ import {
   Plus,
   Square,
   RectangleVertical,
+  RectangleHorizontal,
   X,
   Download,
   Share2,
@@ -32,30 +33,33 @@ import { PortfolioItem, TemplateFormat, PublishPlatform } from '@/types';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { getPortfolioPreviewUri } from '@/services/imageUtils';
+import { getAllFormats, getFormatById, getDefaultFormat, getFormatLabel, FormatConfig } from '@/constants/formats';
 
 const { width, height } = Dimensions.get('window');
 const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
 
-// Format filter options (same as Create screen)
-const formatFilters: { format: TemplateFormat | 'all'; icon: (active: boolean) => React.ReactNode; label: string }[] = [
-  { 
-    format: '4:5', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '4:5' 
-  },
-  { 
-    format: '1:1', 
-    icon: (active) => <Square size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '1:1' 
-  },
-  { 
-    format: '9:16', 
-    icon: (active) => <RectangleVertical size={18} color={active ? Colors.light.accentDark : Colors.light.text} />, 
-    label: '9:16' 
-  },
-];
+// Helper to get icon component for a format config
+const getFormatIcon = (config: FormatConfig, active: boolean) => {
+  const color = active ? Colors.light.accentDark : Colors.light.text;
+  switch (config.icon) {
+    case 'square':
+      return <Square size={18} color={color} />;
+    case 'landscape':
+      return <RectangleHorizontal size={18} color={color} />;
+    case 'portrait':
+    default:
+      return <RectangleVertical size={18} color={color} />;
+  }
+};
+
+// Generate format filters dynamically from centralized config
+const formatFilters = getAllFormats().map(config => ({
+  format: config.id as TemplateFormat,
+  icon: (active: boolean) => getFormatIcon(config, active),
+  label: config.id,
+}));
 
 // Platform options (simplified - only Save to Photos and Share)
 interface PlatformOption {
@@ -199,17 +203,23 @@ const BottomSheet = ({
 
   if (!item) return null;
 
-  // Calculate preview dimensions
+  // Calculate preview dimensions dynamically based on format
   const previewMaxWidth = width - 80;
   const previewDimensions = (() => {
-    if (item.format === '9:16') {
-      return { width: Math.min(previewMaxWidth * 0.5, 150), height: Math.min(previewMaxWidth * 0.5 * (16/9), 267) };
+    const config = getFormatById(item.format);
+    if (!config) {
+      // Fallback to square
+      return { width: Math.min(previewMaxWidth * 0.6, 200), height: Math.min(previewMaxWidth * 0.6, 200) };
     }
-    if (item.format === '4:5') {
-      return { width: Math.min(previewMaxWidth * 0.55, 175), height: Math.min(previewMaxWidth * 0.55 * (5/4), 219) };
-    }
-    // 1:1 square
-    return { width: Math.min(previewMaxWidth * 0.6, 200), height: Math.min(previewMaxWidth * 0.6, 200) };
+    
+    // Adjust base width based on aspect ratio (narrower for tall formats)
+    const baseWidthMultiplier = config.aspectRatio < 0.7 ? 0.5 : config.aspectRatio < 0.9 ? 0.55 : 0.6;
+    const maxWidth = config.aspectRatio < 0.7 ? 150 : config.aspectRatio < 0.9 ? 175 : 200;
+    
+    const previewWidth = Math.min(previewMaxWidth * baseWidthMultiplier, maxWidth);
+    const previewHeight = previewWidth / config.aspectRatio;
+    
+    return { width: previewWidth, height: previewHeight };
   })();
 
   return (
@@ -236,7 +246,7 @@ const BottomSheet = ({
           <View style={styles.bottomSheetHeader}>
             <View style={styles.bottomSheetDateContainer}>
               <Text style={styles.bottomSheetDateText}>{formatDate(item.createdAt)}</Text>
-              <Text style={styles.bottomSheetFormatText}>{item.format === '4:5' ? 'Portrait' : item.format === '1:1' ? 'Square' : 'Vertical'}</Text>
+              <Text style={styles.bottomSheetFormatText}>{getFormatLabel(item.format)}</Text>
             </View>
             <TouchableOpacity style={styles.bottomSheetCloseButton} onPress={onClose}>
               <X size={20} color={Colors.light.text} />
@@ -311,8 +321,8 @@ export default function PortfolioScreen() {
     deleteFromPortfolio,
   } = useApp();
 
-  // Format filter state
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>('4:5');
+  // Format filter state - use centralized default
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>(getDefaultFormat() as TemplateFormat);
   
   // Bottom sheet state
   const [selectedItem, setSelectedItem] = useState<PortfolioItem | null>(null);
@@ -433,11 +443,10 @@ export default function PortfolioScreen() {
   // Render a portfolio card (clean, no overlays)
   const renderPortfolioCard = useCallback(
     (item: PortfolioItem) => {
-      // Calculate tile height based on format
-      const tileHeight = item.format === '9:16' 
-        ? TILE_WIDTH * 1.78 
-        : item.format === '4:5'
-        ? TILE_WIDTH * 1.25
+      // Calculate tile height based on format - uses centralized config
+      const config = getFormatById(item.format);
+      const tileHeight = config 
+        ? TILE_WIDTH / config.aspectRatio 
         : TILE_WIDTH;
 
       return (
@@ -508,7 +517,7 @@ export default function PortfolioScreen() {
           <Text style={styles.emptyText}>
             {portfolio.length === 0 
               ? 'Your finished creations will appear here. Start creating to showcase your portfolio!'
-              : `You haven't created any ${selectedFormat === '1:1' ? 'square' : 'vertical'} content yet.`
+              : `You haven't created any ${getFormatLabel(selectedFormat as string)} content yet.`
             }
           </Text>
           {portfolio.length === 0 && (

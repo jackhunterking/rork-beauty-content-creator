@@ -273,7 +273,7 @@ export const DEFAULT_DATE_OVERLAY: Omit<DateOverlay, 'id' | 'createdAt' | 'updat
 export const DEFAULT_LOGO_OVERLAY: Omit<LogoOverlay, 'id' | 'createdAt' | 'updatedAt' | 'imageUri' | 'originalWidth' | 'originalHeight'> = {
   type: 'logo',
   isBrandKit: false,
-  transform: { ...DEFAULT_TRANSFORM, x: 0.85, y: 0.1, scale: 1.0 }, // Top right, larger default for easier finger adjustment
+  transform: { ...DEFAULT_TRANSFORM, scale: 1.0 }, // Center position (DEFAULT_TRANSFORM already has x: 0.5, y: 0.5)
 };
 
 // ============================================

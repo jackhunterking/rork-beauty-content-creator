@@ -28,7 +28,7 @@ import {
   applyAdjustmentsAndCrop, 
   DEFAULT_ADJUSTMENTS 
 } from '@/utils/imageProcessing';
-import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
+import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount, hasValidCapturedImage } from '@/utils/slotParser';
 import { renderPreview } from '@/services/renderService';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 import { saveRenderedPreview, createDraftDirectories, saveLocalPreviewFile } from '@/services/localStorageService';
@@ -37,6 +37,8 @@ import {
   OverlayActionBar, 
   OverlayStyleSheet,
   ScaleSlider,
+  LogoPickerModal,
+  LogoActionSheet,
 } from '@/components/overlays';
 import {
   Overlay,
@@ -118,6 +120,8 @@ export default function EditorScreen() {
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const styleSheetRef = useRef<BottomSheet>(null);
+  const logoPickerRef = useRef<BottomSheet>(null);
+  const logoActionSheetRef = useRef<BottomSheet>(null);
   
   // Track initial overlay state for change detection
   const initialOverlaysRef = useRef<Overlay[]>([]);
@@ -306,6 +310,10 @@ export default function EditorScreen() {
   }, [template, capturedImages]);
 
   // Initialize with cached preview when loading a draft
+  // IMPORTANT: Prefer Templated.io URL over local preview in the editor
+  // because local preview may have overlays baked in, which causes duplication
+  // when the overlay layer is also rendered on top.
+  // Local preview (with baked overlays) is still used for draft list thumbnails.
   useEffect(() => {
     if (hasInitializedFromCacheRef.current) return;
     
@@ -316,24 +324,30 @@ export default function EditorScreen() {
     const premiumStatusMatch = wasRenderedAsPremium === null || wasRenderedAsPremium === isPremium;
     
     if (currentProject.draftId && premiumStatusMatch) {
+      // PRIORITY: Use Templated.io URL (clean render without baked overlays)
+      // This prevents duplication when overlay layer is rendered on top
+      if (cachedPreviewUrl) {
+        console.log('[Editor] Using cached preview URL from draft (clean render)');
+        setRenderedPreviewUri(cachedPreviewUrl);
+        prevCapturedImagesRef.current = { ...capturedImages };
+        hasInitializedFromCacheRef.current = true;
+        // Keep track of local path for saving, but don't use for display
+        if (cachedLocalPath) {
+          setLocalPreviewPath(cachedLocalPath);
+        }
+        return;
+      }
+      
+      // Fallback: Only use local preview if no Templated.io URL available
+      // Note: This may cause overlay duplication if local preview has baked overlays
       if (cachedLocalPath) {
-        console.log('[Editor] Using local preview file from draft:', cachedLocalPath);
+        console.log('[Editor] Using local preview file from draft (fallback, no URL available):', cachedLocalPath);
         setRenderedPreviewUri(cachedLocalPath);
         setLocalPreviewPath(cachedLocalPath);
         prevCapturedImagesRef.current = { ...capturedImages };
         hasInitializedFromCacheRef.current = true;
-        // Mark that we have a captured preview - don't let auto-save overwrite it
-        // The local preview may contain overlays that we don't want to lose
         hasManualCapturedPreviewRef.current = true;
         lastSavedPreviewUrlRef.current = cachedLocalPath;
-        return;
-      }
-      
-      if (cachedPreviewUrl) {
-        console.log('[Editor] Using cached preview URL from draft');
-        setRenderedPreviewUri(cachedPreviewUrl);
-        prevCapturedImagesRef.current = { ...capturedImages };
-        hasInitializedFromCacheRef.current = true;
         return;
       }
     }
@@ -471,9 +485,28 @@ export default function EditorScreen() {
     prevCapturedImagesRef.current = newPrevImages;
     
     if (hasNewOrChangedImage) {
-      if (renderedPreviewUri && !imagesModifiedSinceLoad && currentProject.draftId) {
-        console.log('[Editor] Skipping render - using cached preview from draft');
-        return;
+      // Check if we should skip rendering because we already have a valid cached preview
+      // Only skip if ALL current images match the initial loaded images
+      // (meaning no NEW images have been added by the user)
+      if (renderedPreviewUri && !imagesModifiedSinceLoad && currentProject.draftId && hasSetInitialStateRef.current) {
+        const initialState = initialCapturedImagesRef.current;
+        const currentSlotCount = Object.keys(currentImages).filter(id => currentImages[id]?.uri).length;
+        const initialSlotCount = Object.keys(initialState).filter(id => initialState[id]).length;
+        
+        // Check if images actually match the initial state
+        const imagesMatchInitial = currentSlotCount === initialSlotCount && 
+          Object.keys(currentImages).every(slotId => {
+            const currentUri = currentImages[slotId]?.uri || null;
+            const initialUri = initialState[slotId] || null;
+            return currentUri === initialUri;
+          });
+        
+        if (imagesMatchInitial) {
+          console.log('[Editor] Skipping render - images match initial state, using cached preview');
+          return;
+        } else {
+          console.log('[Editor] Images differ from initial state - will re-render');
+        }
       }
       
       setImagesModifiedSinceLoad(true);
@@ -716,7 +749,7 @@ export default function EditorScreen() {
               }
               
               allowNavigationRef.current = true;
-              router.back();
+              router.replace('/drafts');
             } catch (error) {
               console.error('Failed to save draft:', error);
               // Still navigate back even if save failed
@@ -839,6 +872,7 @@ export default function EditorScreen() {
       console.log('[Editor] Canvas tapped - deselecting overlay');
       setSelectedOverlayId(null);
       styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
     }
   }, [selectedOverlayId]);
 
@@ -850,6 +884,7 @@ export default function EditorScreen() {
         console.log('[Editor] Slot pressed - deselecting overlay');
         setSelectedOverlayId(null);
         styleSheetRef.current?.close();
+        logoActionSheetRef.current?.close();
       }
       
       if (isRendering) {
@@ -858,7 +893,20 @@ export default function EditorScreen() {
 
       const slot = getSlotById(slots, slotId);
       const slotLabel = slot?.label || 'Photo';
-      const hasImage = !!capturedImages[slotId]?.uri; // Fix: check for URI existence, not just object
+      
+      // Debug: Log what we're checking
+      const capturedMedia = capturedImages[slotId];
+      console.log('[Editor] Slot pressed:', {
+        slotId,
+        slotLabel,
+        hasCapturedMedia: !!capturedMedia,
+        capturedMediaUri: capturedMedia?.uri?.substring(0, 50),
+        allSlotIds: Object.keys(capturedImages),
+      });
+      
+      // Use consistent helper function for robust image validation
+      const hasImage = hasValidCapturedImage(slotId, capturedImages);
+      console.log('[Editor] hasImage result:', hasImage);
 
       if (hasImage) {
         // Slot has an image - show options to adjust, replace, or remove
@@ -997,6 +1045,29 @@ export default function EditorScreen() {
     console.log(`[Editor] Added ${type} overlay:`, newOverlay.id);
   }, []);
 
+  // Open logo picker modal
+  const handleOpenLogoPickerModal = useCallback(() => {
+    logoPickerRef.current?.snapToIndex(0);
+  }, []);
+
+  // Close logo picker modal
+  const handleLogoPickerClose = useCallback(() => {
+    logoPickerRef.current?.close();
+  }, []);
+
+  // Handle logo selection from logo picker modal
+  const handleLogoSelected = useCallback((logoData: { uri: string; width: number; height: number }) => {
+    const newOverlay = createLogoOverlay(
+      logoData.uri,
+      logoData.width,
+      logoData.height,
+      false
+    );
+    setOverlays(prev => [...prev, newOverlay]);
+    setSelectedOverlayId(newOverlay.id);
+    console.log('[Editor] Added logo overlay from picker:', newOverlay.id);
+  }, []);
+
   // Request premium for overlay feature
   // onPremiumGranted callback is executed only if user successfully subscribes
   const handleRequestPremiumForOverlay = useCallback(async (
@@ -1018,14 +1089,23 @@ export default function EditorScreen() {
     console.log('[Editor] handleSelectOverlay:', id);
     setSelectedOverlayId(id);
     
-    // Open style sheet if selecting a text-based overlay
     if (id) {
       const overlay = overlays.find(o => o.id === id);
-      if (overlay && isTextBasedOverlay(overlay)) {
-        styleSheetRef.current?.snapToIndex(0);
+      if (overlay) {
+        if (isTextBasedOverlay(overlay)) {
+          // Open style sheet for text-based overlays
+          styleSheetRef.current?.snapToIndex(0);
+          logoActionSheetRef.current?.close();
+        } else if (isLogoOverlay(overlay)) {
+          // Open logo action sheet for logo overlays
+          logoActionSheetRef.current?.snapToIndex(0);
+          styleSheetRef.current?.close();
+        }
       }
     } else {
+      // Close both sheets when deselecting
       styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
     }
   }, [overlays]);
 
@@ -1055,6 +1135,7 @@ export default function EditorScreen() {
     if (selectedOverlayId === id) {
       setSelectedOverlayId(null);
       styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
     }
     console.log('[Editor] Deleted overlay:', id);
   }, [selectedOverlayId]);
@@ -1214,7 +1295,7 @@ export default function EditorScreen() {
       }
       
       if (navigateAfterSave) {
-        router.push('/(tabs)');
+        router.replace('/drafts');
       }
     } catch (error) {
       console.error('[Editor] Failed to save draft:', error);
@@ -1508,6 +1589,7 @@ export default function EditorScreen() {
               disabled={isGenerating || paywallState === 'presenting'}
               onAddOverlay={handleAddOverlay}
               onRequestPremium={handleRequestPremiumForOverlay}
+              onRequestLogoModal={handleOpenLogoPickerModal}
             />
           )}
 
@@ -1606,6 +1688,22 @@ export default function EditorScreen() {
         bottomSheetRef={styleSheetRef}
         overlay={selectedOverlay}
         onUpdateOverlay={handleUpdateOverlayProperties}
+        onDeleteOverlay={handleDeleteSelectedOverlay}
+      />
+
+      {/* Logo Picker Modal - for selecting/uploading logo overlays */}
+      <LogoPickerModal
+        bottomSheetRef={logoPickerRef}
+        onSelectLogo={handleLogoSelected}
+        onClose={handleLogoPickerClose}
+      />
+
+      {/* Logo Action Sheet - for resizing and deleting logo overlays */}
+      <LogoActionSheet
+        bottomSheetRef={logoActionSheetRef}
+        overlay={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
+        currentScale={selectedOverlay?.transform.scale ?? 1}
+        onScaleChange={handleScaleSliderChange}
         onDeleteOverlay={handleDeleteSelectedOverlay}
       />
     </View>
