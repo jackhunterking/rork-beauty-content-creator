@@ -6,7 +6,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { ImagePlus, ChevronLeft, Zap, ZapOff } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
-import { processImageForDimensions } from "@/utils/imageProcessing";
+import { processImageForAdjustment } from "@/utils/imageProcessing";
 import { ImageSlot, FramePositionInfo } from "@/types";
 import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
 
@@ -98,7 +98,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
         };
       }
       
-      const processed = await processImageForDimensions(
+      // Process image for adjustment - keeps oversized for pan/zoom capability
+      const processed = await processImageForAdjustment(
         uri, 
         width, 
         height, 

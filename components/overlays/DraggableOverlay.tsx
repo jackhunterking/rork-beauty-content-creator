@@ -75,40 +75,56 @@ export function DraggableOverlay({
     rotation.value = transform.rotation;
   }, [transform.x, transform.y, transform.scale, transform.rotation, canvasWidth, canvasHeight]);
 
-  // Update transform callback with safety guard for division by zero
-  const updateTransform = useCallback((
+  // ============================================
+  // STABLE CALLBACK PATTERN FOR REANIMATED
+  // ============================================
+  // 
+  // IMPORTANT: Functions passed to runOnJS must be:
+  // 1. Defined at component level (NOT inside worklets)
+  // 2. Stable references that never change
+  //
+  // Pattern: Use refs to store the actual logic, then create
+  // stable wrapper functions with empty deps that access refs.
+  // This ensures runOnJS always receives the same function pointer.
+  // ============================================
+
+  // Refs to store current values of callbacks and dimensions
+  // These are updated on every render to always have current values
+  const onTransformChangeRef = useRef(onTransformChange);
+  const onSelectRef = useRef(onSelect);
+  const canvasDimensionsRef = useRef({ width: canvasWidth, height: canvasHeight });
+  
+  // Keep refs up to date with latest values
+  onTransformChangeRef.current = onTransformChange;
+  onSelectRef.current = onSelect;
+  canvasDimensionsRef.current = { width: canvasWidth, height: canvasHeight };
+
+  // STABLE wrapper for updateTransform - EMPTY DEPS means this never changes
+  // This is the function that runOnJS will call - it must be stable
+  const callUpdateTransform = useCallback((
     x: number,
     y: number,
     s: number,
     r: number
   ) => {
+    const { width, height } = canvasDimensionsRef.current;
     // Safety guard: prevent division by zero
-    if (canvasWidth <= 0 || canvasHeight <= 0) return;
+    if (width <= 0 || height <= 0) return;
     
-    onTransformChange({
-      x: x / canvasWidth,
-      y: y / canvasHeight,
+    onTransformChangeRef.current?.({
+      x: x / width,
+      y: y / height,
       scale: s,
       rotation: r,
     });
-  }, [canvasWidth, canvasHeight, onTransformChange]);
+  }, []); // EMPTY DEPS - this function reference NEVER changes
 
-  // Store callbacks in refs to prevent gesture recreation and stale closures
-  // This is critical for Reanimated worklets - prevents crashes from stale function references
-  const updateTransformRef = useRef(updateTransform);
-  const onSelectRef = useRef(onSelect);
-  
-  // Keep refs up to date
-  useEffect(() => {
-    updateTransformRef.current = updateTransform;
-  }, [updateTransform]);
-  
-  useEffect(() => {
-    onSelectRef.current = onSelect;
-  }, [onSelect]);
+  // STABLE wrapper for onSelect - EMPTY DEPS means this never changes
+  const callOnSelect = useCallback(() => {
+    onSelectRef.current?.();
+  }, []); // EMPTY DEPS - this function reference NEVER changes
 
   // Pan gesture for moving - with min distance to distinguish from tap
-  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const panGesture = useMemo(() => 
     Gesture.Pan()
       .minDistance(5) // Minimum movement before pan activates (prevents triggering on tap)
@@ -133,21 +149,18 @@ export function DraggableOverlay({
           Math.max(-margin, Math.min(canvasHeight + margin, translateY.value))
         );
         
-        // Use ref to get current callback - prevents stale closure crashes
-        runOnJS((x: number, y: number, s: number, r: number) => {
-          updateTransformRef.current(x, y, s, r);
-        })(
+        // Pass STABLE function to runOnJS - callUpdateTransform never changes
+        runOnJS(callUpdateTransform)(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [canvasWidth, canvasHeight] // Removed updateTransform - using ref instead
+    [canvasWidth, canvasHeight, callUpdateTransform]
   );
 
   // Pinch gesture for scaling
-  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const pinchGesture = useMemo(() =>
     Gesture.Pinch()
       .onStart(() => {
@@ -161,21 +174,18 @@ export function DraggableOverlay({
       })
       .onEnd(() => {
         'worklet';
-        // Use ref to get current callback - prevents stale closure crashes
-        runOnJS((x: number, y: number, s: number, r: number) => {
-          updateTransformRef.current(x, y, s, r);
-        })(
+        // Pass STABLE function to runOnJS - callUpdateTransform never changes
+        runOnJS(callUpdateTransform)(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [minScale, maxScale] // Removed updateTransform - using ref instead
+    [minScale, maxScale, callUpdateTransform]
   );
 
   // Rotation gesture
-  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const rotationGesture = useMemo(() =>
     Gesture.Rotation()
       .onStart(() => {
@@ -191,38 +201,33 @@ export function DraggableOverlay({
       .onEnd(() => {
         'worklet';
         // Snap to 0, 90, 180, 270 if within 5 degrees
-        // snapToAngle is now a worklet function - can be called directly
+        // snapToAngle is a worklet function - can be called directly on UI thread
         const snappedRotation = snapToAngle(rotation.value);
         if (Math.abs(snappedRotation - rotation.value) < 5) {
           rotation.value = withSpring(snappedRotation);
         }
         
-        // Use ref to get current callback - prevents stale closure crashes
-        runOnJS((x: number, y: number, s: number, r: number) => {
-          updateTransformRef.current(x, y, s, r);
-        })(
+        // Pass STABLE function to runOnJS - callUpdateTransform never changes
+        runOnJS(callUpdateTransform)(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [] // Empty deps - gesture never recreated, uses refs for callbacks
+    [callUpdateTransform]
   );
 
   // Tap gesture for selection - with max distance to prevent triggering during drag
-  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const tapGesture = useMemo(() =>
     Gesture.Tap()
       .maxDuration(250) // Short tap only
       .onEnd(() => {
         'worklet';
-        // Use ref to get current callback - prevents stale closure crashes
-        runOnJS(() => {
-          onSelectRef.current();
-        })();
+        // Pass STABLE function to runOnJS - callOnSelect never changes
+        runOnJS(callOnSelect)();
       }),
-    [] // Empty deps - gesture never recreated, uses ref for callback
+    [callOnSelect]
   );
 
   // Compose manipulation gestures (pan, pinch, rotation work simultaneously)

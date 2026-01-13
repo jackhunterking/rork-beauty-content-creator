@@ -1,36 +1,112 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { TouchableOpacity, StyleSheet, View, Text } from 'react-native';
 import { Image } from 'expo-image';
-import { ImageSlot } from '@/types';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { Move } from 'lucide-react-native';
+import { ImageSlot, MediaAsset } from '@/types';
 import Colors from '@/constants/colors';
+
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 interface SlotImageProps {
   slot: ImageSlot;
-  capturedUri: string | null;
+  /** The captured media asset (includes uri, dimensions, and adjustments) */
+  capturedMedia: MediaAsset | null;
+  /** Legacy: just the URI (for backwards compatibility) */
+  capturedUri?: string | null;
   onPress: () => void;
-  label: 'Before' | 'After';
+  label: 'Before' | 'After' | string;
   canvasScale: number; // Scale factor to convert from canvas pixels to display pixels
+  /** Whether to show the adjust position indicator */
+  showAdjustIndicator?: boolean;
 }
 
 /**
- * SlotImage component - Simple image that swaps between placeholder and captured photo
+ * SlotImage component - Displays captured photo with adjustments applied
  * 
  * - Empty state: Shows the placeholder image (designed to look like a button)
- * - Filled state: Shows the user's captured/imported photo
- * - Tap to trigger action sheet for capture/replace
+ * - Filled state: Shows the user's captured/imported photo with pan/zoom adjustments
+ * - Tap to trigger action sheet for capture/replace/adjust
  */
 export function SlotImage({ 
   slot, 
-  capturedUri, 
+  capturedMedia,
+  capturedUri,
   onPress, 
   label,
-  canvasScale 
+  canvasScale,
+  showAdjustIndicator = true,
 }: SlotImageProps) {
   // Calculate display dimensions based on canvas scale
   const displayWidth = slot.width * canvasScale;
   const displayHeight = slot.height * canvasScale;
 
-  const isFilled = !!capturedUri;
+  // Get image URI from either capturedMedia or legacy capturedUri
+  const imageUri = capturedMedia?.uri || capturedUri;
+  const isFilled = !!imageUri;
+
+  // Get adjustments (defaults if not provided)
+  const adjustments = capturedMedia?.adjustments || {
+    translateX: 0,
+    translateY: 0,
+    scale: 1.0,
+  };
+
+  // Calculate image display size based on adjustments
+  // The image dimensions from capturedMedia represent the oversized image
+  const imageWidth = capturedMedia?.width || slot.width;
+  const imageHeight = capturedMedia?.height || slot.height;
+
+  // Calculate base image size that fills the slot (cover mode)
+  const imageAspect = imageWidth / imageHeight;
+  const slotAspect = displayWidth / displayHeight;
+
+  const baseImageSize = useMemo(() => {
+    if (imageAspect > slotAspect) {
+      // Image is wider - height fills slot
+      return {
+        width: displayHeight * imageAspect,
+        height: displayHeight,
+      };
+    } else {
+      // Image is taller - width fills slot
+      return {
+        width: displayWidth,
+        height: displayWidth / imageAspect,
+      };
+    }
+  }, [imageAspect, slotAspect, displayWidth, displayHeight]);
+
+  // Calculate scaled size and translation
+  const scaledSize = useMemo(() => ({
+    width: baseImageSize.width * adjustments.scale,
+    height: baseImageSize.height * adjustments.scale,
+  }), [baseImageSize, adjustments.scale]);
+
+  const translationPixels = useMemo(() => {
+    const excessWidth = Math.max(0, scaledSize.width - displayWidth);
+    const excessHeight = Math.max(0, scaledSize.height - displayHeight);
+    
+    return {
+      x: adjustments.translateX * excessWidth,
+      y: adjustments.translateY * excessHeight,
+    };
+  }, [scaledSize, displayWidth, displayHeight, adjustments.translateX, adjustments.translateY]);
+
+  // Animated style for adjusted image
+  const imageAnimatedStyle = useAnimatedStyle(() => ({
+    width: scaledSize.width,
+    height: scaledSize.height,
+    transform: [
+      { translateX: translationPixels.x },
+      { translateY: translationPixels.y },
+    ],
+  }));
+
+  // Check if adjustments have been made (non-default values)
+  const hasAdjustments = adjustments.translateX !== 0 || 
+                         adjustments.translateY !== 0 || 
+                         adjustments.scale !== 1.0;
 
   return (
     <TouchableOpacity
@@ -46,25 +122,38 @@ export function SlotImage({
         },
       ]}
     >
-      <Image
-        source={{ uri: capturedUri || slot.placeholderUrl }}
-        style={styles.image}
-        contentFit="cover"
-        transition={200}
-      />
+      {isFilled && capturedMedia ? (
+        // Filled with adjustable image
+        <View style={styles.imageContainer}>
+          <AnimatedImage
+            source={{ uri: imageUri }}
+            style={[styles.adjustableImage, imageAnimatedStyle]}
+            contentFit="cover"
+          />
+        </View>
+      ) : (
+        // Empty or legacy mode - simple image
+        <Image
+          source={{ uri: imageUri || slot.placeholderUrl }}
+          style={styles.image}
+          contentFit="cover"
+          transition={200}
+        />
+      )}
       
-      {/* Overlay indicator for filled state - shows tap to replace */}
-      {isFilled && (
-        <View style={styles.filledOverlay}>
-          <View style={styles.tapIndicator}>
-            <Text style={styles.tapText}>Tap to replace</Text>
-          </View>
+      {/* Adjust position indicator for filled slots */}
+      {isFilled && showAdjustIndicator && (
+        <View style={styles.adjustIndicator}>
+          <Move size={12} color={Colors.light.surface} />
         </View>
       )}
       
       {/* Label badge */}
       <View style={[styles.labelBadge, isFilled && styles.labelBadgeFilled]}>
         <Text style={styles.labelText}>{label}</Text>
+        {hasAdjustments && (
+          <View style={styles.adjustedDot} />
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -77,32 +166,37 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
   },
+  imageContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   image: {
     width: '100%',
     height: '100%',
   },
-  filledOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    justifyContent: 'center',
+  adjustableImage: {
+    position: 'absolute',
+  },
+  adjustIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     alignItems: 'center',
-  },
-  tapIndicator: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    opacity: 0, // Hidden by default, shown on hover/focus
-  },
-  tapText: {
-    color: Colors.light.surface,
-    fontSize: 12,
-    fontWeight: '500',
+    justifyContent: 'center',
   },
   labelBadge: {
     position: 'absolute',
     bottom: 8,
     left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -117,6 +211,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  adjustedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.light.surface,
   },
 });
 

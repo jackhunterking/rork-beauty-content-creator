@@ -1,5 +1,34 @@
 import * as ImageManipulator from 'expo-image-manipulator';
-import { ImageSlot, FramePositionInfo } from '@/types';
+import { ImageSlot, FramePositionInfo, MediaAsset } from '@/types';
+
+// ============================================
+// Constants for Image Adjustment Feature
+// ============================================
+
+/**
+ * Multiplier for oversized images to allow zoom headroom
+ * A value of 2 means we keep images at 2x the slot dimensions
+ */
+export const OVERSIZED_MULTIPLIER = 2;
+
+/**
+ * Minimum scale allowed when adjusting (1.0 = fill frame exactly)
+ */
+export const MIN_ADJUSTMENT_SCALE = 1.0;
+
+/**
+ * Maximum scale allowed when adjusting
+ */
+export const MAX_ADJUSTMENT_SCALE = 3.0;
+
+/**
+ * Default adjustments for a newly captured image
+ */
+export const DEFAULT_ADJUSTMENTS = {
+  translateX: 0,
+  translateY: 0,
+  scale: 1.0,
+};
 
 /**
  * Calculate the visible region of the camera sensor that's shown in the preview.
@@ -327,3 +356,247 @@ export function calculateFrameDimensions(
   return { width: frameWidth, height: frameHeight };
 }
 
+// ============================================
+// Image Adjustment Functions
+// ============================================
+
+/**
+ * Process an image for adjustment - keeps image oversized for zoom headroom
+ * 
+ * This function crops to the target aspect ratio but keeps the image larger
+ * than the final slot dimensions (2x by default) to allow for zoom and pan.
+ * 
+ * @param uri - Source image URI
+ * @param sourceWidth - Width of source image in pixels
+ * @param sourceHeight - Height of source image in pixels
+ * @param targetWidth - Target slot width in pixels
+ * @param targetHeight - Target slot height in pixels
+ * @param framePosition - Optional frame position info for camera-aware cropping
+ * @returns Processed image URI with oversized dimensions
+ */
+export async function processImageForAdjustment(
+  uri: string,
+  sourceWidth: number,
+  sourceHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  framePosition?: FramePositionInfo
+): Promise<{ uri: string; width: number; height: number }> {
+  const targetAspectRatio = targetWidth / targetHeight;
+  
+  // Step 1: Crop to target aspect ratio (position-aware when framePosition provided)
+  const cropped = await cropToAspectRatio(
+    uri,
+    sourceWidth,
+    sourceHeight,
+    targetAspectRatio,
+    framePosition
+  );
+  
+  // Step 2: Resize to oversized dimensions (2x slot size for zoom headroom)
+  // This ensures we have enough pixels for the user to zoom in
+  const oversizedWidth = Math.max(
+    Math.floor(targetWidth * OVERSIZED_MULTIPLIER),
+    cropped.width // Don't upscale if source is smaller
+  );
+  const oversizedHeight = Math.max(
+    Math.floor(targetHeight * OVERSIZED_MULTIPLIER),
+    cropped.height
+  );
+  
+  // If the cropped image is already smaller than target, just use it as-is
+  if (cropped.width <= targetWidth * OVERSIZED_MULTIPLIER) {
+    return cropped;
+  }
+  
+  // Resize to oversized dimensions
+  const resized = await resizeToSlot(
+    cropped.uri,
+    oversizedWidth,
+    oversizedHeight
+  );
+  
+  return resized;
+}
+
+/**
+ * Apply image adjustments and crop to final slot dimensions
+ * 
+ * This function takes an oversized image with adjustments (translateX, translateY, scale)
+ * and produces the final slot-sized image by cropping the visible region.
+ * 
+ * @param uri - Source image URI (oversized)
+ * @param imageWidth - Width of source image in pixels
+ * @param imageHeight - Height of source image in pixels
+ * @param targetWidth - Target slot width in pixels
+ * @param targetHeight - Target slot height in pixels
+ * @param adjustments - The adjustments to apply (translateX, translateY, scale)
+ * @returns Final image URI with exact slot dimensions
+ */
+export async function applyAdjustmentsAndCrop(
+  uri: string,
+  imageWidth: number,
+  imageHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  adjustments: { translateX: number; translateY: number; scale: number }
+): Promise<{ uri: string; width: number; height: number }> {
+  const { translateX, translateY, scale } = adjustments;
+  
+  // Calculate the visible region based on adjustments
+  // The adjustments are relative to the display frame:
+  // - scale: how much the image is zoomed (1.0 = fill frame exactly)
+  // - translateX/Y: offset from center (in frame-relative coordinates, -0.5 to 0.5)
+  
+  // The "virtual" size of the image as displayed (scaled)
+  const scaledWidth = imageWidth * scale;
+  const scaledHeight = imageHeight * scale;
+  
+  // The visible frame dimensions relative to the scaled image
+  const frameWidth = imageWidth / (scale * (imageWidth / targetWidth));
+  const frameHeight = imageHeight / (scale * (imageHeight / targetHeight));
+  
+  // Calculate the visible region's top-left corner
+  // translateX/Y are relative offsets (-0.5 to 0.5 of the available movement range)
+  const maxOffsetX = (scaledWidth - targetWidth) / 2;
+  const maxOffsetY = (scaledHeight - targetHeight) / 2;
+  
+  // Convert relative offsets to pixel offsets on the source image
+  const pixelOffsetX = translateX * maxOffsetX * 2 / scale;
+  const pixelOffsetY = translateY * maxOffsetY * 2 / scale;
+  
+  // Calculate crop region
+  // Center of the image plus offset, then calculate top-left corner
+  const cropWidth = imageWidth / scale;
+  const cropHeight = imageHeight / scale;
+  
+  // Ensure crop dimensions match target aspect ratio
+  const targetAspectRatio = targetWidth / targetHeight;
+  let finalCropWidth = cropWidth;
+  let finalCropHeight = cropHeight;
+  
+  if (cropWidth / cropHeight > targetAspectRatio) {
+    finalCropWidth = cropHeight * targetAspectRatio;
+  } else {
+    finalCropHeight = cropWidth / targetAspectRatio;
+  }
+  
+  // Calculate origin (top-left corner of crop region)
+  let originX = (imageWidth - finalCropWidth) / 2 - pixelOffsetX;
+  let originY = (imageHeight - finalCropHeight) / 2 - pixelOffsetY;
+  
+  // Clamp to valid bounds
+  originX = Math.max(0, Math.min(imageWidth - finalCropWidth, originX));
+  originY = Math.max(0, Math.min(imageHeight - finalCropHeight, originY));
+  
+  // Apply crop
+  const cropped = await ImageManipulator.manipulateAsync(
+    uri,
+    [{
+      crop: {
+        originX: Math.floor(originX),
+        originY: Math.floor(originY),
+        width: Math.floor(finalCropWidth),
+        height: Math.floor(finalCropHeight),
+      }
+    }],
+    { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+  );
+  
+  // Resize to exact slot dimensions
+  const resized = await resizeToSlot(cropped.uri, targetWidth, targetHeight);
+  
+  return resized;
+}
+
+/**
+ * Calculate the pan limits for image adjustment
+ * 
+ * Given the image dimensions, slot dimensions, and current scale,
+ * returns the maximum translateX and translateY values allowed.
+ * 
+ * @param imageWidth - Width of the image in pixels
+ * @param imageHeight - Height of the image in pixels
+ * @param slotWidth - Width of the slot in pixels
+ * @param slotHeight - Height of the slot in pixels
+ * @param scale - Current scale factor
+ * @returns Maximum absolute translateX and translateY values (0 to 0.5)
+ */
+export function calculatePanLimits(
+  imageWidth: number,
+  imageHeight: number,
+  slotWidth: number,
+  slotHeight: number,
+  scale: number
+): { maxTranslateX: number; maxTranslateY: number } {
+  // The scaled image dimensions
+  const scaledWidth = imageWidth * scale;
+  const scaledHeight = imageHeight * scale;
+  
+  // How much the image extends beyond the frame on each side
+  // Normalized to 0-0.5 range (0 = no movement, 0.5 = can move half the frame width)
+  const excessWidth = Math.max(0, scaledWidth - slotWidth);
+  const excessHeight = Math.max(0, scaledHeight - slotHeight);
+  
+  // Maximum translate as ratio of slot dimensions
+  const maxTranslateX = excessWidth > 0 ? (excessWidth / scaledWidth) * 0.5 : 0;
+  const maxTranslateY = excessHeight > 0 ? (excessHeight / scaledHeight) * 0.5 : 0;
+  
+  return { maxTranslateX, maxTranslateY };
+}
+
+/**
+ * Clamp adjustments to valid bounds
+ * 
+ * Ensures that:
+ * 1. Scale is within MIN_ADJUSTMENT_SCALE and MAX_ADJUSTMENT_SCALE
+ * 2. TranslateX/Y don't exceed pan limits for current scale
+ * 
+ * @param adjustments - Current adjustments
+ * @param imageWidth - Width of the image in pixels
+ * @param imageHeight - Height of the image in pixels
+ * @param slotWidth - Width of the slot in pixels
+ * @param slotHeight - Height of the slot in pixels
+ * @returns Clamped adjustments
+ */
+export function clampAdjustments(
+  adjustments: { translateX: number; translateY: number; scale: number },
+  imageWidth: number,
+  imageHeight: number,
+  slotWidth: number,
+  slotHeight: number
+): { translateX: number; translateY: number; scale: number } {
+  // Clamp scale
+  const scale = Math.max(MIN_ADJUSTMENT_SCALE, Math.min(MAX_ADJUSTMENT_SCALE, adjustments.scale));
+  
+  // Calculate pan limits for this scale
+  const { maxTranslateX, maxTranslateY } = calculatePanLimits(
+    imageWidth,
+    imageHeight,
+    slotWidth,
+    slotHeight,
+    scale
+  );
+  
+  // Clamp translate values
+  const translateX = Math.max(-maxTranslateX, Math.min(maxTranslateX, adjustments.translateX));
+  const translateY = Math.max(-maxTranslateY, Math.min(maxTranslateY, adjustments.translateY));
+  
+  return { translateX, translateY, scale };
+}
+
+/**
+ * Check if a MediaAsset has adjustments applied
+ */
+export function hasAdjustments(asset: MediaAsset): boolean {
+  if (!asset.adjustments) return false;
+  
+  const { translateX, translateY, scale } = asset.adjustments;
+  
+  // Check if any adjustment differs from default
+  return (
+    translateX !== 0 ||
+    translateY !== 0 ||
+    scale !== 1.0
+  );
+}

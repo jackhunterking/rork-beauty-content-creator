@@ -3,19 +3,17 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useApp } from "@/contexts/AppContext";
 import { CaptureScreen } from "@/components/CaptureScreen";
 import { extractSlots, slotToImageSlot } from "@/utils/slotParser";
-import { MediaAsset } from "@/types";
 
 /**
  * Dynamic capture screen for any slot
  * Route: /capture/[slotId] (e.g., /capture/slot-before, /capture/slot-after)
  * 
- * Replaces the hardcoded before.tsx and after.tsx screens with a single
- * dynamic route that works for any slot based on layer ID.
+ * After capturing an image, navigates to /adjust/[slotId] for position adjustment.
  */
 export default function CaptureSlotScreen() {
   const { slotId } = useLocalSearchParams<{ slotId: string }>();
   const router = useRouter();
-  const { currentProject, setCapturedImage } = useApp();
+  const { currentProject } = useApp();
   
   const template = currentProject.template;
   
@@ -45,15 +43,18 @@ export default function CaptureSlotScreen() {
 
   const handleContinue = useCallback((media: { uri: string; width: number; height: number }) => {
     if (slotId) {
-      const mediaAsset: MediaAsset = {
-        uri: media.uri,
-        width: media.width,
-        height: media.height,
-      };
-      setCapturedImage(slotId, mediaAsset);
+      // Navigate to adjustment screen with the captured image data
+      router.push({
+        pathname: `/adjust/${slotId}`,
+        params: {
+          uri: encodeURIComponent(media.uri),
+          width: media.width.toString(),
+          height: media.height.toString(),
+          isNew: 'true',
+        },
+      });
     }
-    router.back();
-  }, [slotId, setCapturedImage, router]);
+  }, [slotId, router]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -74,4 +75,3 @@ export default function CaptureSlotScreen() {
     />
   );
 }
-

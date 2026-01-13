@@ -22,7 +22,11 @@ import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-nati
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
-import { processImageForDimensions } from '@/utils/imageProcessing';
+import { 
+  processImageForAdjustment, 
+  applyAdjustmentsAndCrop, 
+  DEFAULT_ADJUSTMENTS 
+} from '@/utils/imageProcessing';
 import { extractSlots, allSlotsCaptured, getSlotById, getCapturedSlotCount } from '@/utils/slotParser';
 import { renderPreview } from '@/services/renderService';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
@@ -310,17 +314,16 @@ export default function EditorScreen() {
   }, [currentProject.draftId, currentProject.cachedPreviewUrl, currentProject.localPreviewPath, currentProject.wasRenderedAsPremium, isPremium, capturedImages]);
 
   // Trigger preview render when photos change
+  // Applies image adjustments (pan/zoom) before uploading to Templated.io
   const triggerPreviewRender = useCallback(async () => {
     if (!template?.templatedId) return;
     
-    const photosToRender: Record<string, string> = {};
-    for (const [slotId, media] of Object.entries(capturedImages)) {
-      if (media?.uri) {
-        photosToRender[slotId] = media.uri;
-      }
-    }
+    // Filter images that have URIs
+    const imagesToProcess = Object.entries(capturedImages).filter(
+      ([_, media]) => media?.uri
+    );
     
-    if (Object.keys(photosToRender).length === 0) {
+    if (imagesToProcess.length === 0) {
       setRenderedPreviewUri(null);
       setPreviewError(null);
       return;
@@ -330,6 +333,49 @@ export default function EditorScreen() {
     setPreviewError(null);
     
     try {
+      // Apply adjustments to each image before uploading
+      const photosToRender: Record<string, string> = {};
+      
+      for (const [slotId, media] of imagesToProcess) {
+        if (!media) continue;
+        
+        const slot = getSlotById(slots, slotId);
+        if (!slot) {
+          // If no slot info, use original image
+          photosToRender[slotId] = media.uri;
+          continue;
+        }
+        
+        // Check if image has adjustments that need to be applied
+        const adjustments = media.adjustments;
+        const hasNonDefaultAdjustments = adjustments && (
+          adjustments.translateX !== 0 ||
+          adjustments.translateY !== 0 ||
+          adjustments.scale !== 1.0
+        );
+        
+        if (hasNonDefaultAdjustments && adjustments) {
+          // Apply adjustments and crop to exact slot size
+          try {
+            const processed = await applyAdjustmentsAndCrop(
+              media.uri,
+              media.width,
+              media.height,
+              slot.width,
+              slot.height,
+              adjustments
+            );
+            photosToRender[slotId] = processed.uri;
+          } catch (adjustError) {
+            console.warn(`[Editor] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
+            photosToRender[slotId] = media.uri;
+          }
+        } else {
+          // No adjustments, use original image
+          photosToRender[slotId] = media.uri;
+        }
+      }
+      
       const result = await renderPreview({
         templateId: template.templatedId,
         slotImages: photosToRender,
@@ -350,7 +396,7 @@ export default function EditorScreen() {
     } finally {
       setIsRendering(false);
     }
-  }, [template?.templatedId, capturedImages, isPremium]);
+  }, [template?.templatedId, capturedImages, slots, isPremium]);
 
   // Reactive preview rendering
   useEffect(() => {
@@ -598,7 +644,7 @@ export default function EditorScreen() {
 
   const isEditingDraft = !!currentProject.draftId;
 
-  // Process image for a specific slot
+  // Process image for a specific slot (keeps oversized for adjustment)
   const processImage = useCallback(
     async (uri: string, width: number, height: number, slotId: string) => {
       if (!template) return;
@@ -610,7 +656,7 @@ export default function EditorScreen() {
       }
 
       try {
-        const processed = await processImageForDimensions(
+        const processed = await processImageForAdjustment(
           uri, 
           width, 
           height, 
@@ -622,6 +668,7 @@ export default function EditorScreen() {
           uri: processed.uri,
           width: processed.width,
           height: processed.height,
+          adjustments: DEFAULT_ADJUSTMENTS,
         });
       } catch (error) {
         console.error('Failed to process image:', error);
@@ -638,7 +685,7 @@ export default function EditorScreen() {
     [router]
   );
 
-  // Choose from library for a slot
+  // Choose from library for a slot - navigates to adjustment screen
   const chooseFromLibrary = useCallback(
     async (slotId: string) => {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -649,10 +696,44 @@ export default function EditorScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        await processImage(asset.uri, asset.width, asset.height, slotId);
+        
+        // First process the image to keep it oversized for adjustment
+        const slot = getSlotById(slots, slotId);
+        if (!slot) return;
+
+        try {
+          const processed = await processImageForAdjustment(
+            asset.uri, 
+            asset.width, 
+            asset.height, 
+            slot.width, 
+            slot.height
+          );
+
+          // Navigate to adjustment screen with the processed image
+          router.push({
+            pathname: `/adjust/${slotId}`,
+            params: {
+              uri: encodeURIComponent(processed.uri),
+              width: processed.width.toString(),
+              height: processed.height.toString(),
+              isNew: 'true',
+            },
+          });
+        } catch (error) {
+          console.error('Failed to process image:', error);
+        }
       }
     },
-    [processImage]
+    [slots, router]
+  );
+
+  // Navigate to adjustment screen for an existing slot image
+  const adjustPosition = useCallback(
+    (slotId: string) => {
+      router.push(`/adjust/${slotId}`);
+    },
+    [router]
   );
 
   // Show action sheet for slot
@@ -664,35 +745,71 @@ export default function EditorScreen() {
 
       const slot = getSlotById(slots, slotId);
       const slotLabel = slot?.label || 'Photo';
+      const hasImage = !!capturedImages[slotId];
 
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: ['Cancel', 'Take Photo', 'Choose from Library'],
-            cancelButtonIndex: 0,
-            title: `Add ${slotLabel} Image`,
-          },
-          (buttonIndex) => {
-            if (buttonIndex === 1) {
-              takePhoto(slotId);
-            } else if (buttonIndex === 2) {
-              chooseFromLibrary(slotId);
+      if (hasImage) {
+        // Slot has an image - show options to adjust, replace, or remove
+        if (Platform.OS === 'ios') {
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              options: ['Cancel', 'Adjust Position', 'Take New Photo', 'Choose from Library'],
+              cancelButtonIndex: 0,
+              title: `${slotLabel} Image`,
+              message: 'Adjust position or replace the current image',
+            },
+            (buttonIndex) => {
+              if (buttonIndex === 1) {
+                adjustPosition(slotId);
+              } else if (buttonIndex === 2) {
+                takePhoto(slotId);
+              } else if (buttonIndex === 3) {
+                chooseFromLibrary(slotId);
+              }
             }
-          }
-        );
+          );
+        } else {
+          Alert.alert(
+            `${slotLabel} Image`,
+            'Adjust position or replace the current image',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Adjust Position', onPress: () => adjustPosition(slotId) },
+              { text: 'Take New Photo', onPress: () => takePhoto(slotId) },
+              { text: 'Choose from Library', onPress: () => chooseFromLibrary(slotId) },
+            ]
+          );
+        }
       } else {
-        Alert.alert(
-          `Add ${slotLabel} Image`,
-          'Choose an option',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Take Photo', onPress: () => takePhoto(slotId) },
-            { text: 'Choose from Library', onPress: () => chooseFromLibrary(slotId) },
-          ]
-        );
+        // Slot is empty - show options to add an image
+        if (Platform.OS === 'ios') {
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              options: ['Cancel', 'Take Photo', 'Choose from Library'],
+              cancelButtonIndex: 0,
+              title: `Add ${slotLabel} Image`,
+            },
+            (buttonIndex) => {
+              if (buttonIndex === 1) {
+                takePhoto(slotId);
+              } else if (buttonIndex === 2) {
+                chooseFromLibrary(slotId);
+              }
+            }
+          );
+        } else {
+          Alert.alert(
+            `Add ${slotLabel} Image`,
+            'Choose an option',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Take Photo', onPress: () => takePhoto(slotId) },
+              { text: 'Choose from Library', onPress: () => chooseFromLibrary(slotId) },
+            ]
+          );
+        }
       }
     },
-    [slots, isRendering, takePhoto, chooseFromLibrary]
+    [slots, isRendering, capturedImages, takePhoto, chooseFromLibrary, adjustPosition]
   );
 
   // Handle cached preview failing to load

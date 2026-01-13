@@ -64,6 +64,13 @@ function RootLayoutNav() {
         }} 
       />
       <Stack.Screen 
+        name="adjust/[slotId]" 
+        options={{ 
+          headerShown: false,
+          presentation: 'card',
+        }} 
+      />
+      <Stack.Screen 
         name="library/viewer" 
         options={{ 
           headerShown: false,

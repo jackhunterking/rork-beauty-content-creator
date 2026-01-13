@@ -45,6 +45,9 @@ import {
   deleteBrandLogo,
   updateBrandKitSettings,
   refreshBrandKitFromCloud,
+  runBrandKitDiagnostics,
+  BrandKitError,
+  BrandKitSaveResult,
 } from "@/services/brandKitService";
 import { BrandKit } from "@/types";
 
@@ -137,6 +140,11 @@ export default function SettingsScreen() {
 
   const pickAndUploadLogo = async () => {
     try {
+      // Run diagnostics before attempting upload (helps debug issues)
+      console.log('[Settings] Running pre-upload diagnostics...');
+      const diagnostics = await runBrandKitDiagnostics();
+      console.log('[Settings] Diagnostics complete:', diagnostics.authentication.isAuthenticated ? 'authenticated' : 'not authenticated');
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
@@ -146,29 +154,78 @@ export default function SettingsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         setIsUploadingLogo(true);
-        const updatedKit = await saveBrandLogo(result.assets[0].uri);
-        setBrandKit(updatedKit);
+        console.log('[Settings] Starting logo save for:', result.assets[0].uri.substring(0, 50) + '...');
         
-        // Show success message with sync status
-        if (isAuthenticated) {
-          Alert.alert('Success', 'Logo saved and synced to cloud!');
+        const saveResult: BrandKitSaveResult = await saveBrandLogo(result.assets[0].uri);
+        
+        if (saveResult.success) {
+          setBrandKit(saveResult.brandKit);
+          
+          // Determine the appropriate success message
+          if (saveResult.savedToCloud && saveResult.savedLocally) {
+            Alert.alert('Success', 'Logo saved and synced to cloud!');
+          } else if (saveResult.savedLocally && saveResult.warning) {
+            // Partial success - saved locally but cloud had issues
+            Alert.alert('Logo Saved', saveResult.warning);
+          } else if (saveResult.savedLocally) {
+            Alert.alert('Success', 'Logo saved locally. Sign in to sync across devices.');
+          } else {
+            // Shouldn't normally happen, but handle it
+            Alert.alert('Success', 'Logo saved!');
+          }
         } else {
-          Alert.alert('Success', 'Logo saved locally. Sign in to sync across devices.');
+          // Save failed
+          const errorMessage = saveResult.error?.getUserFriendlyMessage() || 'Failed to save logo. Please try again.';
+          
+          // Log detailed error for debugging
+          console.error('[Settings] Logo save failed:', {
+            code: saveResult.error?.code,
+            message: saveResult.error?.message,
+            details: saveResult.error?.details,
+          });
+          
+          // Show user-friendly error with option to retry or get help
+          Alert.alert(
+            'Failed to Save Logo',
+            errorMessage,
+            [
+              { text: 'OK', style: 'cancel' },
+              { 
+                text: 'Try Again', 
+                onPress: () => pickAndUploadLogo(),
+              },
+            ]
+          );
         }
       }
     } catch (error) {
-      console.error('[Settings] Failed to upload logo:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // This catches unexpected errors (not BrandKitErrors)
+      console.error('[Settings] Unexpected error during logo upload:', error);
       
-      // Provide helpful error messages
-      if (errorMessage.includes('network') || errorMessage.includes('Network')) {
-        Alert.alert(
-          'Network Error', 
-          'Logo saved locally but cloud sync failed. It will sync when you\'re back online.'
-        );
-      } else {
-        Alert.alert('Error', 'Failed to save logo. Please try again.');
+      let errorMessage = 'An unexpected error occurred. Please try again.';
+      
+      if (error instanceof BrandKitError) {
+        errorMessage = error.getUserFriendlyMessage();
+      } else if (error instanceof Error) {
+        // Check for common error patterns
+        if (error.message.includes('network') || error.message.includes('Network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('permission') || error.message.includes('Permission')) {
+          errorMessage = 'Permission denied. Please allow access to your photos.';
+        }
       }
+      
+      Alert.alert(
+        'Error',
+        errorMessage,
+        [
+          { text: 'OK', style: 'cancel' },
+          { 
+            text: 'Try Again', 
+            onPress: () => pickAndUploadLogo(),
+          },
+        ]
+      );
     } finally {
       setIsUploadingLogo(false);
     }
