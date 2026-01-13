@@ -5,6 +5,7 @@ import { Template } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
+import { withCacheBust } from '@/services/imageUtils';
 
 const CANVAS_PADDING = 20;
 
@@ -84,18 +85,30 @@ export function TemplateCanvas({
   // 2. For FREE users: watermarkedPreviewUrl (shows watermark upfront)
   // 3. For PRO users: templatedPreviewUrl (clean)
   // 4. Fallback: thumbnail
+  //
+  // Cache busting is applied to local files (file://) to ensure
+  // updated content (e.g., with overlays) is displayed correctly.
   const previewUrl = useMemo(() => {
+    let url: string;
+    
     // If we have a rendered preview (user added photos), use it
-    if (renderedPreviewUri) return renderedPreviewUri;
+    if (renderedPreviewUri) {
+      // Apply cache busting for local files
+      // This ensures updated previews (with overlays) are displayed
+      const cacheBusted = withCacheBust(renderedPreviewUri, Date.now());
+      return cacheBusted || renderedPreviewUri;
+    }
     
     // Before photos are added, show appropriate preview based on premium status
     if (isPremium) {
       // Pro users see clean preview
-      return template.templatedPreviewUrl || template.thumbnail;
+      url = template.templatedPreviewUrl || template.thumbnail;
     } else {
       // Free users see watermarked preview so they know upfront
-      return template.watermarkedPreviewUrl || template.templatedPreviewUrl || template.thumbnail;
+      url = template.watermarkedPreviewUrl || template.templatedPreviewUrl || template.thumbnail;
     }
+    
+    return url;
   }, [renderedPreviewUri, isPremium, template.watermarkedPreviewUrl, template.templatedPreviewUrl, template.thumbnail]);
 
   return (

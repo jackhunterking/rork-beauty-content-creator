@@ -31,6 +31,7 @@ import { useApp } from '@/contexts/AppContext';
 import { PortfolioItem, TemplateFormat, PublishPlatform } from '@/types';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
+import { getPortfolioPreviewUri } from '@/services/imageUtils';
 
 const { width, height } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -246,7 +247,7 @@ const BottomSheet = ({
           <View style={styles.bottomSheetPreviewContainer}>
             <View style={[styles.bottomSheetPreview, previewDimensions]}>
               <Image
-                source={{ uri: item.imageUrl }}
+                source={{ uri: getPortfolioPreviewUri(item) }}
                 style={styles.bottomSheetPreviewImage}
                 contentFit="cover"
                 transition={200}
@@ -446,7 +447,7 @@ export default function PortfolioScreen() {
           onPress={() => handleItemPress(item)}
         >
           <Image
-            source={{ uri: item.imageUrl }}
+            source={{ uri: getPortfolioPreviewUri(item) }}
             style={styles.itemThumbnail}
             contentFit="cover"
             transition={200}

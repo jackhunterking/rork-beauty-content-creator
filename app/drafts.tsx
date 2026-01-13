@@ -17,6 +17,7 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, Template, TemplateFormat } from '@/types';
 import { extractSlots } from '@/utils/slotParser';
+import { getDraftPreviewUri } from '@/services/imageUtils';
 
 const { width } = Dimensions.get('window');
 const GRID_GAP = 12;
@@ -82,19 +83,6 @@ export default function DraftsScreen() {
 
   // Local state for format filter
   const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>('4:5');
-
-  // Get the best available preview URI for a draft
-  const getDraftPreviewUri = useCallback((draft: Draft): string | null => {
-    if (draft.localPreviewPath) return draft.localPreviewPath;
-    if (draft.renderedPreviewUrl) return draft.renderedPreviewUrl;
-    if (draft.beforeImageUrl) return draft.beforeImageUrl;
-    if (draft.afterImageUrl) return draft.afterImageUrl;
-    if (draft.capturedImageUrls) {
-      const firstImage = Object.values(draft.capturedImageUrls)[0];
-      if (firstImage) return firstImage;
-    }
-    return null;
-  }, []);
 
   // Get template for a draft
   const getTemplateForDraft = useCallback((templateId: string) => 

@@ -10,3 +10,4 @@ export { LogoOverlayContent } from './LogoOverlayContent';
 export { OverlayActionBar } from './OverlayActionBar';
 export { OverlayStyleSheet } from './OverlayStyleSheet';
 export { OverlayLayer } from './OverlayLayer';
+export { ScaleSlider } from './ScaleSlider';

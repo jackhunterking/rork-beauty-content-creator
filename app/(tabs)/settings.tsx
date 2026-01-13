@@ -43,10 +43,7 @@ import {
   loadBrandKit, 
   saveBrandLogo, 
   deleteBrandLogo,
-  updateBrandKitSettings,
-  refreshBrandKitFromCloud,
-  runBrandKitDiagnostics,
-  BrandKitError,
+  syncFromCloud,
   BrandKitSaveResult,
 } from "@/services/brandKitService";
 import { BrandKit } from "@/types";
@@ -110,7 +107,7 @@ export default function SettingsScreen() {
     
     setIsSyncingBrandKit(true);
     try {
-      const kit = await refreshBrandKitFromCloud();
+      const kit = await syncFromCloud();
       setBrandKit(kit);
     } catch (error) {
       console.error('[Settings] Failed to sync brand kit:', error);
@@ -140,11 +137,6 @@ export default function SettingsScreen() {
 
   const pickAndUploadLogo = async () => {
     try {
-      // Run diagnostics before attempting upload (helps debug issues)
-      console.log('[Settings] Running pre-upload diagnostics...');
-      const diagnostics = await runBrandKitDiagnostics();
-      console.log('[Settings] Diagnostics complete:', diagnostics.authentication.isAuthenticated ? 'authenticated' : 'not authenticated');
-
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.9,
@@ -154,78 +146,20 @@ export default function SettingsScreen() {
 
       if (!result.canceled && result.assets[0]) {
         setIsUploadingLogo(true);
-        console.log('[Settings] Starting logo save for:', result.assets[0].uri.substring(0, 50) + '...');
         
         const saveResult: BrandKitSaveResult = await saveBrandLogo(result.assets[0].uri);
         
         if (saveResult.success) {
-          setBrandKit(saveResult.brandKit);
-          
-          // Determine the appropriate success message
-          if (saveResult.savedToCloud && saveResult.savedLocally) {
-            Alert.alert('Success', 'Logo saved and synced to cloud!');
-          } else if (saveResult.savedLocally && saveResult.warning) {
-            // Partial success - saved locally but cloud had issues
-            Alert.alert('Logo Saved', saveResult.warning);
-          } else if (saveResult.savedLocally) {
-            Alert.alert('Success', 'Logo saved locally. Sign in to sync across devices.');
-          } else {
-            // Shouldn't normally happen, but handle it
-            Alert.alert('Success', 'Logo saved!');
-          }
+          // Force UI update with new logo
+          setBrandKit({ ...saveResult.brandKit });
+          Alert.alert('Success', 'Logo saved!');
         } else {
-          // Save failed
-          const errorMessage = saveResult.error?.getUserFriendlyMessage() || 'Failed to save logo. Please try again.';
-          
-          // Log detailed error for debugging
-          console.error('[Settings] Logo save failed:', {
-            code: saveResult.error?.code,
-            message: saveResult.error?.message,
-            details: saveResult.error?.details,
-          });
-          
-          // Show user-friendly error with option to retry or get help
-          Alert.alert(
-            'Failed to Save Logo',
-            errorMessage,
-            [
-              { text: 'OK', style: 'cancel' },
-              { 
-                text: 'Try Again', 
-                onPress: () => pickAndUploadLogo(),
-              },
-            ]
-          );
+          Alert.alert('Error', saveResult.error || 'Failed to save logo. Please try again.');
         }
       }
     } catch (error) {
-      // This catches unexpected errors (not BrandKitErrors)
-      console.error('[Settings] Unexpected error during logo upload:', error);
-      
-      let errorMessage = 'An unexpected error occurred. Please try again.';
-      
-      if (error instanceof BrandKitError) {
-        errorMessage = error.getUserFriendlyMessage();
-      } else if (error instanceof Error) {
-        // Check for common error patterns
-        if (error.message.includes('network') || error.message.includes('Network') || error.message.includes('fetch')) {
-          errorMessage = 'Network error. Please check your connection and try again.';
-        } else if (error.message.includes('permission') || error.message.includes('Permission')) {
-          errorMessage = 'Permission denied. Please allow access to your photos.';
-        }
-      }
-      
-      Alert.alert(
-        'Error',
-        errorMessage,
-        [
-          { text: 'OK', style: 'cancel' },
-          { 
-            text: 'Try Again', 
-            onPress: () => pickAndUploadLogo(),
-          },
-        ]
-      );
+      console.error('[Settings] Logo upload error:', error);
+      Alert.alert('Error', 'Failed to save logo. Please try again.');
     } finally {
       setIsUploadingLogo(false);
     }
@@ -642,6 +576,8 @@ export default function SettingsScreen() {
                   source={{ uri: brandKit.logoUri }}
                   style={styles.logoPreview}
                   contentFit="contain"
+                  cachePolicy="none"
+                  key={brandKit.updatedAt || brandKit.logoUri}
                 />
                 <View style={styles.logoActions}>
                   <TouchableOpacity

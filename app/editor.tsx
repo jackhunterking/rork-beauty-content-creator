@@ -35,7 +35,8 @@ import { saveRenderedPreview, createDraftDirectories, saveLocalPreviewFile } fro
 import { 
   OverlayLayer, 
   OverlayActionBar, 
-  OverlayStyleSheet 
+  OverlayStyleSheet,
+  ScaleSlider,
 } from '@/components/overlays';
 import {
   Overlay,
@@ -47,6 +48,8 @@ import {
   createDateOverlay,
   createLogoOverlay,
   isTextBasedOverlay,
+  isLogoOverlay,
+  LOGO_SIZE_CONSTRAINTS,
 } from '@/types/overlays';
 import { 
   saveOverlays, 
@@ -98,6 +101,10 @@ export default function EditorScreen() {
   
   // Track the last rendered preview URL to detect actual changes
   const lastSavedPreviewUrlRef = useRef<string | null>(null);
+  
+  // Track if we have a manually captured preview with overlays
+  // When true, auto-save should NOT overwrite the local preview file
+  const hasManualCapturedPreviewRef = useRef(false);
 
   // Premium status for watermark control
   const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
@@ -210,6 +217,7 @@ export default function EditorScreen() {
       allowNavigationRef.current = false;
       isSavingPreviewRef.current = false;
       lastSavedPreviewUrlRef.current = null;
+      hasManualCapturedPreviewRef.current = false;
       
       setRenderedPreviewUri(null);
       setLocalPreviewPath(null);
@@ -314,6 +322,10 @@ export default function EditorScreen() {
         setLocalPreviewPath(cachedLocalPath);
         prevCapturedImagesRef.current = { ...capturedImages };
         hasInitializedFromCacheRef.current = true;
+        // Mark that we have a captured preview - don't let auto-save overwrite it
+        // The local preview may contain overlays that we don't want to lose
+        hasManualCapturedPreviewRef.current = true;
+        lastSavedPreviewUrlRef.current = cachedLocalPath;
         return;
       }
       
@@ -330,6 +342,8 @@ export default function EditorScreen() {
       console.log('[Editor] Premium status changed, will re-render preview');
       hasInitializedFromCacheRef.current = true;
       setImagesModifiedSinceLoad(true);
+      // Reset manual capture flag since we need to re-render
+      hasManualCapturedPreviewRef.current = false;
       return;
     }
     
@@ -464,25 +478,43 @@ export default function EditorScreen() {
       
       setImagesModifiedSinceLoad(true);
       
+      // Reset manual capture flag since the images changed - old preview is invalid
+      // This allows auto-save to work for the new render
+      hasManualCapturedPreviewRef.current = false;
+      
       console.log('[Editor] Triggering preview render');
       triggerPreviewRender();
     }
   }, [capturedImages, template?.templatedId, triggerPreviewRender, renderedPreviewUri, imagesModifiedSinceLoad, currentProject.draftId]);
 
   // Auto-save preview locally when render completes
+  // IMPORTANT: This should NOT overwrite manually captured previews with overlays
   useEffect(() => {
     const savePreviewLocally = async () => {
       if (!renderedPreviewUri || !currentProject.draftId) return;
       
+      // Skip if this is already a local file
       if (renderedPreviewUri.startsWith('file://')) {
+        console.log('[Editor] Auto-save: Skipping - preview is already a local file');
         return;
       }
       
+      // Skip if we have a manually captured preview (with overlays)
+      // This prevents overwriting the good preview with a Templated.io URL that has no overlays
+      if (hasManualCapturedPreviewRef.current) {
+        console.log('[Editor] Auto-save: Skipping - manual captured preview exists (preserving overlays)');
+        return;
+      }
+      
+      // Skip if already saved this URL
       if (lastSavedPreviewUrlRef.current === renderedPreviewUri) {
+        console.log('[Editor] Auto-save: Skipping - already saved this URL');
         return;
       }
       
+      // Skip if a save is already in progress
       if (isSavingPreviewRef.current) {
+        console.log('[Editor] Auto-save: Skipping - save already in progress');
         return;
       }
       
@@ -655,6 +687,11 @@ export default function EditorScreen() {
                 const permanentPath = await saveLocalPreviewFile(savedDraft.id, capturedPreviewPath, 'default');
                 if (permanentPath) {
                   console.log('[Editor] Back save: Preview with overlays saved to:', permanentPath);
+                  
+                  // Mark that we have a manually captured preview
+                  hasManualCapturedPreviewRef.current = true;
+                  lastSavedPreviewUrlRef.current = permanentPath;
+                  
                   // Update the draft with the correct preview path
                   await saveDraft({
                     templateId: template.id,
@@ -1035,6 +1072,38 @@ export default function EditorScreen() {
     [overlays, selectedOverlayId]
   );
 
+  // Get scale constraints for selected overlay
+  const selectedOverlayScaleConstraints = useMemo(() => {
+    if (!selectedOverlay) {
+      return { minScale: 0.2, maxScale: 3.0 };
+    }
+    
+    if (isLogoOverlay(selectedOverlay)) {
+      return {
+        minScale: LOGO_SIZE_CONSTRAINTS.minScale,
+        maxScale: LOGO_SIZE_CONSTRAINTS.maxScale,
+      };
+    }
+    
+    // Text/Date overlays have different constraints
+    return {
+      minScale: 0.5,
+      maxScale: 2.5,
+    };
+  }, [selectedOverlay]);
+
+  // Handle scale change from ScaleSlider
+  const handleScaleSliderChange = useCallback((newScale: number) => {
+    if (!selectedOverlayId || !selectedOverlay) return;
+    
+    const updatedTransform: OverlayTransform = {
+      ...selectedOverlay.transform,
+      scale: newScale,
+    };
+    
+    handleUpdateOverlayTransform(selectedOverlayId, updatedTransform);
+  }, [selectedOverlayId, selectedOverlay, handleUpdateOverlayTransform]);
+
   // Perform save draft operation
   const performSaveDraft = useCallback(async (navigateAfterSave: boolean = true) => {
     if (!template) return;
@@ -1105,6 +1174,15 @@ export default function EditorScreen() {
         if (permanentPath) {
           finalPreviewPath = permanentPath;
           console.log('[Editor] Preview with overlays saved to:', permanentPath);
+          
+          // CRITICAL: Mark that we have a manually captured preview
+          // This prevents auto-save from overwriting with Templated.io URL (no overlays)
+          hasManualCapturedPreviewRef.current = true;
+          lastSavedPreviewUrlRef.current = permanentPath;
+          
+          // Update local state to use the captured preview
+          setLocalPreviewPath(permanentPath);
+          setRenderedPreviewUri(permanentPath);
           
           // Update the draft with the correct preview path
           console.log('[Editor] Updating draft with new preview path');
@@ -1405,6 +1483,18 @@ export default function EditorScreen() {
                   </View>
                 )}
               </ViewShot>
+              
+              {/* Scale Slider - positioned outside ViewShot so it's not captured */}
+              {canvasDimensions.height > 0 && (
+                <ScaleSlider
+                  visible={!!selectedOverlayId}
+                  currentScale={selectedOverlay?.transform.scale ?? 1}
+                  minScale={selectedOverlayScaleConstraints.minScale}
+                  maxScale={selectedOverlayScaleConstraints.maxScale}
+                  onScaleChange={handleScaleSliderChange}
+                  canvasHeight={canvasDimensions.height}
+                />
+              )}
             </View>
           </ScrollView>
         </Pressable>
