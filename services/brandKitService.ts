@@ -121,10 +121,20 @@ function mapRowToBrandKit(row: BrandKitRow, localLogoUri?: string): BrandKit {
  * Ensure the brand kit directory exists
  */
 async function ensureBrandKitDirectory(): Promise<void> {
-  const dirInfo = await FileSystem.getInfoAsync(BRAND_KIT_DIRECTORY);
-  if (!dirInfo.exists) {
-    await FileSystem.makeDirectoryAsync(BRAND_KIT_DIRECTORY, { intermediates: true });
-    console.log('[BrandKit] Created brand kit directory');
+  try {
+    const dirInfo = await FileSystem.getInfoAsync(BRAND_KIT_DIRECTORY);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(BRAND_KIT_DIRECTORY, { intermediates: true });
+      console.log('[BrandKit] Created brand kit directory');
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[BrandKit] Failed to create directory:', errorMsg);
+    throw new BrandKitError(
+      'LOCAL_CACHE_FAILED',
+      'Failed to create storage directory',
+      errorMsg
+    );
   }
 }
 
@@ -281,6 +291,7 @@ async function cacheLogoLocally(logoUrl: string): Promise<string | null> {
 
 /**
  * Fetch brand kit from Supabase database
+ * Uses .maybeSingle() instead of .single() to avoid 406 errors when no row exists
  */
 async function fetchFromSupabase(): Promise<BrandKitRow | null> {
   try {
@@ -290,31 +301,35 @@ async function fetchFromSupabase(): Promise<BrandKitRow | null> {
       return null;
     }
 
+    // Use .maybeSingle() to gracefully handle 0 rows (returns null instead of error)
     const { data, error } = await supabase
       .from('brand_kits')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        // No row found - this is normal for new users
-        console.log('[BrandKit] No brand kit found in Supabase');
-        return null;
-      }
-      console.error('[BrandKit] Supabase fetch error:', error);
+      // Log the full error for debugging
+      console.error('[BrandKit] Supabase fetch error:', JSON.stringify(error, null, 2));
+      return null;
+    }
+
+    if (!data) {
+      console.log('[BrandKit] No brand kit found in Supabase for user');
       return null;
     }
 
     return data as BrandKitRow;
   } catch (error) {
-    console.error('[BrandKit] Failed to fetch from Supabase:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[BrandKit] Failed to fetch from Supabase:', errorMsg);
     return null;
   }
 }
 
 /**
  * Upsert brand kit in Supabase database
+ * Uses .maybeSingle() for safer handling of edge cases
  */
 async function upsertToSupabase(brandKit: Partial<BrandKitRow>): Promise<BrandKitRow | null> {
   try {
@@ -324,26 +339,36 @@ async function upsertToSupabase(brandKit: Partial<BrandKitRow>): Promise<BrandKi
       return null;
     }
 
+    console.log('[BrandKit] Upserting to Supabase for user:', userId);
+    console.log('[BrandKit] Upsert data:', JSON.stringify(brandKit, null, 2));
+
     const { data, error } = await supabase
       .from('brand_kits')
       .upsert({
         user_id: userId,
         ...brandKit,
+        updated_at: new Date().toISOString(),
       }, {
         onConflict: 'user_id',
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
-      console.error('[BrandKit] Supabase upsert error:', error);
+      console.error('[BrandKit] Supabase upsert error:', JSON.stringify(error, null, 2));
       return null;
     }
 
-    console.log('[BrandKit] Saved to Supabase');
+    if (!data) {
+      console.warn('[BrandKit] Upsert completed but no data returned');
+      return null;
+    }
+
+    console.log('[BrandKit] Saved to Supabase successfully');
     return data as BrandKitRow;
   } catch (error) {
-    console.error('[BrandKit] Failed to upsert to Supabase:', error);
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[BrandKit] Failed to upsert to Supabase:', errorMsg);
     return null;
   }
 }

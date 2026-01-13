@@ -3,12 +3,27 @@ import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowD
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import { ImagePlus, ChevronLeft, Zap, ZapOff } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
-import { processImageForAdjustment } from "@/utils/imageProcessing";
+import { 
+  processImageForAdjustment,
+  MIN_ADJUSTMENT_SCALE,
+  MAX_ADJUSTMENT_SCALE,
+  DEFAULT_ADJUSTMENTS,
+} from "@/utils/imageProcessing";
 import { ImageSlot, FramePositionInfo } from "@/types";
 import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
+
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 // UI element height constants
 // These values must match the actual rendered heights of the UI components
@@ -20,6 +35,11 @@ interface CapturedMedia {
   uri: string;
   width: number;
   height: number;
+  adjustments: {
+    translateX: number;
+    translateY: number;
+    scale: number;
+  };
 }
 
 interface CaptureScreenProps {
@@ -44,6 +64,26 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
   
   // Use reactive window dimensions to handle Dynamic Island and screen rotation
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+
+  // ============================================
+  // Image Adjustment Gesture State
+  // ============================================
+  
+  // Shared values for gestures
+  const scale = useSharedValue(DEFAULT_ADJUSTMENTS.scale);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  // Context values for gesture start positions
+  const startScale = useSharedValue(1);
+  const startTranslateX = useSharedValue(0);
+  const startTranslateY = useSharedValue(0);
+
+  // Store callbacks in refs for stable references in worklets
+  const onContinueRef = useRef(onContinue);
+  useEffect(() => {
+    onContinueRef.current = onContinue;
+  }, [onContinue]);
   
   // Calculate the available area for the frame
   // This is the space between the top bar and bottom controls
@@ -61,6 +101,149 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
       horizontalPadding: 16, // Small horizontal padding for aesthetics
     };
   }, [insets.top, insets.bottom, screenWidth, screenHeight]);
+
+  // Calculate frame dimensions using slot and available area
+  const frameDimensions = useMemo(() => {
+    if (!slot) return { width: 0, height: 0, top: 0, left: 0 };
+    return calculateFrameForAvailableArea(slot, availableArea);
+  }, [slot, availableArea]);
+
+  // Calculate base image size (fills frame at scale 1.0)
+  const baseImageSize = useMemo(() => {
+    if (!slot || imageSize.width === 0 || imageSize.height === 0) {
+      return { width: 0, height: 0 };
+    }
+
+    const imageAspect = imageSize.width / imageSize.height;
+    const frameAspect = frameDimensions.width / frameDimensions.height;
+
+    if (imageAspect > frameAspect) {
+      // Image is wider - height fills frame
+      return {
+        width: frameDimensions.height * imageAspect,
+        height: frameDimensions.height,
+      };
+    } else {
+      // Image is taller - width fills frame
+      return {
+        width: frameDimensions.width,
+        height: frameDimensions.width / imageAspect,
+      };
+    }
+  }, [slot, imageSize, frameDimensions]);
+
+  // Reset gesture values when a new image is captured
+  useEffect(() => {
+    if (previewUri) {
+      scale.value = DEFAULT_ADJUSTMENTS.scale;
+      translateX.value = 0;
+      translateY.value = 0;
+    }
+  }, [previewUri]);
+
+  // Calculate max translation for current scale
+  const getMaxTranslation = useCallback((currentScale: number) => {
+    'worklet';
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    
+    const maxX = Math.max(0, (scaledWidth - frameDimensions.width) / 2);
+    const maxY = Math.max(0, (scaledHeight - frameDimensions.height) / 2);
+    
+    return { maxX, maxY };
+  }, [baseImageSize, frameDimensions]);
+
+  // Clamp translation to bounds
+  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number) => {
+    'worklet';
+    const { maxX, maxY } = getMaxTranslation(currentScale);
+    return {
+      x: Math.max(-maxX, Math.min(maxX, tx)),
+      y: Math.max(-maxY, Math.min(maxY, ty)),
+    };
+  }, [getMaxTranslation]);
+
+  // Pan gesture for repositioning
+  const panGesture = useMemo(() => 
+    Gesture.Pan()
+      .onStart(() => {
+        'worklet';
+        startTranslateX.value = translateX.value;
+        startTranslateY.value = translateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const newX = startTranslateX.value + event.translationX;
+        const newY = startTranslateY.value + event.translationY;
+        const clamped = clampTranslation(newX, newY, scale.value);
+        translateX.value = clamped.x;
+        translateY.value = clamped.y;
+      })
+      .onEnd(() => {
+        'worklet';
+        // Snap to clamped position with spring
+        const clamped = clampTranslation(translateX.value, translateY.value, scale.value);
+        translateX.value = withSpring(clamped.x, { damping: 20 });
+        translateY.value = withSpring(clamped.y, { damping: 20 });
+      }),
+    [clampTranslation]
+  );
+
+  // Pinch gesture for scaling
+  const pinchGesture = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => {
+        'worklet';
+        startScale.value = scale.value;
+        startTranslateX.value = translateX.value;
+        startTranslateY.value = translateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const newScale = Math.max(
+          MIN_ADJUSTMENT_SCALE,
+          Math.min(MAX_ADJUSTMENT_SCALE, startScale.value * event.scale)
+        );
+        scale.value = newScale;
+        
+        // Adjust translation to keep centered during zoom
+        const scaleRatio = newScale / startScale.value;
+        const newX = startTranslateX.value * scaleRatio;
+        const newY = startTranslateY.value * scaleRatio;
+        const clamped = clampTranslation(newX, newY, newScale);
+        translateX.value = clamped.x;
+        translateY.value = clamped.y;
+      })
+      .onEnd(() => {
+        'worklet';
+        // Snap scale and translation with spring
+        const clamped = clampTranslation(translateX.value, translateY.value, scale.value);
+        translateX.value = withSpring(clamped.x, { damping: 20 });
+        translateY.value = withSpring(clamped.y, { damping: 20 });
+      }),
+    [clampTranslation]
+  );
+
+  // Combine gestures
+  const composedGesture = useMemo(() =>
+    Gesture.Simultaneous(panGesture, pinchGesture),
+    [panGesture, pinchGesture]
+  );
+
+  // Animated styles for the preview image
+  const imageAnimatedStyle = useAnimatedStyle(() => {
+    const scaledWidth = baseImageSize.width * scale.value;
+    const scaledHeight = baseImageSize.height * scale.value;
+    
+    return {
+      width: scaledWidth,
+      height: scaledHeight,
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+      ],
+    };
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -160,13 +343,34 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 
   const handleContinue = useCallback(() => {
     if (previewUri) {
+      // Convert pixel translation back to relative (-0.5 to 0.5) format
+      const currentScale = scale.value;
+      const scaledWidth = baseImageSize.width * currentScale;
+      const scaledHeight = baseImageSize.height * currentScale;
+      const excessWidth = Math.max(0, scaledWidth - frameDimensions.width);
+      const excessHeight = Math.max(0, scaledHeight - frameDimensions.height);
+      
+      const relativeX = excessWidth > 0 ? translateX.value / excessWidth : 0;
+      const relativeY = excessHeight > 0 ? translateY.value / excessHeight : 0;
+      
+      console.log('[CaptureScreen] Continue with adjustments:', {
+        scale: currentScale,
+        translateX: relativeX,
+        translateY: relativeY,
+      });
+      
       onContinue({
         uri: previewUri,
         width: imageSize.width,
         height: imageSize.height,
+        adjustments: {
+          translateX: relativeX,
+          translateY: relativeY,
+          scale: currentScale,
+        },
       });
     }
-  }, [previewUri, imageSize, onContinue]);
+  }, [previewUri, imageSize, onContinue, baseImageSize, frameDimensions, scale, translateX, translateY]);
 
   const handleRetake = useCallback(() => {
     setPreviewUri(null);
@@ -226,12 +430,38 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
       {/* Black mask around the frame, with camera/preview visible inside */}
       {slot && (
         <View style={styles.maskLayer}>
+          {/* FrameOverlay shows the mask - we handle preview image separately for gestures */}
           <FrameOverlay 
             slot={slot} 
-            label={`${title}: ${slot.width}x${slot.height}`}
-            previewUri={previewUri || undefined}
+            label={previewUri ? undefined : `${title}: ${slot.width}x${slot.height}`}
+            previewUri={undefined} // Never pass preview URI - we render it with gestures below
             availableArea={availableArea}
           />
+        </View>
+      )}
+
+      {/* LAYER 2.5: Interactive Preview Image with Gestures */}
+      {previewUri && slot && (
+        <View 
+          style={[
+            styles.previewImageContainer,
+            {
+              top: frameDimensions.top,
+              left: frameDimensions.left,
+              width: frameDimensions.width,
+              height: frameDimensions.height,
+            }
+          ]}
+        >
+          <GestureDetector gesture={composedGesture}>
+            <AnimatedImage
+              source={{ uri: previewUri }}
+              style={[styles.previewImage, imageAnimatedStyle]}
+              contentFit="cover"
+            />
+          </GestureDetector>
+          {/* Frame border overlay */}
+          <View style={styles.previewFrameBorder} pointerEvents="none" />
         </View>
       )}
 
@@ -257,13 +487,18 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 
         {/* Bottom Controls */}
         {previewUri ? (
-          <View style={styles.previewActions}>
-            <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
-              <Text style={styles.retakeText}>Retake</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-              <Text style={styles.continueText}>Continue</Text>
-            </TouchableOpacity>
+          <View style={styles.previewActionsContainer}>
+            <Text style={styles.adjustmentInstructions}>
+              Pinch to zoom • Drag to position
+            </Text>
+            <View style={styles.previewActions}>
+              <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
+                <Text style={styles.retakeText}>Retake</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
+                <Text style={styles.continueText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           <View style={styles.captureControls}>
@@ -394,11 +629,38 @@ const styles = StyleSheet.create({
     borderRadius: 31,
     backgroundColor: Colors.light.surface,
   },
+  previewActionsContainer: {
+    paddingBottom: 40,
+  },
+  adjustmentInstructions: {
+    textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 16,
+  },
   previewActions: {
     flexDirection: 'row',
     gap: 12,
     paddingHorizontal: 20,
-    paddingBottom: 40,
+  },
+  previewImageContainer: {
+    position: 'absolute',
+    zIndex: 2.5,
+    overflow: 'hidden',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  previewImage: {
+    position: 'absolute',
+  },
+  previewFrameBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 4,
   },
   retakeButton: {
     flex: 1,

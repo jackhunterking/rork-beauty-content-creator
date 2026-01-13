@@ -322,13 +322,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Set captured image
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
-    setCurrentProject(prev => ({
-      ...prev,
-      capturedImages: {
+    console.log('[AppContext] setCapturedImage called:', {
+      layerId,
+      hasMedia: !!media,
+      uri: media?.uri?.substring(0, 50) + (media?.uri && media.uri.length > 50 ? '...' : ''),
+      adjustments: media?.adjustments,
+    });
+    
+    setCurrentProject(prev => {
+      const newCapturedImages = {
         ...prev.capturedImages,
         [layerId]: media,
-      },
-    }));
+      };
+      console.log('[AppContext] Updated capturedImages slots:', Object.keys(newCapturedImages).filter(k => newCapturedImages[k]?.uri));
+      return {
+        ...prev,
+        capturedImages: newCapturedImages,
+      };
+    });
     
     if (media) {
       setSlotState(layerId, 'ready');

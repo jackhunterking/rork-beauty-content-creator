@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo, useState } from "react";
+import React, { useEffect, useCallback, useMemo } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useApp } from "@/contexts/AppContext";
 import { ImageAdjustmentScreen } from "@/components/ImageAdjustmentScreen";
@@ -7,21 +7,16 @@ import { MediaAsset } from "@/types";
 import { DEFAULT_ADJUSTMENTS } from "@/utils/imageProcessing";
 
 /**
- * Image adjustment screen for a specific slot
- * Route: /adjust/[slotId]?uri=...&width=...&height=...&isNew=true
+ * Image adjustment screen for re-adjusting existing slot images
+ * Route: /adjust/[slotId]
  * 
- * Can be used in two modes:
- * 1. After capture (isNew=true): Gets image data from URL params
- * 2. Re-adjust existing (isNew=false): Gets image data from currentProject.capturedImages
+ * This screen is used when user taps "Adjust Position" on an existing image
+ * in the editor. New captures now include adjustment in the CaptureScreen itself.
+ * 
+ * Gets image data from currentProject.capturedImages based on slotId.
  */
 export default function AdjustSlotScreen() {
-  const { slotId, uri, width, height, isNew } = useLocalSearchParams<{ 
-    slotId: string;
-    uri?: string;
-    width?: string;
-    height?: string;
-    isNew?: string;
-  }>();
+  const { slotId } = useLocalSearchParams<{ slotId: string }>();
   
   const router = useRouter();
   const { currentProject, setCapturedImage } = useApp();
@@ -41,18 +36,9 @@ export default function AdjustSlotScreen() {
     [slots, slotId]
   );
 
-  // Determine image data source
+  // Get image data from captured images (re-adjusting existing)
   const imageData = useMemo(() => {
-    if (isNew === 'true' && uri && width && height) {
-      // New capture - use URL params
-      return {
-        uri: decodeURIComponent(uri),
-        width: parseInt(width, 10),
-        height: parseInt(height, 10),
-        adjustments: DEFAULT_ADJUSTMENTS,
-      };
-    } else if (slotId && capturedImages[slotId]) {
-      // Re-adjusting existing - use captured images
+    if (slotId && capturedImages[slotId]?.uri) {
       const existing = capturedImages[slotId];
       return {
         uri: existing.uri,
@@ -62,21 +48,24 @@ export default function AdjustSlotScreen() {
       };
     }
     return null;
-  }, [isNew, uri, width, height, slotId, capturedImages]);
+  }, [slotId, capturedImages]);
 
-  // If no template or slot, go back
+  // If no template, slot, or image data, go back
   useEffect(() => {
     if (!template) {
+      console.log('[AdjustSlot] No template, going back');
       router.back();
       return;
     }
     
     if (!slot && slotId) {
+      console.log('[AdjustSlot] No slot found for:', slotId);
       router.back();
       return;
     }
 
     if (!imageData) {
+      console.log('[AdjustSlot] No image data for slot:', slotId);
       router.back();
       return;
     }
@@ -84,6 +73,8 @@ export default function AdjustSlotScreen() {
 
   const handleConfirm = useCallback((adjustments: { translateX: number; translateY: number; scale: number }) => {
     if (slotId && imageData) {
+      console.log('[AdjustSlot] Confirming adjustments for slot:', slotId, adjustments);
+      
       const mediaAsset: MediaAsset = {
         uri: imageData.uri,
         width: imageData.width,
@@ -93,20 +84,11 @@ export default function AdjustSlotScreen() {
       setCapturedImage(slotId, mediaAsset);
     }
     
-    // Navigate back to editor
-    // If this was a new capture, we need to go back twice (capture -> adjust -> editor)
-    // If re-adjusting, just go back once
-    if (isNew === 'true') {
-      router.dismissAll();
-      router.replace('/editor');
-    } else {
-      router.back();
-    }
-  }, [slotId, imageData, isNew, setCapturedImage, router]);
+    // Navigate back to editor - this preserves the editor state including overlays
+    router.back();
+  }, [slotId, imageData, setCapturedImage, router]);
 
   const handleCancel = useCallback(() => {
-    // If this was a new capture and user cancels, go back to capture screen
-    // If re-adjusting, just go back to editor
     router.back();
   }, [router]);
 

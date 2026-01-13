@@ -31,18 +31,27 @@ export async function saveOverlays(
   draftId: string,
   overlays: Overlay[]
 ): Promise<void> {
+  console.log(`[OverlayPersistence] saveOverlays called:`, {
+    draftId,
+    overlayCount: overlays.length,
+    overlayTypes: overlays.map(o => o.type),
+    overlayIds: overlays.map(o => o.id),
+  });
+  
   try {
     // Ensure draft directories exist
     await createDraftDirectories(draftId);
     
     const filePath = getOverlaysFilePath(draftId);
+    console.log(`[OverlayPersistence] Writing to:`, filePath);
+    
     const data = JSON.stringify(overlays, null, 2);
     
     await FileSystem.writeAsStringAsync(filePath, data, {
       encoding: FileSystem.EncodingType.UTF8,
     });
     
-    console.log(`[OverlayPersistence] Saved ${overlays.length} overlays for draft:`, draftId);
+    console.log(`[OverlayPersistence] Successfully saved ${overlays.length} overlays for draft:`, draftId);
   } catch (error) {
     console.error('[OverlayPersistence] Failed to save overlays:', error);
     throw error;
@@ -56,12 +65,16 @@ export async function saveOverlays(
  * @returns Array of overlays, or empty array if not found
  */
 export async function loadOverlays(draftId: string): Promise<Overlay[]> {
+  console.log(`[OverlayPersistence] loadOverlays called for draft:`, draftId);
+  
   try {
     const filePath = getOverlaysFilePath(draftId);
+    console.log(`[OverlayPersistence] Checking file:`, filePath);
     
     // Check if file exists
     const fileInfo = await FileSystem.getInfoAsync(filePath);
     if (!fileInfo.exists) {
+      console.log(`[OverlayPersistence] No overlays file found for draft:`, draftId);
       return [];
     }
     
@@ -70,7 +83,10 @@ export async function loadOverlays(draftId: string): Promise<Overlay[]> {
     });
     
     const overlays = JSON.parse(data) as Overlay[];
-    console.log(`[OverlayPersistence] Loaded ${overlays.length} overlays for draft:`, draftId);
+    console.log(`[OverlayPersistence] Successfully loaded ${overlays.length} overlays for draft:`, draftId, {
+      overlayTypes: overlays.map(o => o.type),
+      overlayIds: overlays.map(o => o.id),
+    });
     
     return overlays;
   } catch (error) {

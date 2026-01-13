@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Switch,
   useWindowDimensions,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
@@ -736,16 +737,32 @@ export default function EditorScreen() {
     [router]
   );
 
+  // Handle tapping on canvas background (deselect overlay)
+  const handleCanvasTap = useCallback(() => {
+    if (selectedOverlayId) {
+      console.log('[Editor] Canvas tapped - deselecting overlay');
+      setSelectedOverlayId(null);
+      styleSheetRef.current?.close();
+    }
+  }, [selectedOverlayId]);
+
   // Show action sheet for slot
   const handleSlotPress = useCallback(
     (slotId: string) => {
+      // Always deselect overlay when interacting with slots
+      if (selectedOverlayId) {
+        console.log('[Editor] Slot pressed - deselecting overlay');
+        setSelectedOverlayId(null);
+        styleSheetRef.current?.close();
+      }
+      
       if (isRendering) {
         return;
       }
 
       const slot = getSlotById(slots, slotId);
       const slotLabel = slot?.label || 'Photo';
-      const hasImage = !!capturedImages[slotId];
+      const hasImage = !!capturedImages[slotId]?.uri; // Fix: check for URI existence, not just object
 
       if (hasImage) {
         // Slot has an image - show options to adjust, replace, or remove
@@ -809,7 +826,7 @@ export default function EditorScreen() {
         }
       }
     },
-    [slots, isRendering, capturedImages, takePhoto, chooseFromLibrary, adjustPosition]
+    [slots, isRendering, capturedImages, takePhoto, chooseFromLibrary, adjustPosition, selectedOverlayId]
   );
 
   // Handle cached preview failing to load
@@ -902,6 +919,7 @@ export default function EditorScreen() {
 
   // Select an overlay
   const handleSelectOverlay = useCallback((id: string | null) => {
+    console.log('[Editor] handleSelectOverlay:', id);
     setSelectedOverlayId(id);
     
     // Open style sheet if selecting a text-based overlay
@@ -962,6 +980,14 @@ export default function EditorScreen() {
   const performSaveDraft = useCallback(async (navigateAfterSave: boolean = true) => {
     if (!template) return;
 
+    console.log('[Editor] performSaveDraft called:', {
+      templateId: template.id,
+      draftId: currentProject.draftId,
+      overlayCount: overlays.length,
+      hasRenderedPreview: !!renderedPreviewUri,
+      navigateAfterSave,
+    });
+
     const beforeSlot = slots.find(s => s.layerId.includes('before'));
     const afterSlot = slots.find(s => s.layerId.includes('after'));
     const beforeUri = beforeSlot ? capturedImages[beforeSlot.layerId]?.uri : null;
@@ -974,6 +1000,8 @@ export default function EditorScreen() {
         capturedImageUris[slotId] = media.uri;
       }
     }
+    
+    console.log('[Editor] Slots to save:', Object.keys(capturedImageUris));
 
     // Determine the best preview to save
     // If there are overlays, capture the canvas with overlays
@@ -985,6 +1013,8 @@ export default function EditorScreen() {
       if (capturedPreview) {
         previewToSave = capturedPreview;
         console.log('[Editor] Using captured preview with overlays:', capturedPreview);
+      } else {
+        console.warn('[Editor] Failed to capture preview with overlays, using original');
       }
     }
 
@@ -1000,11 +1030,14 @@ export default function EditorScreen() {
         localPreviewPath: previewToSave, // Use the preview with overlays if available
       });
       
+      console.log('[Editor] Draft saved successfully:', savedDraft?.id);
+      
       // Always save overlays (even if empty to clear old overlays)
       if (savedDraft) {
         try {
+          console.log('[Editor] Saving overlays for draft:', savedDraft.id, 'count:', overlays.length);
           await saveOverlays(savedDraft.id, overlays);
-          console.log(`[Editor] Saved ${overlays.length} overlays with draft`);
+          console.log(`[Editor] Successfully saved ${overlays.length} overlays with draft`);
           // Update initial state after successful save
           initialOverlaysRef.current = [...overlays];
         } catch (overlayError) {
@@ -1017,7 +1050,7 @@ export default function EditorScreen() {
         router.push('/(tabs)');
       }
     } catch (error) {
-      console.error('Failed to save draft:', error);
+      console.error('[Editor] Failed to save draft:', error);
     }
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, router, renderedPreviewUri, isPremium, localPreviewPath, overlays, captureCanvasWithOverlays]);
 
@@ -1187,50 +1220,52 @@ export default function EditorScreen() {
           </View>
         )}
 
-        {/* Content */}
-        <ScrollView
-          style={styles.content}
-          contentContainerStyle={styles.contentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Template Canvas with rendered preview from Templated.io */}
-          <View style={styles.canvasWrapper}>
-            {/* ViewShot wrapper for capturing canvas with overlays */}
-            <ViewShot
-              ref={viewShotRef}
-              options={{
-                format: 'jpg',
-                quality: 0.95,
-                result: 'tmpfile',
-              }}
-              style={[styles.canvasAndOverlayWrapper, { width: canvasDimensions.width, height: canvasDimensions.height }]}
-            >
-              <TemplateCanvas
-                template={template}
-                onSlotPress={handleSlotPress}
-                renderedPreviewUri={renderedPreviewUri}
-                isRendering={isRendering}
-                onPreviewError={handlePreviewError}
-                isPremium={isPremium}
-              />
-              
-              {/* Overlay Layer - renders overlays on top of canvas */}
-              {canvasDimensions.width > 0 && (
-                <View style={[styles.overlayContainer, { width: canvasDimensions.width, height: canvasDimensions.height }]}>
-                  <OverlayLayer
-                    overlays={overlays}
-                    selectedOverlayId={selectedOverlayId}
-                    canvasWidth={canvasDimensions.width}
-                    canvasHeight={canvasDimensions.height}
-                    onSelectOverlay={handleSelectOverlay}
-                    onUpdateOverlayTransform={handleUpdateOverlayTransform}
-                    onDeleteOverlay={handleDeleteOverlay}
-                  />
-                </View>
-              )}
-            </ViewShot>
-          </View>
-        </ScrollView>
+        {/* Content - Pressable to deselect overlays when tapping outside */}
+        <Pressable style={styles.contentPressable} onPress={handleCanvasTap}>
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={styles.contentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Template Canvas with rendered preview from Templated.io */}
+            <View style={styles.canvasWrapper}>
+              {/* ViewShot wrapper for capturing canvas with overlays */}
+              <ViewShot
+                ref={viewShotRef}
+                options={{
+                  format: 'jpg',
+                  quality: 0.95,
+                  result: 'tmpfile',
+                }}
+                style={[styles.canvasAndOverlayWrapper, { width: canvasDimensions.width, height: canvasDimensions.height }]}
+              >
+                <TemplateCanvas
+                  template={template}
+                  onSlotPress={handleSlotPress}
+                  renderedPreviewUri={renderedPreviewUri}
+                  isRendering={isRendering}
+                  onPreviewError={handlePreviewError}
+                  isPremium={isPremium}
+                />
+                
+                {/* Overlay Layer - renders overlays on top of canvas */}
+                {canvasDimensions.width > 0 && (
+                  <View style={[styles.overlayContainer, { width: canvasDimensions.width, height: canvasDimensions.height }]}>
+                    <OverlayLayer
+                      overlays={overlays}
+                      selectedOverlayId={selectedOverlayId}
+                      canvasWidth={canvasDimensions.width}
+                      canvasHeight={canvasDimensions.height}
+                      onSelectOverlay={handleSelectOverlay}
+                      onUpdateOverlayTransform={handleUpdateOverlayTransform}
+                      onDeleteOverlay={handleDeleteOverlay}
+                    />
+                  </View>
+                )}
+              </ViewShot>
+            </View>
+          </ScrollView>
+        </Pressable>
 
         {/* Bottom Action Bar */}
         <View style={styles.bottomSection}>
@@ -1392,6 +1427,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: Colors.light.surface,
+  },
+  contentPressable: {
+    flex: 1,
   },
   content: {
     flex: 1,
