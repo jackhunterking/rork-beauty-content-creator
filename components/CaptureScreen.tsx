@@ -3,7 +3,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowD
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -442,7 +442,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
 
       {/* LAYER 2.5: Interactive Preview Image with Gestures */}
       {previewUri && slot && (
-        <View 
+        <GestureHandlerRootView 
           style={[
             styles.previewImageContainer,
             {
@@ -462,7 +462,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
           </GestureDetector>
           {/* Frame border overlay */}
           <View style={styles.previewFrameBorder} pointerEvents="none" />
-        </View>
+        </GestureHandlerRootView>
       )}
 
       {/* LAYER 3: UI Controls (z-index: 3) - always on top */}

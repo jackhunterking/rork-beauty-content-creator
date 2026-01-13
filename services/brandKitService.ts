@@ -154,13 +154,36 @@ async function getCurrentUserId(): Promise<string | null> {
 }
 
 /**
+ * Detect if a file is an SVG based on URI or content
+ */
+function isSvgFile(uri: string): boolean {
+  const lowerUri = uri.toLowerCase();
+  return lowerUri.endsWith('.svg') || lowerUri.includes('svg');
+}
+
+/**
  * Normalize an image URI by processing it through ImageManipulator
  * This handles various URI schemes (ph://, file://, content://) and
  * returns a local file:// URI that can be reliably processed
+ * 
+ * Note: SVG files cannot be processed by ImageManipulator and will be
+ * handled separately with estimated dimensions
  */
 async function normalizeImageUri(sourceUri: string): Promise<{ uri: string; width: number; height: number }> {
   console.log('[BrandKit] Normalizing image URI:', sourceUri.substring(0, 100) + '...');
   console.log('[BrandKit] URI scheme:', sourceUri.split(':')[0]);
+  
+  // Check if it's an SVG - ImageManipulator can't process SVGs
+  if (isSvgFile(sourceUri)) {
+    console.log('[BrandKit] Detected SVG file, skipping ImageManipulator processing');
+    // For SVGs, we'll use the original URI and default dimensions
+    // SVGs are scalable, so we use a reasonable default
+    return {
+      uri: sourceUri,
+      width: 200,
+      height: 200,
+    };
+  }
   
   try {
     const result = await ImageManipulator.manipulateAsync(
@@ -182,6 +205,20 @@ async function normalizeImageUri(sourceUri: string): Promise<{ uri: string; widt
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[BrandKit] Failed to normalize image URI:', errorMessage);
+    
+    // If ImageManipulator fails, it might be an unsupported format
+    // Try to use the original file if it exists
+    console.log('[BrandKit] Attempting to use original file as fallback...');
+    const fileInfo = await FileSystem.getInfoAsync(sourceUri);
+    if (fileInfo.exists) {
+      console.log('[BrandKit] Using original file with default dimensions');
+      return {
+        uri: sourceUri,
+        width: 200,
+        height: 200,
+      };
+    }
+    
     throw new Error(`Failed to process image: ${errorMessage}`);
   }
 }
@@ -374,8 +411,31 @@ async function upsertToSupabase(brandKit: Partial<BrandKitRow>): Promise<BrandKi
 }
 
 /**
+ * Detect MIME type from file URI or extension
+ */
+function detectMimeType(uri: string): { mimeType: string; extension: string } {
+  const lowerUri = uri.toLowerCase();
+  
+  if (lowerUri.endsWith('.svg') || lowerUri.includes('svg')) {
+    return { mimeType: 'image/svg+xml', extension: 'svg' };
+  }
+  if (lowerUri.endsWith('.png')) {
+    return { mimeType: 'image/png', extension: 'png' };
+  }
+  if (lowerUri.endsWith('.webp')) {
+    return { mimeType: 'image/webp', extension: 'webp' };
+  }
+  if (lowerUri.endsWith('.gif')) {
+    return { mimeType: 'image/gif', extension: 'gif' };
+  }
+  // Default to JPEG (most common, and ImageManipulator outputs JPEG)
+  return { mimeType: 'image/jpeg', extension: 'jpg' };
+}
+
+/**
  * Upload logo to Supabase Storage
  * Now throws BrandKitError instead of returning null for better error handling
+ * Supports multiple image formats: JPEG, PNG, WebP, SVG, GIF
  */
 async function uploadLogoToStorage(localUri: string): Promise<string> {
   const userId = await getCurrentUserId();
@@ -400,7 +460,11 @@ async function uploadLogoToStorage(localUri: string): Promise<string> {
   }
   console.log('[BrandKit] File exists, size:', (fileInfo as any).size || 'unknown');
 
-  // Step 2: Read the file as base64
+  // Step 2: Detect MIME type
+  const { mimeType, extension } = detectMimeType(localUri);
+  console.log('[BrandKit] Detected MIME type:', mimeType, 'extension:', extension);
+
+  // Step 3: Read the file as base64
   let base64: string;
   try {
     base64 = await FileSystem.readAsStringAsync(localUri, {
@@ -417,8 +481,8 @@ async function uploadLogoToStorage(localUri: string): Promise<string> {
     );
   }
 
-  // Step 3: Upload to Supabase Storage
-  const filePath = `${userId}/logo.jpg`;
+  // Step 4: Upload to Supabase Storage with correct MIME type
+  const filePath = `${userId}/logo.${extension}`;
   console.log('[BrandKit] Uploading to path:', filePath);
   
   let arrayBuffer: ArrayBuffer;
@@ -435,10 +499,11 @@ async function uploadLogoToStorage(localUri: string): Promise<string> {
     );
   }
 
+  console.log('[BrandKit] Uploading with MIME type:', mimeType);
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from(STORAGE_BUCKET)
     .upload(filePath, arrayBuffer, {
-      contentType: 'image/jpeg',
+      contentType: mimeType,
       upsert: true,
     });
 
@@ -611,7 +676,8 @@ export async function syncBrandKit(): Promise<void> {
 
 /**
  * Save a logo image to the brand kit
- * Uploads to Supabase first (if authenticated), then caches locally
+ * CRITICAL: Saves locally FIRST, then uploads to cloud
+ * This ensures the temp file from ImageManipulator isn't cleaned up before we can use it
  * Returns detailed result for better UI feedback
  */
 export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResult> {
@@ -636,8 +702,10 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
       normalized = await normalizeImageUri(sourceUri);
       console.log('[BrandKit] Step 2: Image normalized');
       console.log('[BrandKit] Dimensions:', normalized.width, 'x', normalized.height);
+      console.log('[BrandKit] Normalized URI:', normalized.uri.substring(0, 100) + '...');
     } catch (normalizeError) {
       const details = normalizeError instanceof Error ? normalizeError.message : 'Unknown error';
+      console.error('[BrandKit] Step 2 FAILED:', details);
       throw new BrandKitError(
         'IMAGE_PROCESSING_FAILED',
         'Failed to process the selected image',
@@ -645,68 +713,34 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
       );
     }
 
-    // Step 3: Check if user is authenticated
-    const userId = await getCurrentUserId();
-    console.log('[BrandKit] Step 3: Auth check - userId:', userId ? 'present' : 'null');
-
-    // Step 4: Upload to Supabase (if authenticated)
-    if (userId) {
-      console.log('[BrandKit] Step 4: Uploading to Supabase Storage...');
-      try {
-        logoUrl = await uploadLogoToStorage(normalized.uri);
-        savedToCloud = true;
-        console.log('[BrandKit] Step 4: Uploaded to Supabase successfully');
-      } catch (uploadError) {
-        // Log the detailed error but don't fail - continue with local-only
-        if (uploadError instanceof BrandKitError) {
-          console.warn('[BrandKit] Step 4: Cloud upload failed:', uploadError.code, uploadError.details);
-          warning = uploadError.getUserFriendlyMessage();
-        } else {
-          console.warn('[BrandKit] Step 4: Cloud upload failed:', uploadError);
-          warning = 'Cloud upload failed. Logo saved locally only.';
-        }
-      }
-
-      // Step 5: Save metadata to Supabase database (even if storage upload failed)
-      if (savedToCloud || logoUrl) {
-        console.log('[BrandKit] Step 5: Saving metadata to Supabase...');
-        try {
-          const dbResult = await upsertToSupabase({
-            logo_url: logoUrl || null,
-            logo_width: normalized.width,
-            logo_height: normalized.height,
-          });
-          if (dbResult) {
-            console.log('[BrandKit] Step 5: Metadata saved to Supabase');
-          } else {
-            console.warn('[BrandKit] Step 5: Database upsert returned null');
-            if (!warning) {
-              warning = 'Logo uploaded but settings may not be synced.';
-            }
-          }
-        } catch (dbError) {
-          console.error('[BrandKit] Step 5: Database error:', dbError);
-          if (!warning) {
-            warning = 'Logo uploaded but settings failed to save.';
-          }
-        }
-      }
-    } else {
-      console.log('[BrandKit] User not authenticated, saving locally only');
-      warning = 'Sign in to sync your logo across devices.';
-    }
-
-    // Step 6: Cache logo locally (this is required for the app to work)
-    console.log('[BrandKit] Step 6: Caching locally...');
+    // Step 3: IMMEDIATELY save locally (before temp file can be cleaned up)
+    // This is critical - ImageManipulator creates temp files that may be cleaned up
+    console.log('[BrandKit] Step 3: Saving locally FIRST (critical step)...');
     const logoPath = getLogoPath();
     
     // Delete existing local logo
-    const existingInfo = await FileSystem.getInfoAsync(logoPath);
-    if (existingInfo.exists) {
-      await FileSystem.deleteAsync(logoPath, { idempotent: true });
+    try {
+      const existingInfo = await FileSystem.getInfoAsync(logoPath);
+      if (existingInfo.exists) {
+        await FileSystem.deleteAsync(logoPath, { idempotent: true });
+        console.log('[BrandKit] Step 3: Deleted existing logo');
+      }
+    } catch (deleteError) {
+      console.warn('[BrandKit] Step 3: Could not delete existing file:', deleteError);
     }
 
-    // Copy normalized image to local cache
+    // Verify the normalized file exists before copying
+    const normalizedFileInfo = await FileSystem.getInfoAsync(normalized.uri);
+    console.log('[BrandKit] Step 3: Normalized file exists:', normalizedFileInfo.exists);
+    if (!normalizedFileInfo.exists) {
+      throw new BrandKitError(
+        'FILE_READ_ERROR',
+        'Processed image file not found',
+        'The image may have been cleaned up. Please try again.'
+      );
+    }
+
+    // Copy/move the normalized image to permanent local storage
     try {
       await FileSystem.copyAsync({
         from: normalized.uri,
@@ -714,9 +748,9 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
       });
       localLogoPath = logoPath;
       savedLocally = true;
-      console.log('[BrandKit] Step 6: Logo cached locally via copy');
+      console.log('[BrandKit] Step 3: Logo saved locally via copy');
     } catch (copyError) {
-      console.warn('[BrandKit] Copy failed, trying move:', copyError);
+      console.warn('[BrandKit] Step 3: Copy failed, trying move:', copyError);
       try {
         await FileSystem.moveAsync({
           from: normalized.uri,
@@ -724,36 +758,94 @@ export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResu
         });
         localLogoPath = logoPath;
         savedLocally = true;
-        console.log('[BrandKit] Step 6: Logo cached locally via move');
+        console.log('[BrandKit] Step 3: Logo saved locally via move');
       } catch (moveError) {
         const errorMsg = moveError instanceof Error ? moveError.message : 'Unknown error';
-        console.error('[BrandKit] Local caching failed completely:', errorMsg);
-        
-        // If we have a cloud URL, we can still use that
-        if (logoUrl) {
-          console.log('[BrandKit] Using cloud URL as fallback');
-          warning = 'Logo saved to cloud but local caching failed.';
+        console.error('[BrandKit] Step 3 FAILED: Local save failed:', errorMsg);
+        throw new BrandKitError(
+          'LOCAL_CACHE_FAILED',
+          'Failed to save logo locally',
+          errorMsg
+        );
+      }
+    }
+
+    // Verify the local file was saved successfully
+    const savedFileInfo = await FileSystem.getInfoAsync(logoPath);
+    if (!savedFileInfo.exists) {
+      throw new BrandKitError(
+        'LOCAL_CACHE_FAILED',
+        'Failed to save logo locally',
+        'File was copied but verification failed'
+      );
+    }
+    console.log('[BrandKit] Step 3: Local save verified, size:', (savedFileInfo as any).size || 'unknown');
+
+    // Step 4: Check if user is authenticated
+    const userId = await getCurrentUserId();
+    console.log('[BrandKit] Step 4: Auth check - userId:', userId ? 'present' : 'null');
+
+    // Step 5: Upload to Supabase (if authenticated) - use the LOCAL file, not the temp file
+    if (userId) {
+      console.log('[BrandKit] Step 5: Uploading to Supabase Storage...');
+      try {
+        // Upload from the LOCAL file (guaranteed to exist), not the temp normalized file
+        logoUrl = await uploadLogoToStorage(localLogoPath);
+        savedToCloud = true;
+        console.log('[BrandKit] Step 5: Uploaded to Supabase successfully');
+        console.log('[BrandKit] Step 5: Logo URL:', logoUrl?.substring(0, 100) + '...');
+      } catch (uploadError) {
+        // Log the detailed error but don't fail - we already saved locally
+        if (uploadError instanceof BrandKitError) {
+          console.warn('[BrandKit] Step 5: Cloud upload failed:', uploadError.code, uploadError.details);
+          warning = uploadError.getUserFriendlyMessage();
         } else {
-          throw new BrandKitError(
-            'LOCAL_CACHE_FAILED',
-            'Failed to save logo locally',
-            errorMsg
-          );
+          const errorMsg = uploadError instanceof Error ? uploadError.message : 'Unknown error';
+          console.warn('[BrandKit] Step 5: Cloud upload failed:', errorMsg);
+          warning = 'Cloud upload failed. Logo saved locally only.';
+        }
+      }
+
+      // Step 6: Save metadata to Supabase database
+      if (savedToCloud && logoUrl) {
+        console.log('[BrandKit] Step 6: Saving metadata to Supabase...');
+        try {
+          const dbResult = await upsertToSupabase({
+            logo_url: logoUrl,
+            logo_width: normalized.width,
+            logo_height: normalized.height,
+          });
+          if (dbResult) {
+            console.log('[BrandKit] Step 6: Metadata saved to Supabase');
+          } else {
+            console.warn('[BrandKit] Step 6: Database upsert returned null');
+            if (!warning) {
+              warning = 'Logo uploaded but settings may not be synced.';
+            }
+          }
+        } catch (dbError) {
+          const errorMsg = dbError instanceof Error ? dbError.message : 'Unknown error';
+          console.error('[BrandKit] Step 6: Database error:', errorMsg);
+          if (!warning) {
+            warning = 'Logo uploaded but settings failed to save.';
+          }
         }
       }
     }
 
     // Step 7: Update local brand kit cache
+    console.log('[BrandKit] Step 7: Updating local brand kit metadata...');
     const currentBrandKit = await loadFromLocalCache() || getDefaultBrandKit();
     const updatedBrandKit: BrandKit = {
       ...currentBrandKit,
-      logoUri: localLogoPath || logoUrl,
+      logoUri: localLogoPath, // Always use local path - we saved locally first
       logoWidth: normalized.width,
       logoHeight: normalized.height,
       updatedAt: new Date().toISOString(),
     };
 
     await saveToLocalCache(updatedBrandKit);
+    console.log('[BrandKit] Step 7: Local metadata saved');
     console.log('[BrandKit] ========== Logo save completed ==========');
     console.log('[BrandKit] Result: savedToCloud=', savedToCloud, ', savedLocally=', savedLocally);
 

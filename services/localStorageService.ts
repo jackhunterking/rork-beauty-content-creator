@@ -303,6 +303,59 @@ export async function getLocalPreviewPath(
   return exists ? localPath : null;
 }
 
+/**
+ * Save a local file as the preview for a draft
+ * Used for saving captured canvas with overlays to the correct location
+ * 
+ * This differs from saveRenderedPreview() which downloads from a remote URL.
+ * This function copies a local file (e.g., from ViewShot capture) to the
+ * permanent draft renders directory.
+ * 
+ * @param draftId - The draft ID to associate the preview with
+ * @param localFileUri - The local file URI (e.g., from ViewShot capture)
+ * @param themeId - Optional theme ID for the render (defaults to 'default')
+ * @returns The permanent local file path where the preview was saved, or null if failed
+ */
+export async function saveLocalPreviewFile(
+  draftId: string,
+  localFileUri: string,
+  themeId: string = 'default'
+): Promise<string | null> {
+  if (Platform.OS === 'web') {
+    // On web, just return the original URI as we can't save locally
+    return localFileUri;
+  }
+  
+  try {
+    // Ensure the draft renders directory exists
+    const rendersDir = getDraftRendersDirectory(draftId);
+    await ensureDirectoryExists(rendersDir);
+    
+    // Generate local path for the preview
+    const destPath = getCachedRenderPath(draftId, themeId);
+    
+    console.log(`[LocalStorage] Saving local preview for draft ${draftId}`);
+    console.log(`[LocalStorage] Source: ${localFileUri}`);
+    console.log(`[LocalStorage] Destination: ${destPath}`);
+    
+    // Copy the local file to the renders directory
+    await copyFile(localFileUri, destPath);
+    
+    // Verify the file was saved
+    const exists = await fileExists(destPath);
+    if (!exists) {
+      console.error('[LocalStorage] Preview file was not saved');
+      return null;
+    }
+    
+    console.log(`[LocalStorage] Local preview saved to ${destPath}`);
+    return destPath;
+  } catch (error) {
+    console.error('[LocalStorage] Error saving local preview file:', error);
+    return null;
+  }
+}
+
 export async function draftRenderExists(
   draftId: string,
   themeId: string = 'default'
