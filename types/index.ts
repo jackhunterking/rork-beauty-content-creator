@@ -578,6 +578,22 @@ export interface BrandKit {
   updatedAt?: string;
 }
 
+/**
+ * Database row type for brand_kits (snake_case from Supabase)
+ */
+export interface BrandKitRow {
+  id: string;
+  user_id: string;
+  logo_url: string | null;
+  logo_width: number | null;
+  logo_height: number | null;
+  primary_color: string | null;
+  apply_logo_automatically: boolean;
+  add_disclaimer: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============================================
 // Authentication & User Profile
 // ============================================

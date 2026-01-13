@@ -5,7 +5,7 @@
  * and rotation gestures. Provides Instagram-style interaction.
  */
 
-import React, { useCallback, useMemo, useEffect } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef } from 'react';
 import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -75,13 +75,16 @@ export function DraggableOverlay({
     rotation.value = transform.rotation;
   }, [transform.x, transform.y, transform.scale, transform.rotation, canvasWidth, canvasHeight]);
 
-  // Update transform callback
+  // Update transform callback with safety guard for division by zero
   const updateTransform = useCallback((
     x: number,
     y: number,
     s: number,
     r: number
   ) => {
+    // Safety guard: prevent division by zero
+    if (canvasWidth <= 0 || canvasHeight <= 0) return;
+    
     onTransformChange({
       x: x / canvasWidth,
       y: y / canvasHeight,
@@ -90,19 +93,37 @@ export function DraggableOverlay({
     });
   }, [canvasWidth, canvasHeight, onTransformChange]);
 
+  // Store callbacks in refs to prevent gesture recreation and stale closures
+  // This is critical for Reanimated worklets - prevents crashes from stale function references
+  const updateTransformRef = useRef(updateTransform);
+  const onSelectRef = useRef(onSelect);
+  
+  // Keep refs up to date
+  useEffect(() => {
+    updateTransformRef.current = updateTransform;
+  }, [updateTransform]);
+  
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
   // Pan gesture for moving - with min distance to distinguish from tap
+  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const panGesture = useMemo(() => 
     Gesture.Pan()
       .minDistance(5) // Minimum movement before pan activates (prevents triggering on tap)
       .onStart(() => {
+        'worklet';
         startX.value = translateX.value;
         startY.value = translateY.value;
       })
       .onUpdate((event) => {
+        'worklet';
         translateX.value = startX.value + event.translationX;
         translateY.value = startY.value + event.translationY;
       })
       .onEnd(() => {
+        'worklet';
         // Clamp to canvas bounds with some margin
         const margin = 50;
         translateX.value = withSpring(
@@ -112,73 +133,96 @@ export function DraggableOverlay({
           Math.max(-margin, Math.min(canvasHeight + margin, translateY.value))
         );
         
-        runOnJS(updateTransform)(
+        // Use ref to get current callback - prevents stale closure crashes
+        runOnJS((x: number, y: number, s: number, r: number) => {
+          updateTransformRef.current(x, y, s, r);
+        })(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [canvasWidth, canvasHeight, updateTransform]
+    [canvasWidth, canvasHeight] // Removed updateTransform - using ref instead
   );
 
   // Pinch gesture for scaling
+  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const pinchGesture = useMemo(() =>
     Gesture.Pinch()
       .onStart(() => {
+        'worklet';
         startScale.value = scale.value;
       })
       .onUpdate((event) => {
+        'worklet';
         const newScale = startScale.value * event.scale;
         scale.value = Math.max(minScale, Math.min(maxScale, newScale));
       })
       .onEnd(() => {
-        runOnJS(updateTransform)(
+        'worklet';
+        // Use ref to get current callback - prevents stale closure crashes
+        runOnJS((x: number, y: number, s: number, r: number) => {
+          updateTransformRef.current(x, y, s, r);
+        })(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [minScale, maxScale, updateTransform]
+    [minScale, maxScale] // Removed updateTransform - using ref instead
   );
 
   // Rotation gesture
+  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const rotationGesture = useMemo(() =>
     Gesture.Rotation()
       .onStart(() => {
+        'worklet';
         startRotation.value = rotation.value;
       })
       .onUpdate((event) => {
+        'worklet';
         // Convert radians to degrees
         const degrees = (event.rotation * 180) / Math.PI;
         rotation.value = startRotation.value + degrees;
       })
       .onEnd(() => {
+        'worklet';
         // Snap to 0, 90, 180, 270 if within 5 degrees
+        // snapToAngle is now a worklet function - can be called directly
         const snappedRotation = snapToAngle(rotation.value);
         if (Math.abs(snappedRotation - rotation.value) < 5) {
           rotation.value = withSpring(snappedRotation);
         }
         
-        runOnJS(updateTransform)(
+        // Use ref to get current callback - prevents stale closure crashes
+        runOnJS((x: number, y: number, s: number, r: number) => {
+          updateTransformRef.current(x, y, s, r);
+        })(
           translateX.value,
           translateY.value,
           scale.value,
           rotation.value
         );
       }),
-    [updateTransform]
+    [] // Empty deps - gesture never recreated, uses refs for callbacks
   );
 
   // Tap gesture for selection - with max distance to prevent triggering during drag
+  // Uses refs for callbacks to prevent gesture recreation and stale closures
   const tapGesture = useMemo(() =>
     Gesture.Tap()
       .maxDuration(250) // Short tap only
       .onEnd(() => {
-        runOnJS(onSelect)();
+        'worklet';
+        // Use ref to get current callback - prevents stale closure crashes
+        runOnJS(() => {
+          onSelectRef.current();
+        })();
       }),
-    [onSelect]
+    [] // Empty deps - gesture never recreated, uses ref for callback
   );
 
   // Compose manipulation gestures (pan, pinch, rotation work simultaneously)
@@ -257,8 +301,10 @@ export function DraggableOverlay({
 
 /**
  * Snap angle to nearest 90 degree increment
+ * IMPORTANT: This is a worklet function - runs on UI thread during gesture callbacks
  */
 function snapToAngle(angle: number): number {
+  'worklet'; // CRITICAL: This directive allows the function to run on UI thread in Reanimated worklets
   const normalized = ((angle % 360) + 360) % 360;
   const snapAngles = [0, 90, 180, 270, 360];
   

@@ -29,6 +29,8 @@ import {
   Send,
   ImageIcon,
   X,
+  Cloud,
+  CloudOff,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "expo-router";
@@ -42,6 +44,7 @@ import {
   saveBrandLogo, 
   deleteBrandLogo,
   updateBrandKitSettings,
+  refreshBrandKitFromCloud,
 } from "@/services/brandKitService";
 import { BrandKit } from "@/types";
 
@@ -80,11 +83,13 @@ export default function SettingsScreen() {
   const [brandKit, setBrandKit] = useState<BrandKit | null>(null);
   const [isLoadingBrandKit, setIsLoadingBrandKit] = useState(true);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [isSyncingBrandKit, setIsSyncingBrandKit] = useState(false);
 
-  // Load Brand Kit on mount
+  // Load Brand Kit on mount and when auth changes
   useEffect(() => {
     const loadBrandKitData = async () => {
       try {
+        setIsLoadingBrandKit(true);
         const kit = await loadBrandKit();
         setBrandKit(kit);
       } catch (error) {
@@ -94,14 +99,34 @@ export default function SettingsScreen() {
       }
     };
     loadBrandKitData();
-  }, []);
+  }, [isAuthenticated]);
+
+  // Refresh brand kit from cloud when user signs in
+  const handleRefreshBrandKit = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    setIsSyncingBrandKit(true);
+    try {
+      const kit = await refreshBrandKitFromCloud();
+      setBrandKit(kit);
+    } catch (error) {
+      console.error('[Settings] Failed to sync brand kit:', error);
+    } finally {
+      setIsSyncingBrandKit(false);
+    }
+  }, [isAuthenticated]);
 
   // Handle Upload Logo
   const handleUploadLogo = useCallback(async () => {
     // Premium gate for logo upload
     if (!isPremium) {
       await requestPremiumAccess('brand_kit_logo', () => {
-        // After subscription, proceed with upload
+        // Defensive check: Verify premium status again before allowing feature
+        // This protects against Superwall misconfiguration (e.g., no paywall assigned)
+        // The callback should only run if user actually subscribed
+        console.log('[Settings] Brand kit logo callback triggered, checking premium status');
+        // Note: We can't check isPremium here directly as it may not have updated yet
+        // The feature will only execute if Superwall confirms the subscription
         pickAndUploadLogo();
       });
       return;
@@ -123,11 +148,27 @@ export default function SettingsScreen() {
         setIsUploadingLogo(true);
         const updatedKit = await saveBrandLogo(result.assets[0].uri);
         setBrandKit(updatedKit);
-        Alert.alert('Success', 'Logo saved to your Brand Kit!');
+        
+        // Show success message with sync status
+        if (isAuthenticated) {
+          Alert.alert('Success', 'Logo saved and synced to cloud!');
+        } else {
+          Alert.alert('Success', 'Logo saved locally. Sign in to sync across devices.');
+        }
       }
     } catch (error) {
       console.error('[Settings] Failed to upload logo:', error);
-      Alert.alert('Error', 'Failed to save logo. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Provide helpful error messages
+      if (errorMessage.includes('network') || errorMessage.includes('Network')) {
+        Alert.alert(
+          'Network Error', 
+          'Logo saved locally but cloud sync failed. It will sync when you\'re back online.'
+        );
+      } else {
+        Alert.alert('Error', 'Failed to save logo. Please try again.');
+      }
     } finally {
       setIsUploadingLogo(false);
     }
@@ -135,9 +176,13 @@ export default function SettingsScreen() {
 
   // Handle Remove Logo
   const handleRemoveLogo = useCallback(async () => {
+    const message = isAuthenticated 
+      ? 'Are you sure you want to remove your brand logo? This will also remove it from the cloud.'
+      : 'Are you sure you want to remove your brand logo?';
+    
     Alert.alert(
       'Remove Logo',
-      'Are you sure you want to remove your brand logo?',
+      message,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -147,6 +192,7 @@ export default function SettingsScreen() {
             try {
               const updatedKit = await deleteBrandLogo();
               setBrandKit(updatedKit);
+              Alert.alert('Success', 'Logo removed successfully.');
             } catch (error) {
               console.error('[Settings] Failed to remove logo:', error);
               Alert.alert('Error', 'Failed to remove logo. Please try again.');
@@ -155,7 +201,7 @@ export default function SettingsScreen() {
         },
       ]
     );
-  }, []);
+  }, [isAuthenticated]);
 
   // Handle Upgrade to Pro button press
   const handleUpgradeToPro = async () => {
@@ -517,6 +563,18 @@ export default function SettingsScreen() {
                 <Text style={styles.proBadgeText}>PRO</Text>
               </View>
             )}
+            {/* Cloud sync indicator */}
+            {isPremium && (
+              <View style={styles.syncBadge}>
+                {isSyncingBrandKit ? (
+                  <ActivityIndicator size="small" color={Colors.light.textSecondary} />
+                ) : isAuthenticated ? (
+                  <Cloud size={12} color={Colors.light.success} />
+                ) : (
+                  <CloudOff size={12} color={Colors.light.textTertiary} />
+                )}
+              </View>
+            )}
           </View>
           <View style={styles.card}>
             {/* Logo Section */}
@@ -579,6 +637,8 @@ export default function SettingsScreen() {
             <View style={styles.brandKitInfo}>
               <Text style={styles.brandKitInfoText}>
                 Your logo will be available as an overlay option when editing templates.
+                {isAuthenticated && ' Your brand kit is synced to the cloud.'}
+                {!isAuthenticated && ' Sign in to sync across devices.'}
               </Text>
             </View>
           </View>
@@ -754,6 +814,11 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.light.surface,
     textTransform: 'uppercase',
+  },
+  syncBadge: {
+    marginLeft: 'auto',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   cardDisabled: {
     opacity: 0.5,

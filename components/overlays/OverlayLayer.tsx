@@ -6,8 +6,9 @@
  */
 
 import React, { useCallback } from 'react';
-import { StyleSheet, View, TouchableWithoutFeedback } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StyleSheet, View } from 'react-native';
+// NOTE: GestureHandlerRootView is NOT used here - it exists at app root level (_layout.tsx)
+// Nesting GestureHandlerRootView causes gesture state corruption and crashes on iOS
 import { DraggableOverlay } from './DraggableOverlay';
 import { TextOverlayContent } from './TextOverlayContent';
 import { LogoOverlayContent } from './LogoOverlayContent';
@@ -47,11 +48,6 @@ export function OverlayLayer({
   onUpdateOverlayTransform,
   onDeleteOverlay,
 }: OverlayLayerProps) {
-  // Handle tap on empty space to deselect
-  const handleBackgroundPress = useCallback(() => {
-    onSelectOverlay(null);
-  }, [onSelectOverlay]);
-
   // Handle overlay selection
   const handleSelectOverlay = useCallback((id: string) => {
     onSelectOverlay(id);
@@ -103,13 +99,11 @@ export function OverlayLayer({
     return null;
   }
 
+  // Use regular View instead of GestureHandlerRootView
+  // GestureHandlerRootView already exists at app root level (_layout.tsx)
+  // Nesting it causes gesture state corruption and iOS crashes after multiple operations
   return (
-    <GestureHandlerRootView style={styles.container}>
-      {/* Background touchable to deselect overlays */}
-      <TouchableWithoutFeedback onPress={handleBackgroundPress}>
-        <View style={[styles.touchableArea, { width: canvasWidth, height: canvasHeight }]} />
-      </TouchableWithoutFeedback>
-
+    <View style={styles.container}>
       {/* Render each overlay */}
       {overlays.map((overlay) => {
         const isSelected = overlay.id === selectedOverlayId;
@@ -133,7 +127,7 @@ export function OverlayLayer({
           </DraggableOverlay>
         );
       })}
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -141,11 +135,6 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     pointerEvents: 'box-none',
-  },
-  touchableArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
   },
 });
 

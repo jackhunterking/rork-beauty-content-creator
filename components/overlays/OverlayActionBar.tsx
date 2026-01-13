@@ -21,8 +21,8 @@ interface OverlayActionBarProps {
   disabled?: boolean;
   /** Called when user wants to add an overlay */
   onAddOverlay: (type: OverlayType, imageData?: { uri: string; width: number; height: number }) => void;
-  /** Called when premium feature is requested by free user */
-  onRequestPremium: (featureName: string) => void;
+  /** Called when premium feature is requested by free user. Includes callback to execute if premium is granted. */
+  onRequestPremium: (featureName: string, onPremiumGranted?: () => void) => void;
 }
 
 interface OverlayButtonProps {
@@ -69,31 +69,8 @@ export function OverlayActionBar({
   onAddOverlay,
   onRequestPremium,
 }: OverlayActionBarProps) {
-  // Handle Date overlay button press
-  const handleAddDate = useCallback(() => {
-    if (!isPremium) {
-      onRequestPremium('add_date_overlay');
-      return;
-    }
-    onAddOverlay('date');
-  }, [isPremium, onAddOverlay, onRequestPremium]);
-
-  // Handle Text overlay button press
-  const handleAddText = useCallback(() => {
-    if (!isPremium) {
-      onRequestPremium('add_text_overlay');
-      return;
-    }
-    onAddOverlay('text');
-  }, [isPremium, onAddOverlay, onRequestPremium]);
-
-  // Handle Logo overlay button press
-  const handleAddLogo = useCallback(async () => {
-    if (!isPremium) {
-      onRequestPremium('add_logo_overlay');
-      return;
-    }
-
+  // Helper function to add logo (shared between premium and post-subscription flows)
+  const addLogoOverlay = useCallback(async () => {
     // Check if user has a brand kit logo
     const brandLogo = await getBrandLogo();
 
@@ -127,7 +104,39 @@ export function OverlayActionBar({
       // No brand kit logo, pick from library
       pickLogoImage();
     }
+  }, [onAddOverlay]);
+
+  // Handle Date overlay button press
+  const handleAddDate = useCallback(() => {
+    if (!isPremium) {
+      // Pass callback to add overlay after subscription is granted
+      onRequestPremium('add_date_overlay', () => onAddOverlay('date'));
+      return;
+    }
+    onAddOverlay('date');
   }, [isPremium, onAddOverlay, onRequestPremium]);
+
+  // Handle Text overlay button press
+  const handleAddText = useCallback(() => {
+    if (!isPremium) {
+      // Pass callback to add overlay after subscription is granted
+      onRequestPremium('add_text_overlay', () => onAddOverlay('text'));
+      return;
+    }
+    onAddOverlay('text');
+  }, [isPremium, onAddOverlay, onRequestPremium]);
+
+  // Handle Logo overlay button press
+  const handleAddLogo = useCallback(async () => {
+    if (!isPremium) {
+      // Pass callback to add logo overlay after subscription is granted
+      onRequestPremium('add_logo_overlay', () => addLogoOverlay());
+      return;
+    }
+
+    // User is premium, proceed with logo selection
+    await addLogoOverlay();
+  }, [isPremium, onRequestPremium, addLogoOverlay]);
 
   // Pick logo image from library
   const pickLogoImage = useCallback(async () => {

@@ -768,9 +768,18 @@ export default function EditorScreen() {
   }, []);
 
   // Request premium for overlay feature
-  const handleRequestPremiumForOverlay = useCallback(async (featureName: string) => {
+  // onPremiumGranted callback is executed only if user successfully subscribes
+  const handleRequestPremiumForOverlay = useCallback(async (
+    featureName: string,
+    onPremiumGranted?: () => void
+  ) => {
     await requestPremiumAccess(featureName, () => {
-      console.log(`[Editor] ${featureName} unlocked!`);
+      console.log(`[Editor] ${featureName} - premium access granted via Superwall`);
+      // Execute the feature callback if provided
+      // This allows the overlay to be added automatically after subscribing
+      if (onPremiumGranted) {
+        onPremiumGranted();
+      }
     });
   }, [requestPremiumAccess]);
 
