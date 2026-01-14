@@ -21,7 +21,7 @@ export default {
       backgroundColor: "#C9A87C",
     },
     ios: {
-      supportsTablet: false,
+      supportsTablet: true,
       bundleIdentifier: "com.resulta",
       buildNumber: "17",
       usesAppleSignIn: true,
