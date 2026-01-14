@@ -9,15 +9,37 @@ import { MediaAsset } from "@/types";
  * Dynamic capture screen for any slot
  * Route: /capture/[slotId] (e.g., /capture/slot-before, /capture/slot-after)
  * 
- * After capturing and adjusting an image, directly sets it in the app context
+ * Supports two modes:
+ * 1. Camera capture: User takes a photo with the camera
+ * 2. Library import: Pre-selected library image passed via params (uri, width, height)
+ * 
+ * After capturing/selecting and adjusting an image, directly sets it in the app context
  * and returns to the editor (preserving editor state including overlays).
  */
 export default function CaptureSlotScreen() {
-  const { slotId } = useLocalSearchParams<{ slotId: string }>();
+  const params = useLocalSearchParams<{ 
+    slotId: string; 
+    uri?: string; 
+    width?: string; 
+    height?: string;
+  }>();
+  const { slotId } = params;
   const router = useRouter();
   const { currentProject, setCapturedImage } = useApp();
   
   const template = currentProject.template;
+  
+  // Check if we have an image passed via params (library or existing image for adjustment)
+  const initialImage = useMemo(() => {
+    if (params.uri && params.width && params.height) {
+      return {
+        uri: decodeURIComponent(params.uri),
+        width: parseInt(params.width, 10),
+        height: parseInt(params.height, 10),
+      };
+    }
+    return undefined;
+  }, [params.uri, params.width, params.height]);
   
   // Extract slots from template
   const slots = useMemo(() => 
@@ -94,6 +116,7 @@ export default function CaptureSlotScreen() {
       title={slot?.label || 'Photo'}
       onContinue={handleContinue}
       onBack={handleBack}
+      initialImage={initialImage}
     />
   );
 }

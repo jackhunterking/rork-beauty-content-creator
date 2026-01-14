@@ -822,7 +822,7 @@ export default function EditorScreen() {
     [router]
   );
 
-  // Choose from library for a slot - navigates to adjustment screen
+  // Choose from library for a slot - navigates to capture screen with the selected image
   const chooseFromLibrary = useCallback(
     async (slotId: string) => {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -834,43 +834,38 @@ export default function EditorScreen() {
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
         
-        // First process the image to keep it oversized for adjustment
-        const slot = getSlotById(slots, slotId);
-        if (!slot) return;
-
-        try {
-          const processed = await processImageForAdjustment(
-            asset.uri, 
-            asset.width, 
-            asset.height, 
-            slot.width, 
-            slot.height
-          );
-
-          // Navigate to adjustment screen with the processed image
-          router.push({
-            pathname: `/adjust/${slotId}`,
-            params: {
-              uri: encodeURIComponent(processed.uri),
-              width: processed.width.toString(),
-              height: processed.height.toString(),
-              isNew: 'true',
-            },
-          });
-        } catch (error) {
-          console.error('Failed to process image:', error);
-        }
+        // Navigate to capture screen with the library image
+        // CaptureScreen will handle processing and show the adjustment UI (Retake/Continue)
+        router.push({
+          pathname: `/capture/${slotId}`,
+          params: {
+            uri: encodeURIComponent(asset.uri),
+            width: asset.width.toString(),
+            height: asset.height.toString(),
+          },
+        });
       }
     },
-    [slots, router]
+    [router]
   );
 
-  // Navigate to adjustment screen for an existing slot image
+  // Navigate to capture screen for adjusting an existing slot image
   const adjustPosition = useCallback(
     (slotId: string) => {
-      router.push(`/adjust/${slotId}`);
+      const existingImage = capturedImages[slotId];
+      if (existingImage?.uri) {
+        // Navigate to capture screen with the existing image for adjustment
+        router.push({
+          pathname: `/capture/${slotId}`,
+          params: {
+            uri: encodeURIComponent(existingImage.uri),
+            width: existingImage.width.toString(),
+            height: existingImage.height.toString(),
+          },
+        });
+      }
     },
-    [router]
+    [router, capturedImages]
   );
 
   // Handle tapping on canvas background (deselect overlay)

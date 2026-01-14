@@ -11,7 +11,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { ImagePlus, ChevronLeft, Zap, ZapOff } from "lucide-react-native";
+import { ImagePlus, ChevronLeft, Zap, ZapOff, SwitchCamera } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { 
@@ -47,13 +47,20 @@ interface CaptureScreenProps {
   title: string;
   onContinue: (media: CapturedMedia) => void;
   onBack: () => void;
+  /** Optional: Initial image from library picker (skips camera, goes straight to adjustment) */
+  initialImage?: {
+    uri: string;
+    width: number;
+    height: number;
+  };
 }
 
-export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreenProps) {
+export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }: CaptureScreenProps) {
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
@@ -252,6 +259,14 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     };
   }, []);
 
+  // Handle initial image from library picker or existing image (passed via props)
+  useEffect(() => {
+    if (initialImage && slot && !previewUri) {
+      // Process the library/existing image (no frame position since it wasn't taken through camera preview)
+      processAndSetImage(initialImage.uri, initialImage.width, initialImage.height, false);
+    }
+  }, [initialImage, slot, processAndSetImage, previewUri]);
+
   const processAndSetImage = useCallback(async (
     uri: string, 
     width: number, 
@@ -377,16 +392,17 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
     setImageSize({ width: 0, height: 0 });
   }, []);
 
+  // Back button always goes directly back to editor - no intermediate states
   const handleBackPress = useCallback(() => {
-    if (previewUri) {
-      handleRetake();
-    } else {
-      onBack();
-    }
-  }, [previewUri, handleRetake, onBack]);
+    onBack();
+  }, [onBack]);
 
   const toggleFlash = useCallback(() => {
     setFlashEnabled(prev => !prev);
+  }, []);
+
+  const toggleCameraFacing = useCallback(() => {
+    setCameraFacing(prev => prev === 'back' ? 'front' : 'back');
   }, []);
 
   // Permission not yet determined
@@ -420,8 +436,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
           <CameraView 
             ref={cameraRef} 
             style={StyleSheet.absoluteFillObject} 
-            facing="back"
-            enableTorch={flashEnabled}
+            facing={cameraFacing}
+            enableTorch={flashEnabled && cameraFacing === 'back'}
           />
         </View>
       )}
@@ -480,7 +496,13 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
               <Text style={styles.dimensionText}>{imageSize.width}x{imageSize.height}</Text>
             </View>
           ) : (
-            <View style={styles.spacer} />
+            <TouchableOpacity style={styles.headerFlashButton} onPress={toggleFlash}>
+              {flashEnabled ? (
+                <Zap size={20} color={Colors.light.accent} />
+              ) : (
+                <ZapOff size={20} color={Colors.light.surface} />
+              )}
+            </TouchableOpacity>
           )}
         </View>
 
@@ -512,12 +534,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack }: CaptureScreen
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.flashButton} onPress={toggleFlash}>
-              {flashEnabled ? (
-                <Zap size={22} color={Colors.light.accent} />
-              ) : (
-                <ZapOff size={22} color={Colors.light.surface} />
-              )}
+            <TouchableOpacity style={styles.flipCameraButton} onPress={toggleCameraFacing}>
+              <SwitchCamera size={22} color={Colors.light.surface} />
             </TouchableOpacity>
           </View>
         )}
@@ -581,6 +599,14 @@ const styles = StyleSheet.create({
   spacer: {
     width: 40,
   },
+  headerFlashButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dimensionBadge: {
     backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: 12,
@@ -607,7 +633,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  flashButton: {
+  flipCameraButton: {
     width: 50,
     height: 50,
     borderRadius: 25,
