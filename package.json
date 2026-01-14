@@ -1,7 +1,7 @@
 {
   "name": "resulta",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "scripts": {
     "start": "bunx rork start -p vpmdxws68ya3mq23gsgwn --tunnel",
     "start-web": "bunx rork start -p vpmdxws68ya3mq23gsgwn --web --tunnel",
