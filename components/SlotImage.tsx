@@ -94,6 +94,7 @@ export function SlotImage({
   }, [scaledSize, displayWidth, displayHeight, adjustments.translateX, adjustments.translateY]);
 
   // Animated style for adjusted image
+  // Note: Dependencies array ensures style updates when values change
   const imageAnimatedStyle = useAnimatedStyle(() => ({
     width: scaledSize.width,
     height: scaledSize.height,
@@ -101,7 +102,7 @@ export function SlotImage({
       { translateX: translationPixels.x },
       { translateY: translationPixels.y },
     ],
-  }));
+  }), [scaledSize.width, scaledSize.height, translationPixels.x, translationPixels.y]);
 
   // Check if adjustments have been made (non-default values)
   const hasAdjustments = adjustments.translateX !== 0 || 

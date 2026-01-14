@@ -383,40 +383,65 @@ export async function processImageForAdjustment(
   framePosition?: FramePositionInfo
 ): Promise<{ uri: string; width: number; height: number }> {
   const targetAspectRatio = targetWidth / targetHeight;
+  const sourceAspectRatio = sourceWidth / sourceHeight;
   
-  // Step 1: Crop to target aspect ratio (position-aware when framePosition provided)
-  const cropped = await cropToAspectRatio(
-    uri,
-    sourceWidth,
-    sourceHeight,
-    targetAspectRatio,
-    framePosition
-  );
-  
-  // Step 2: Resize to oversized dimensions (2x slot size for zoom headroom)
-  // This ensures we have enough pixels for the user to zoom in
-  const oversizedWidth = Math.max(
-    Math.floor(targetWidth * OVERSIZED_MULTIPLIER),
-    cropped.width // Don't upscale if source is smaller
-  );
-  const oversizedHeight = Math.max(
-    Math.floor(targetHeight * OVERSIZED_MULTIPLIER),
-    cropped.height
-  );
-  
-  // If the cropped image is already smaller than target, just use it as-is
-  if (cropped.width <= targetWidth * OVERSIZED_MULTIPLIER) {
+  // For camera captures with frame position, use position-aware cropping
+  // For library imports (no framePosition), preserve original aspect ratio to allow panning
+  if (framePosition) {
+    // Camera capture: crop to what was visible in the frame
+    const cropped = await cropToAspectRatio(
+      uri,
+      sourceWidth,
+      sourceHeight,
+      targetAspectRatio,
+      framePosition
+    );
+    
     return cropped;
   }
   
-  // Resize to oversized dimensions
-  const resized = await resizeToSlot(
-    cropped.uri,
-    oversizedWidth,
-    oversizedHeight
+  // Library import: preserve original aspect ratio for full panning capability
+  // Scale so the image COVERS the target frame (smaller dimension fills frame)
+  // This allows panning in the dimension that exceeds the frame
+  
+  // Calculate the size needed to cover the target frame while maintaining aspect ratio
+  let scaledWidth: number;
+  let scaledHeight: number;
+  
+  if (sourceAspectRatio > targetAspectRatio) {
+    // Source is wider than target - height should fill, width will exceed (allows horizontal pan)
+    scaledHeight = Math.floor(targetHeight * OVERSIZED_MULTIPLIER);
+    scaledWidth = Math.floor(scaledHeight * sourceAspectRatio);
+  } else {
+    // Source is taller than target - width should fill, height will exceed (allows vertical pan)
+    scaledWidth = Math.floor(targetWidth * OVERSIZED_MULTIPLIER);
+    scaledHeight = Math.floor(scaledWidth / sourceAspectRatio);
+  }
+  
+  // Don't upscale beyond original dimensions
+  if (scaledWidth > sourceWidth || scaledHeight > sourceHeight) {
+    // Use original size if it's smaller than our calculated size
+    scaledWidth = sourceWidth;
+    scaledHeight = sourceHeight;
+  }
+  
+  // If no resize needed (already at or below target size), return original
+  if (scaledWidth >= sourceWidth && scaledHeight >= sourceHeight) {
+    return { uri, width: sourceWidth, height: sourceHeight };
+  }
+  
+  // Resize while maintaining original aspect ratio
+  const resized = await ImageManipulator.manipulateAsync(
+    uri,
+    [{ resize: { width: scaledWidth, height: scaledHeight } }],
+    { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
   );
   
-  return resized;
+  return {
+    uri: resized.uri,
+    width: resized.width,
+    height: resized.height,
+  };
 }
 
 /**

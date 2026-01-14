@@ -259,14 +259,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
     };
   }, []);
 
-  // Handle initial image from library picker or existing image (passed via props)
-  useEffect(() => {
-    if (initialImage && slot && !previewUri) {
-      // Process the library/existing image (no frame position since it wasn't taken through camera preview)
-      processAndSetImage(initialImage.uri, initialImage.width, initialImage.height, false);
-    }
-  }, [initialImage, slot, processAndSetImage, previewUri]);
-
   const processAndSetImage = useCallback(async (
     uri: string, 
     width: number, 
@@ -318,6 +310,14 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
       }
     }
   }, [slot, availableArea]);
+
+  // Handle initial image from library picker or existing image (passed via props)
+  useEffect(() => {
+    if (initialImage && slot && !previewUri) {
+      // Process the library/existing image (no frame position since it wasn't taken through camera preview)
+      processAndSetImage(initialImage.uri, initialImage.width, initialImage.height, false);
+    }
+  }, [initialImage, slot, processAndSetImage, previewUri]);
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturingRef.current || !slot) return;

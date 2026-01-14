@@ -211,8 +211,8 @@ export default function EditorScreen() {
     [slots, capturedImages]
   );
 
-  // Track previous capturedImages to detect actual changes
-  const prevCapturedImagesRef = useRef<Record<string, { uri: string } | null>>({});
+  // Track previous capturedImages to detect actual changes (including adjustments)
+  const prevCapturedImagesRef = useRef<Record<string, { uri: string; adjustments?: { translateX: number; translateY: number; scale: number } } | null>>({});
 
   // Reset all refs when template changes
   useEffect(() => {
@@ -469,25 +469,55 @@ export default function EditorScreen() {
     
     let hasNewOrChangedImage = false;
     let changedSlotId: string | null = null;
+    let changeReason: string | null = null;
     
     for (const slotId of currentSlotIds) {
-      const currentUri = currentImages[slotId]?.uri;
-      const prevUri = prevImages[slotId]?.uri;
+      const current = currentImages[slotId];
+      const prev = prevImages[slotId];
+      const currentUri = current?.uri;
+      const prevUri = prev?.uri;
       
+      // Check if URI changed
       if (currentUri && currentUri !== prevUri) {
         hasNewOrChangedImage = true;
         changedSlotId = slotId;
+        changeReason = 'uri';
         break;
+      }
+      
+      // Check if adjustments changed (for existing images)
+      if (currentUri && currentUri === prevUri && current?.adjustments && prev?.adjustments) {
+        const currAdj = current.adjustments;
+        const prevAdj = prev.adjustments;
+        if (currAdj.translateX !== prevAdj.translateX ||
+            currAdj.translateY !== prevAdj.translateY ||
+            currAdj.scale !== prevAdj.scale) {
+          hasNewOrChangedImage = true;
+          changedSlotId = slotId;
+          changeReason = 'adjustments';
+          break;
+        }
+      }
+      
+      // Check if new adjustments were added to an image that had none before
+      if (currentUri && currentUri === prevUri && current?.adjustments && !prev?.adjustments) {
+        const currAdj = current.adjustments;
+        if (currAdj.translateX !== 0 || currAdj.translateY !== 0 || currAdj.scale !== 1.0) {
+          hasNewOrChangedImage = true;
+          changedSlotId = slotId;
+          changeReason = 'new-adjustments';
+          break;
+        }
       }
     }
     
     if (hasNewOrChangedImage) {
-      console.log(`[Editor] Image change detected in slot: ${changedSlotId}`);
+      console.log(`[Editor] Image change detected in slot: ${changedSlotId}, reason: ${changeReason}`);
     }
     
-    const newPrevImages: Record<string, { uri: string } | null> = {};
+    const newPrevImages: Record<string, { uri: string; adjustments?: { translateX: number; translateY: number; scale: number } } | null> = {};
     for (const [slotId, media] of Object.entries(currentImages)) {
-      newPrevImages[slotId] = media ? { uri: media.uri } : null;
+      newPrevImages[slotId] = media ? { uri: media.uri, adjustments: media.adjustments } : null;
     }
     prevCapturedImagesRef.current = newPrevImages;
     
