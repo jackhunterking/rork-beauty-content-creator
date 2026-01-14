@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Support - Resulta</title>
+  <meta name="description" content="Get help with Resulta - Contact our support team">
+  <link rel="icon" type="image/png" href="https://tmgjsrxdjbazrwvbdoed.supabase.co/storage/v1/object/public/assets/favicon.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#C9A87C',
+            primaryDark: '#A88B5E',
+            background: '#FEFCF9',
+            surface: '#FFFFFF',
+            surfaceSecondary: '#F7F4F0',
+            textPrimary: '#1A1614',
+            textSecondary: '#6B635B',
+            textTertiary: '#9C948C',
+            border: '#E8E4DF',
+            borderLight: '#F0EDE9',
+            success: '#5AAB61',
+            error: '#D64545',
+          },
+          fontFamily: {
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'DM Sans', system-ui, sans-serif; }
+    
+    body {
+      background: linear-gradient(180deg, #FEFCF9 0%, #F7F4F0 100%);
+      min-height: 100vh;
+    }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #C9A87C 0%, #A88B5E 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 14px 18px;
+      background: white;
+      border: 2px solid #E8E4DF;
+      border-radius: 12px;
+      font-size: 16px;
+      color: #1A1614;
+      transition: all 0.2s ease;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #C9A87C;
+      box-shadow: 0 0 0 3px rgba(201, 168, 124, 0.15);
+    }
+    
+    .form-input::placeholder {
+      color: #9C948C;
+    }
+    
+    .form-input.error {
+      border-color: #D64545;
+    }
+    
+    .submit-button {
+      width: 100%;
+      padding: 16px 24px;
+      background: #1A1614;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .submit-button:hover:not(:disabled) {
+      background: #2D2D2D;
+      transform: translateY(-1px);
+    }
+    
+    .submit-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .success-animation {
+      animation: successPop 0.4s ease-out;
+    }
+    
+    @keyframes successPop {
+      0% { transform: scale(0.8); opacity: 0; }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    
+    .spinner {
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="text-textPrimary">
+  
+  <!-- Navigation -->
+  <nav class="py-6 px-6">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+      <a href="/" class="text-2xl font-bold gradient-text">Resulta</a>
+      <a href="/" class="text-textSecondary hover:text-textPrimary transition font-medium flex items-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+        </svg>
+        Back
+      </a>
+    </div>
+  </nav>
+  
+  <!-- Main Content -->
+  <main class="px-6 py-12">
+    <div class="max-w-xl mx-auto">
+      
+      <!-- Header -->
+      <div class="text-center mb-10">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-primaryDark flex items-center justify-center mx-auto mb-6">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+          </svg>
+        </div>
+        <h1 class="text-3xl md:text-4xl font-bold text-textPrimary mb-3">Get in Touch</h1>
+        <p class="text-lg text-textSecondary max-w-md mx-auto">
+          Have a question, feedback, or need help? We'd love to hear from you.
+        </p>
+      </div>
+      
+      <!-- Form Container -->
+      <div id="formContainer" class="bg-white rounded-3xl p-8 shadow-lg shadow-textPrimary/5 border border-border">
+        <form id="supportForm" class="space-y-5">
+          
+          <!-- Name Field -->
+          <div>
+            <label for="name" class="block text-sm font-semibold text-textPrimary mb-2">Your Name</label>
+            <input 
+              type="text" 
+              id="name" 
+              name="name" 
+              class="form-input" 
+              placeholder="John Doe"
+              required
+            >
+            <p id="nameError" class="text-error text-sm mt-1 hidden">Please enter your name</p>
+          </div>
+          
+          <!-- Email Field -->
+          <div>
+            <label for="email" class="block text-sm font-semibold text-textPrimary mb-2">Email Address</label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              class="form-input" 
+              placeholder="you@example.com"
+              required
+            >
+            <p id="emailError" class="text-error text-sm mt-1 hidden">Please enter a valid email address</p>
+          </div>
+          
+          <!-- Message Field -->
+          <div>
+            <label for="message" class="block text-sm font-semibold text-textPrimary mb-2">Message</label>
+            <textarea 
+              id="message" 
+              name="message" 
+              rows="5" 
+              class="form-input resize-none" 
+              placeholder="Tell us how we can help..."
+              required
+            ></textarea>
+            <p id="messageError" class="text-error text-sm mt-1 hidden">Please enter your message</p>
+          </div>
+          
+          <!-- Submit Button -->
+          <button type="submit" id="submitButton" class="submit-button flex items-center justify-center gap-2">
+            <span id="buttonText">Send Message</span>
+            <div id="buttonSpinner" class="spinner hidden"></div>
+          </button>
+          
+          <!-- Error Message -->
+          <div id="errorAlert" class="hidden bg-error/10 text-error px-4 py-3 rounded-xl text-sm font-medium text-center">
+            Something went wrong. Please try again.
+          </div>
+          
+        </form>
+      </div>
+      
+      <!-- Success State (hidden by default) -->
+      <div id="successContainer" class="hidden bg-white rounded-3xl p-8 shadow-lg shadow-textPrimary/5 border border-border text-center success-animation">
+        <div class="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto mb-6">
+          <svg class="w-10 h-10 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-textPrimary mb-3">Message Sent!</h2>
+        <p class="text-textSecondary mb-6">
+          Thank you for reaching out. We'll get back to you as soon as possible.
+        </p>
+        <button onclick="resetForm()" class="text-primary font-semibold hover:text-primaryDark transition">
+          Send another message
+        </button>
+      </div>
+      
+      <!-- Additional Info -->
+      <div class="mt-8 text-center text-sm text-textTertiary">
+        <p>We typically respond within 24-48 hours.</p>
+      </div>
+      
+    </div>
+  </main>
+  
+  <!-- Footer -->
+  <footer class="py-8 px-6 mt-auto">
+    <div class="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-textTertiary">
+      <span>© 2026 Resulta Inc.</span>
+      <div class="flex gap-6">
+        <a href="/privacy" class="hover:text-textSecondary transition">Privacy</a>
+        <a href="/terms" class="hover:text-textSecondary transition">Terms</a>
+      </div>
+    </div>
+  </footer>
+  
+  <!-- Supabase JS SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
+  <script>
+    // Supabase configuration
+    const SUPABASE_URL = 'https://tmgjsrxdjbazrwvbdoed.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtZ2pzcnhkamJhenJ3dmJkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3NDE3MDcsImV4cCI6MjA4MzMxNzcwN30.krSbo9fqvKkbQrjFDnQo2s7JiaXwo1wydhvaontxtFE';
+    
+    // Initialize Supabase client
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    // DOM Elements
+    const form = document.getElementById('supportForm');
+    const formContainer = document.getElementById('formContainer');
+    const successContainer = document.getElementById('successContainer');
+    const submitButton = document.getElementById('submitButton');
+    const buttonText = document.getElementById('buttonText');
+    const buttonSpinner = document.getElementById('buttonSpinner');
+    const errorAlert = document.getElementById('errorAlert');
+    
+    const nameInput = document.getElementById('name');
+    const emailInput = document.getElementById('email');
+    const messageInput = document.getElementById('message');
+    
+    const nameError = document.getElementById('nameError');
+    const emailError = document.getElementById('emailError');
+    const messageError = document.getElementById('messageError');
+    
+    // Validation helpers
+    function isValidEmail(email) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+    
+    function clearErrors() {
+      nameInput.classList.remove('error');
+      emailInput.classList.remove('error');
+      messageInput.classList.remove('error');
+      nameError.classList.add('hidden');
+      emailError.classList.add('hidden');
+      messageError.classList.add('hidden');
+      errorAlert.classList.add('hidden');
+    }
+    
+    function validateForm() {
+      let isValid = true;
+      clearErrors();
+      
+      if (!nameInput.value.trim()) {
+        nameInput.classList.add('error');
+        nameError.classList.remove('hidden');
+        isValid = false;
+      }
+      
+      if (!emailInput.value.trim() || !isValidEmail(emailInput.value)) {
+        emailInput.classList.add('error');
+        emailError.classList.remove('hidden');
+        isValid = false;
+      }
+      
+      if (!messageInput.value.trim()) {
+        messageInput.classList.add('error');
+        messageError.classList.remove('hidden');
+        isValid = false;
+      }
+      
+      return isValid;
+    }
+    
+    function setLoading(loading) {
+      submitButton.disabled = loading;
+      buttonText.textContent = loading ? 'Sending...' : 'Send Message';
+      buttonSpinner.classList.toggle('hidden', !loading);
+    }
+    
+    function showSuccess() {
+      formContainer.classList.add('hidden');
+      successContainer.classList.remove('hidden');
+    }
+    
+    function showError(message) {
+      errorAlert.textContent = message || 'Something went wrong. Please try again.';
+      errorAlert.classList.remove('hidden');
+    }
+    
+    function resetForm() {
+      form.reset();
+      clearErrors();
+      successContainer.classList.add('hidden');
+      formContainer.classList.remove('hidden');
+    }
+    
+    // Form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!validateForm()) {
+        return;
+      }
+      
+      setLoading(true);
+      clearErrors();
+      
+      try {
+        const name = nameInput.value.trim();
+        const email = emailInput.value.trim();
+        const message = messageInput.value.trim();
+        
+        // Format the message to include the name
+        const formattedMessage = `From: ${name}\n\n${message}`;
+        
+        // Insert into feedback table
+        const { data, error } = await supabase
+          .from('feedback')
+          .insert([
+            {
+              user_email: email,
+              message: formattedMessage,
+              status: 'pending'
+            }
+          ]);
+        
+        if (error) {
+          console.error('Supabase error:', error);
+          throw new Error(error.message);
+        }
+        
+        // Success!
+        showSuccess();
+        
+      } catch (error) {
+        console.error('Submit error:', error);
+        showError('Failed to send message. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    });
+    
+    // Real-time validation
+    nameInput.addEventListener('blur', () => {
+      if (!nameInput.value.trim()) {
+        nameInput.classList.add('error');
+        nameError.classList.remove('hidden');
+      } else {
+        nameInput.classList.remove('error');
+        nameError.classList.add('hidden');
+      }
+    });
+    
+    emailInput.addEventListener('blur', () => {
+      if (!emailInput.value.trim() || !isValidEmail(emailInput.value)) {
+        emailInput.classList.add('error');
+        emailError.classList.remove('hidden');
+      } else {
+        emailInput.classList.remove('error');
+        emailError.classList.add('hidden');
+      }
+    });
+    
+    messageInput.addEventListener('blur', () => {
+      if (!messageInput.value.trim()) {
+        messageInput.classList.add('error');
+        messageError.classList.remove('hidden');
+      } else {
+        messageInput.classList.remove('error');
+        messageError.classList.add('hidden');
+      }
+    });
+  </script>
+  
+</body>
+</html>

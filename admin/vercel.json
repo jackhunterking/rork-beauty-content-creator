@@ -21,6 +21,10 @@
       "dest": "/data-deletion.html"
     },
     {
+      "src": "/support",
+      "dest": "/support.html"
+    },
+    {
       "src": "/admin",
       "dest": "/template-sync.html"
     },
