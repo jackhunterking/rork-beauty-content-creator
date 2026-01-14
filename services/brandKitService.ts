@@ -15,7 +15,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { decode } from 'base64-arraybuffer';
 
 // Constants
-const BRAND_KIT_STORAGE_KEY = '@beauty_app_brand_kit';
+const BRAND_KIT_STORAGE_KEY = '@resulta_app_brand_kit';
 const BRAND_KIT_DIRECTORY = `${FileSystem.documentDirectory}brand-kit/`;
 const LOGO_FILENAME = 'brand_logo.jpg';
 const STORAGE_BUCKET = 'brand-logos';

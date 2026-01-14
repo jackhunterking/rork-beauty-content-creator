@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { Platform } from 'react-native';
 
-const ALBUM_NAME = 'Beauty Creator';
+const ALBUM_NAME = 'Resulta';
 
 export async function hasMediaLibraryPermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
@@ -109,7 +109,7 @@ export async function downloadAndSaveToGallery(
     }
     
     const extension = getFileExtension(remoteUrl);
-    const name = filename || `beauty_${Date.now()}`;
+    const name = filename || `resulta_${Date.now()}`;
     const localPath = `${FileSystem.cacheDirectory}${name}.${extension}`;
     
     const downloadResult = await FileSystem.downloadAsync(remoteUrl, localPath);
@@ -161,7 +161,7 @@ function getFileExtension(url: string): string {
   return 'jpg';
 }
 
-export function generateDownloadFilename(prefix: string = 'beauty'): string {
+export function generateDownloadFilename(prefix: string = 'resulta'): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 6);
   return `${prefix}_${timestamp}_${random}`;

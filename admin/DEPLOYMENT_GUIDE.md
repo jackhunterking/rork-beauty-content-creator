@@ -25,7 +25,7 @@ The `data_deletion_requests` table has been created with the following structure
 The admin folder is already configured for Vercel deployment. Simply push your changes to your repository and Vercel will automatically deploy.
 
 ```bash
-cd /Users/metinhakanokuyucu/rork-beauty-content-creator
+cd /Users/metinhakanokuyucu/resulta
 git add admin/data-deletion.html admin/vercel.json supabase/migrations/20260112_create_data_deletion_requests.sql
 git commit -m "Add data deletion request page for platform compliance"
 git push

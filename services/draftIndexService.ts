@@ -11,8 +11,8 @@ import { LocalDraftIndex } from '@/types';
  * and updated whenever drafts are created/modified/deleted.
  */
 
-const DRAFT_INDEX_KEY = 'beauty_draft_index';
-const DRAFT_COUNT_KEY = 'beauty_draft_count';
+const DRAFT_INDEX_KEY = 'resulta_draft_index';
+const DRAFT_COUNT_KEY = 'resulta_draft_count';
 
 // ============================================
 // Index Management

@@ -17,7 +17,7 @@ import { useUser, usePlacement } from 'expo-superwall';
  * - (Future) Advanced features
  */
 
-const PREMIUM_STORAGE_KEY = '@beauty_app_premium_status';
+const PREMIUM_STORAGE_KEY = '@resulta_app_premium_status';
 
 export interface PremiumStatus {
   isPremium: boolean;

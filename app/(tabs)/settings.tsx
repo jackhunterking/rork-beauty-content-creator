@@ -490,7 +490,7 @@ export default function SettingsScreen() {
                     </View>
                     <View style={styles.profileInfo}>
                       <Text style={styles.profileName}>
-                        {user.displayName || user.businessName || 'Beauty Creator'}
+                        {user.displayName || user.businessName || 'Creator'}
                       </Text>
                       <Text style={styles.profileEmail}>{user.email}</Text>
                     </View>

@@ -113,7 +113,7 @@
 **Verdict: FOUNDATIONAL - DO THIS REGARDLESS**
 
 **Actions:**
-- Keywords: "before after", "beauty content creator", "nail tech app", "hair transformation"
+- Keywords: "before after", "resulta app", "nail tech app", "hair transformation"
 - Screenshots showing actual before/after results
 - Video preview demonstrating speed (3-5 seconds to create)
 - Encourage reviews from happy users

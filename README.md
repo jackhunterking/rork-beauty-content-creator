@@ -9,8 +9,6 @@ Before & After content creation app for beauty professionals.
 
 ## Project info
 
-This is a native cross-platform mobile app created with [Rork](https://rork.com)
-
 **Platform**: Native iOS & Android app, exportable to web
 **Framework**: Expo Router + React Native
 
@@ -18,17 +16,9 @@ This is a native cross-platform mobile app created with [Rork](https://rork.com)
 
 There are several ways of editing your native mobile application.
 
-### **Use Rork**
-
-Simply visit [rork.com](https://rork.com) and prompt to build your app with AI.
-
-Changes made via Rork will be committed automatically to this GitHub repo.
-
-Whenever you make a change in your local code editor and push it to GitHub, it will be also reflected in Rork.
-
 ### **Use your preferred code editor**
 
-If you want to work locally using your own code editor, you can clone this repo and push changes. Pushed changes will also be reflected in Rork.
+If you want to work locally using your own code editor, you can clone this repo and push changes.
 
 If you are new to coding and unsure which editor to use, we recommend Cursor. If you're familiar with terminals, try Claude Code.
 
@@ -41,12 +31,12 @@ Follow these steps:
 git clone <YOUR_GIT_URL>
 
 # Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+cd resulta
 
 # Step 3: Install the necessary dependencies.
 bun i
 
-# Step 4: Start the instant web preview of your Rork app in your browser, with auto-reloading of your changes
+# Step 4: Start the app with web preview
 bun run start-web
 
 # Step 5: Start iOS preview
@@ -71,13 +61,14 @@ This project is built with the most popular native mobile cross-platform technic
 - **Expo Router** - File-based routing system for React Native with support for web, server functions and SSR
 - **TypeScript** - Type-safe JavaScript
 - **React Query** - Server state management
+- **Supabase** - Backend database and authentication
 - **Lucide React Native** - Beautiful icons
 
 ## How can I test my app?
 
 ### **On your phone (Recommended)**
 
-1. **iOS**: Download the [Rork app from the App Store](https://apps.apple.com/app/rork) or [Expo Go](https://apps.apple.com/app/expo-go/id982107779)
+1. **iOS**: Download [Expo Go](https://apps.apple.com/app/expo-go/id982107779)
 2. **Android**: Download the [Expo Go app from Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
 3. Run `bun run start` and scan the QR code from your development server
 
@@ -87,7 +78,7 @@ Run `bun start-web` to test in a web browser. Note: The browser preview is great
 
 ### **iOS Simulator / Android Emulator**
 
-You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Android Studio for most features.
+You can test Resulta in Expo Go. You don't need XCode or Android Studio for most features.
 
 **When do you need Custom Development Builds?**
 
@@ -175,14 +166,16 @@ Alternative web deployment options:
 
 ## App Features
 
-This template includes:
+Resulta includes:
 
 - **Cross-platform compatibility** - Works on iOS, Android, and Web
 - **File-based routing** with Expo Router
 - **Tab navigation** with customizable tabs
 - **Modal screens** for overlays and dialogs
 - **TypeScript support** for better development experience
-- **Async storage** for local data persistence
+- **Supabase integration** for backend and authentication
+- **Before & After templates** - 100+ professionally designed layouts
+- **Brand kit** - Custom logos and watermarks
 - **Vector icons** with Lucide React Native
 
 ## Project Structure
@@ -193,12 +186,17 @@ This template includes:
 │   │   ├── _layout.tsx    # Tab layout configuration
 │   │   └── index.tsx      # Home tab screen
 │   ├── _layout.tsx        # Root layout
-│   ├── modal.tsx          # Modal screen example
-│   └── +not-found.tsx     # 404 screen
+│   ├── auth/              # Authentication screens
+│   └── capture/           # Image capture screens
 ├── assets/                # Static assets
 │   └── images/           # App icons and images
+├── components/           # Reusable components
 ├── constants/            # App constants and configuration
-├── app.json             # Expo configuration
+├── contexts/             # React contexts
+├── hooks/                # Custom React hooks
+├── services/             # Business logic and API services
+├── lib/                  # Library configurations (Supabase)
+├── app.config.js        # Expo configuration
 ├── package.json         # Dependencies and scripts
 └── tsconfig.json        # TypeScript configuration
 ```
@@ -239,54 +237,26 @@ bun start --dev-client
 
 ## Advanced Features
 
-### **Add a Database**
+### **Database & Backend**
 
-Integrate with backend services:
+Resulta uses **Supabase** for:
+- PostgreSQL database with real-time features
+- User authentication (Email, Apple Sign In)
+- File storage for templates and images
+- Row Level Security for data protection
 
-- **Supabase** - PostgreSQL database with real-time features
-- **Firebase** - Google's mobile development platform
-- **Custom API** - Connect to your own backend
+### **Authentication**
 
-### **Add Authentication**
+Resulta implements:
+- **Apple Sign In** - Native Apple authentication
+- **Email/Password** - Traditional authentication
+- **Supabase Auth** - Session management and security
 
-Implement user authentication:
+### **Payments**
 
-**Basic Authentication (works in Expo Go):**
-
-- **Expo AuthSession** - OAuth providers (Google, Facebook, Apple) - [Guide](https://docs.expo.dev/guides/authentication/)
-- **Supabase Auth** - Email/password and social login - [Integration Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
-- **Firebase Auth** - Comprehensive authentication solution - [Setup Guide](https://docs.expo.dev/guides/using-firebase/)
-
-**Native Authentication (requires Custom Development Build):**
-
-- **Apple Sign In** - Native Apple authentication - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/apple-authentication/)
-- **Google Sign In** - Native Google authentication - [Setup Guide](https://docs.expo.dev/guides/google-authentication/)
-
-### **Add Push Notifications**
-
-Send notifications to your users:
-
-- **Expo Notifications** - Cross-platform push notifications
-- **Firebase Cloud Messaging** - Advanced notification features
-
-### **Add Payments**
-
-Monetize your app:
-
-**Web & Credit Card Payments (works in Expo Go):**
-
-- **Stripe** - Credit card payments and subscriptions - [Expo + Stripe Guide](https://docs.expo.dev/guides/using-stripe/)
-- **PayPal** - PayPal payments integration - [Setup Guide](https://developer.paypal.com/docs/checkout/mobile/react-native/)
-
-**Native In-App Purchases (requires Custom Development Build):**
-
-- **RevenueCat** - Cross-platform in-app purchases and subscriptions - [Expo Integration Guide](https://www.revenuecat.com/docs/expo)
-- **Expo In-App Purchases** - Direct App Store/Google Play integration - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/in-app-purchases/)
-
-**Paywall Optimization:**
-
-- **Superwall** - Paywall A/B testing and optimization - [React Native SDK](https://docs.superwall.com/docs/react-native)
-- **Adapty** - Mobile subscription analytics and paywalls - [Expo Integration](https://docs.adapty.io/docs/expo)
+Monetization via:
+- **Superwall** - Paywall A/B testing and optimization
+- **In-App Purchases** - App Store and Google Play subscriptions
 
 ## I want to use a custom domain - is that possible?
 
@@ -296,7 +266,7 @@ For web deployments, you can use custom domains with:
 - **Netlify** - Free custom domain support
 - **Vercel** - Custom domains with automatic SSL
 
-For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
+For mobile apps, you'll configure your app's deep linking scheme in `app.config.js`.
 
 ## Troubleshooting
 
@@ -316,10 +286,9 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 
 - Check [Expo's documentation](https://docs.expo.dev/) for native APIs
 - Browse [React Native's documentation](https://reactnative.dev/docs/getting-started) for core components
-- Visit [Rork's FAQ](https://rork.com/faq) for platform-specific questions
 
-## About Rork
+## About Resulta
 
-Rork builds fully native mobile apps using React Native and Expo - the same technology stack used by Discord, Shopify, Coinbase, Instagram, and nearly 30% of the top 100 apps on the App Store.
+Resulta is a before & after content creation app built specifically for beauty professionals. It uses React Native and Expo - the same technology stack used by Discord, Shopify, Coinbase, Instagram, and nearly 30% of the top 100 apps on the App Store.
 
-Your Rork app is production-ready and can be published to both the App Store and Google Play Store. You can also export your app to run on the web, making it truly cross-platform.
+Resulta is production-ready and available on both the App Store and Google Play Store.

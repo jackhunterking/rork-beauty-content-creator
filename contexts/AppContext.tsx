@@ -13,8 +13,8 @@ import { useAuthContext } from '@/contexts/AuthContext';
 import { getDefaultFormat } from '@/constants/formats';
 
 const STORAGE_KEYS = {
-  LEGACY_PORTFOLIO: 'beauty_work', // Keep same key for backwards compatibility
-  BRAND_KIT: 'beauty_brand_kit',
+  LEGACY_PORTFOLIO: 'resulta_work',
+  BRAND_KIT: 'resulta_brand_kit',
 };
 
 export const [AppProvider, useApp] = createContextHook(() => {

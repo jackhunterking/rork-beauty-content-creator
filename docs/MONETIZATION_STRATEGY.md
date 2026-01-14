@@ -1,4 +1,4 @@
-# Beauty Content Creator - Monetization Strategy
+# Resulta - Monetization Strategy
 
 > **Version:** 1.0  
 > **Last Updated:** January 2026  
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Beauty Content Creator targets individual beauty business owners (aestheticians, nail techs, hair stylists, lash artists) who need professional social media content quickly.
+Resulta targets individual beauty business owners (aestheticians, nail techs, hair stylists, lash artists) who need professional social media content quickly.
 
 Our monetization strategy balances **viral growth through free users** with **sustainable revenue from Pro subscribers** who need brand control and premium templates.
 

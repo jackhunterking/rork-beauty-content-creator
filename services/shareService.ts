@@ -224,7 +224,7 @@ export async function checkPlatformRequirements(
 
 export async function prepareForSharing(
   localPath: string,
-  filename: string = 'beauty_creation'
+  filename: string = 'resulta_creation'
 ): Promise<string> {
   if (Platform.OS === 'web') {
     return localPath;
@@ -245,7 +245,7 @@ export async function cleanupShareFiles(): Promise<void> {
     const items = await FileSystem.readDirectoryAsync(cacheDir);
     
     for (const item of items) {
-      if (item.startsWith('share_') || item.startsWith('beauty_creation_')) {
+      if (item.startsWith('share_') || item.startsWith('resulta_creation_')) {
         await FileSystem.deleteAsync(`${cacheDir}${item}`, { idempotent: true });
       }
     }
