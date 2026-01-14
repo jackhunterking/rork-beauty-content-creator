@@ -9,7 +9,7 @@ export default {
   expo: {
     name: "Resulta",
     slug: "resulta",
-    version: "1.3",
+    version: "1.4",
     orientation: "portrait",
     icon: "./assets/images/resultalogo.png",
     scheme: "resulta",
@@ -23,7 +23,7 @@ export default {
     ios: {
       supportsTablet: true,
       bundleIdentifier: "com.resulta",
-      buildNumber: "17",
+      buildNumber: "18",
       usesAppleSignIn: true,
       infoPlist: {
         NSPhotoLibraryUsageDescription: "Allow $(PRODUCT_NAME) to access your photos",
