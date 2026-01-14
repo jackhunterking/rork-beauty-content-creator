@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -25,6 +25,7 @@ import {
   markOnboardingComplete,
   getPendingSurveyData,
 } from '@/services/onboardingService';
+import { useResponsive } from '@/hooks/useResponsive';
 
 /**
  * Onboarding Auth Screen
@@ -49,6 +50,9 @@ export default function OnboardingAuthScreen() {
     user,
     isAuthenticated,
   } = useAuthContext();
+
+  // Responsive configuration
+  const responsive = useResponsive();
 
   // Superwall user hook for setting user attributes
   // Following best practices: https://superwall.com/docs/dashboard/guides/using-superwall-for-onboarding-flows
@@ -240,6 +244,25 @@ export default function OnboardingAuthScreen() {
     resetErrors();
   };
 
+  // Dynamic styles for responsive layout
+  const dynamicStyles = useMemo(() => ({
+    scrollContent: {
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+      paddingHorizontal: responsive.isTablet ? responsive.gridPadding : 24,
+    },
+    formContainer: {
+      width: '100%' as const,
+      maxWidth: responsive.maxFormWidth,
+    },
+    logo: {
+      width: responsive.isTablet ? 100 : 80,
+      height: responsive.isTablet ? 100 : 80,
+    },
+    title: {
+      fontSize: responsive.isTablet ? 32 : 28,
+    },
+  }), [responsive]);
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView 
@@ -248,189 +271,191 @@ export default function OnboardingAuthScreen() {
       >
         <ScrollView 
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, dynamicStyles.scrollContent]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo & Header */}
-          <View style={styles.header}>
-            <Image
-              source={require('@/assets/images/resultalogo.png')}
-              style={styles.logo}
-              contentFit="contain"
-            />
-            <Text style={styles.title}>
-              {mode === 'signup' ? 'Create Your Account' : 'Welcome Back'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {mode === 'signup' 
-                ? 'Sign up to save your work and unlock all features'
-                : 'Sign in to continue creating amazing content'
-              }
-            </Text>
-          </View>
-
-          {/* Social Sign In */}
-          {appleSignInAvailable && (
-            <View style={styles.socialButtons}>
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={mode === 'signup' 
-                  ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
-                  : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
-                }
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-                cornerRadius={12}
-                style={styles.appleButton}
-                onPress={handleAppleSignIn}
+          <View style={dynamicStyles.formContainer}>
+            {/* Logo & Header */}
+            <View style={styles.header}>
+              <Image
+                source={require('@/assets/images/resultalogo.png')}
+                style={[styles.logo, dynamicStyles.logo]}
+                contentFit="contain"
               />
+              <Text style={[styles.title, dynamicStyles.title]}>
+                {mode === 'signup' ? 'Create Your Account' : 'Welcome Back'}
+              </Text>
+              <Text style={styles.subtitle}>
+                {mode === 'signup' 
+                  ? 'Sign up to save your work and unlock all features'
+                  : 'Sign in to continue creating amazing content'
+                }
+              </Text>
             </View>
-          )}
 
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>or continue with email</Text>
-            <View style={styles.divider} />
-          </View>
-
-          {/* Email Form */}
-          <View style={styles.form}>
-            {/* Display Name - Only for signup */}
-            {mode === 'signup' && (
-              <>
-                <View style={styles.inputContainer}>
-                  <User size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.input, nameError ? styles.inputError : null]}
-                    placeholder="Your Name"
-                    placeholderTextColor={Colors.light.textTertiary}
-                    value={displayName}
-                    onChangeText={(text) => {
-                      setDisplayName(text);
-                      setNameError('');
-                    }}
-                    autoCapitalize="words"
-                    autoCorrect={false}
-                    editable={!isLoading}
-                  />
-                </View>
-                {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
-              </>
+            {/* Social Sign In */}
+            {appleSignInAvailable && (
+              <View style={styles.socialButtons}>
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={mode === 'signup' 
+                    ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                    : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                  }
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                  cornerRadius={12}
+                  style={styles.appleButton}
+                  onPress={handleAppleSignIn}
+                />
+              </View>
             )}
 
-            {/* Email */}
-            <View style={styles.inputContainer}>
-              <Mail size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, emailError ? styles.inputError : null]}
-                placeholder="Email"
-                placeholderTextColor={Colors.light.textTertiary}
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  setEmailError('');
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isLoading}
-              />
+            {/* Divider */}
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>or continue with email</Text>
+              <View style={styles.divider} />
             </View>
-            {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-            {/* Password */}
-            <View style={styles.inputContainer}>
-              <Lock size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.input, passwordError ? styles.inputError : null]}
-                placeholder="Password"
-                placeholderTextColor={Colors.light.textTertiary}
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  setPasswordError('');
-                }}
-                secureTextEntry={!showPassword}
-                editable={!isLoading}
-              />
-              <TouchableOpacity 
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeButton}
+            {/* Email Form */}
+            <View style={styles.form}>
+              {/* Display Name - Only for signup */}
+              {mode === 'signup' && (
+                <>
+                  <View style={styles.inputContainer}>
+                    <User size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, nameError ? styles.inputError : null]}
+                      placeholder="Your Name"
+                      placeholderTextColor={Colors.light.textTertiary}
+                      value={displayName}
+                      onChangeText={(text) => {
+                        setDisplayName(text);
+                        setNameError('');
+                      }}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      editable={!isLoading}
+                    />
+                  </View>
+                  {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
+                </>
+              )}
+
+              {/* Email */}
+              <View style={styles.inputContainer}>
+                <Mail size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, emailError ? styles.inputError : null]}
+                  placeholder="Email"
+                  placeholderTextColor={Colors.light.textTertiary}
+                  value={email}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    setEmailError('');
+                  }}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!isLoading}
+                />
+              </View>
+              {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+
+              {/* Password */}
+              <View style={styles.inputContainer}>
+                <Lock size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.input, passwordError ? styles.inputError : null]}
+                  placeholder="Password"
+                  placeholderTextColor={Colors.light.textTertiary}
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    setPasswordError('');
+                  }}
+                  secureTextEntry={!showPassword}
+                  editable={!isLoading}
+                />
+                <TouchableOpacity 
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeButton}
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color={Colors.light.textTertiary} />
+                  ) : (
+                    <Eye size={20} color={Colors.light.textTertiary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+
+              {/* Confirm Password - Only for signup */}
+              {mode === 'signup' && (
+                <>
+                  <View style={styles.inputContainer}>
+                    <Lock size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
+                    <TextInput
+                      style={[styles.input, confirmError ? styles.inputError : null]}
+                      placeholder="Confirm Password"
+                      placeholderTextColor={Colors.light.textTertiary}
+                      value={confirmPassword}
+                      onChangeText={(text) => {
+                        setConfirmPassword(text);
+                        setConfirmError('');
+                      }}
+                      secureTextEntry={!showPassword}
+                      editable={!isLoading}
+                    />
+                  </View>
+                  {confirmError ? <Text style={styles.errorText}>{confirmError}</Text> : null}
+                  
+                  <Text style={styles.passwordHint}>
+                    Password must be at least 8 characters
+                  </Text>
+                </>
+              )}
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+                onPress={handleEmailAuth}
+                disabled={isLoading}
+                activeOpacity={0.8}
               >
-                {showPassword ? (
-                  <EyeOff size={20} color={Colors.light.textTertiary} />
+                {isLoading ? (
+                  <ActivityIndicator size="small" color={Colors.light.surface} />
                 ) : (
-                  <Eye size={20} color={Colors.light.textTertiary} />
+                  <View style={styles.submitButtonContent}>
+                    <Text style={styles.submitButtonText}>
+                      {mode === 'signup' ? 'Create Account' : 'Sign In'}
+                    </Text>
+                    <ChevronRight size={20} color={Colors.light.surface} />
+                  </View>
                 )}
               </TouchableOpacity>
             </View>
-            {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
 
-            {/* Confirm Password - Only for signup */}
-            {mode === 'signup' && (
-              <>
-                <View style={styles.inputContainer}>
-                  <Lock size={20} color={Colors.light.textTertiary} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.input, confirmError ? styles.inputError : null]}
-                    placeholder="Confirm Password"
-                    placeholderTextColor={Colors.light.textTertiary}
-                    value={confirmPassword}
-                    onChangeText={(text) => {
-                      setConfirmPassword(text);
-                      setConfirmError('');
-                    }}
-                    secureTextEntry={!showPassword}
-                    editable={!isLoading}
-                  />
-                </View>
-                {confirmError ? <Text style={styles.errorText}>{confirmError}</Text> : null}
-                
-                <Text style={styles.passwordHint}>
-                  Password must be at least 8 characters
-                </Text>
-              </>
-            )}
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
-              onPress={handleEmailAuth}
-              disabled={isLoading}
-              activeOpacity={0.8}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color={Colors.light.surface} />
-              ) : (
-                <View style={styles.submitButtonContent}>
-                  <Text style={styles.submitButtonText}>
-                    {mode === 'signup' ? 'Create Account' : 'Sign In'}
-                  </Text>
-                  <ChevronRight size={20} color={Colors.light.surface} />
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Toggle Mode */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              {mode === 'signup' ? 'Already have an account? ' : "Don't have an account? "}
-            </Text>
-            <TouchableOpacity onPress={toggleMode} disabled={isLoading}>
-              <Text style={styles.toggleText}>
-                {mode === 'signup' ? 'Sign In' : 'Create one'}
+            {/* Toggle Mode */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                {mode === 'signup' ? 'Already have an account? ' : "Don't have an account? "}
               </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity onPress={toggleMode} disabled={isLoading}>
+                <Text style={styles.toggleText}>
+                  {mode === 'signup' ? 'Sign In' : 'Create one'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-          {/* Terms */}
-          <Text style={styles.termsText}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text>
-            {' '}and{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>
-          </Text>
+            {/* Terms */}
+            <Text style={styles.termsText}>
+              By continuing, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms of Service</Text>
+              {' '}and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -449,7 +474,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 24,
     paddingTop: 40,
     paddingBottom: 40,
   },
@@ -458,12 +482,9 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   logo: {
-    width: 80,
-    height: 80,
     marginBottom: 24,
   },
   title: {
-    fontSize: 28,
     fontWeight: '700',
     color: Colors.light.text,
     marginBottom: 8,

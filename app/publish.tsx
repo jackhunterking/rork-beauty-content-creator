@@ -7,7 +7,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Dimensions,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,10 +26,8 @@ import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { createPortfolioItem } from '@/services/portfolioService';
 import { uploadToStorage } from '@/services/imageUploadService';
-import { getAllFormatIds, getFormatById, getFormatLabel, getDefaultFormat } from '@/constants/formats';
-
-const { width } = Dimensions.get('window');
-const PREVIEW_PADDING = 40;
+import { getAllFormatIds, getFormatById, getDefaultFormat } from '@/constants/formats';
+import { useResponsive } from '@/hooks/useResponsive';
 
 // Platform options - simplified to Save to Photos and Share
 // Supported formats use centralized config so new formats are automatically included
@@ -130,6 +127,9 @@ export default function PublishScreen() {
   }>();
 
   const { deleteDraft, resetProject, refreshPortfolio } = useApp();
+  
+  // Responsive configuration
+  const responsive = useResponsive();
 
   // Parse params
   const draftId = params.draftId || undefined;
@@ -151,9 +151,9 @@ export default function PublishScreen() {
   // Track if portfolio was created to avoid duplicate creation
   const portfolioCreatedRef = useRef(false);
 
-  // Calculate preview dimensions based on format - uses centralized config
+  // Calculate preview dimensions based on format - uses centralized config with responsive adjustments
   const previewDimensions = useMemo(() => {
-    const maxWidth = width - PREVIEW_PADDING * 2;
+    const maxWidth = Math.min(responsive.maxPreviewWidth, responsive.screenWidth - 80);
     const config = getFormatById(format);
     
     if (!config) {
@@ -167,17 +167,17 @@ export default function PublishScreen() {
     // For wide formats (aspectRatio >= 1), constrain by width
     if (config.aspectRatio < 1) {
       // Portrait/vertical - constrain by height
-      const maxHeight = 350;
+      const maxHeight = responsive.isTablet ? 400 : 350;
       const height = maxHeight;
       const widthFromHeight = height * config.aspectRatio;
       return { width: Math.min(widthFromHeight, maxWidth), height };
     } else {
       // Square or landscape - constrain by width
-      const previewWidth = Math.min(maxWidth, 300);
+      const previewWidth = Math.min(maxWidth, responsive.isTablet ? 350 : 300);
       const previewHeight = previewWidth / config.aspectRatio;
       return { width: previewWidth, height: previewHeight };
     }
-  }, [format]);
+  }, [format, responsive]);
 
   // Get format display text - uses centralized config
   const formatDisplayText = useMemo(() => {
@@ -208,6 +208,13 @@ export default function PublishScreen() {
       }
     }
     return 'Failed to save to your portfolio. Please try again.';
+  }, []);
+
+  // Show toast and auto-hide
+  const showToastMessage = useCallback((message: string) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3000);
   }, []);
 
   // Portfolio creation function (reusable for retry)
@@ -304,13 +311,6 @@ export default function PublishScreen() {
     }
   }, [saveToPortfolio, showToastMessage]);
 
-  // Show toast and auto-hide
-  const showToastMessage = useCallback((message: string) => {
-    setToastMessage(message);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  }, []);
-
   // Handle platform action
   const handlePlatformAction = useCallback(async (platformId: PublishPlatform) => {
     if (!previewUri) {
@@ -363,6 +363,27 @@ export default function PublishScreen() {
     router.replace('/(tabs)');
   }, [router, resetProject]);
 
+  // Dynamic styles for responsive layout
+  const dynamicStyles = useMemo(() => {
+    const contentMaxWidth = responsive.isTablet ? 500 : responsive.screenWidth;
+    const platformCardWidth = responsive.isTablet 
+      ? (contentMaxWidth - 40 - 12) / 2 
+      : (responsive.screenWidth - 40 - 12) / 2;
+    
+    return {
+      scrollContent: {
+        alignItems: responsive.isTablet ? 'center' as const : undefined,
+      },
+      contentContainer: {
+        width: '100%' as const,
+        maxWidth: contentMaxWidth,
+      },
+      platformCard: {
+        width: platformCardWidth,
+      },
+    };
+  }, [responsive]);
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -376,97 +397,100 @@ export default function PublishScreen() {
       <SafeAreaView style={styles.safeArea} edges={['bottom']}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, dynamicStyles.scrollContent]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Format Badge at Top */}
-          <View style={styles.formatBadgeContainer}>
-            <View style={styles.formatBadge}>
-              <Text style={styles.formatBadgeText}>{formatDisplayText}</Text>
+          <View style={dynamicStyles.contentContainer}>
+            {/* Format Badge at Top */}
+            <View style={styles.formatBadgeContainer}>
+              <View style={styles.formatBadge}>
+                <Text style={styles.formatBadgeText}>{formatDisplayText}</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Preview Image */}
-          <View style={styles.previewSection}>
-            <View style={[styles.previewContainer, previewDimensions]}>
-              {isCreatingPortfolio ? (
-                <View style={styles.previewLoading}>
-                  <ActivityIndicator size="large" color={Colors.light.accent} />
-                  <Text style={styles.previewLoadingText}>Saving to portfolio...</Text>
+            {/* Preview Image */}
+            <View style={styles.previewSection}>
+              <View style={[styles.previewContainer, previewDimensions]}>
+                {isCreatingPortfolio ? (
+                  <View style={styles.previewLoading}>
+                    <ActivityIndicator size="large" color={Colors.light.accent} />
+                    <Text style={styles.previewLoadingText}>Saving to portfolio...</Text>
+                  </View>
+                ) : (
+                  <Image
+                    source={{ uri: previewUri }}
+                    style={styles.previewImage}
+                    contentFit="contain"
+                    transition={200}
+                  />
+                )}
+              </View>
+              
+              {/* Portfolio Save Error with Retry */}
+              {portfolioSaveError && !isCreatingPortfolio && (
+                <View style={styles.portfolioErrorContainer}>
+                  <View style={styles.portfolioErrorContent}>
+                    <AlertCircle size={18} color={Colors.light.error} />
+                    <Text style={styles.portfolioErrorText}>{portfolioSaveError}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={handleRetryPortfolioSave}
+                    activeOpacity={0.8}
+                  >
+                    <RefreshCw size={14} color={Colors.light.surface} />
+                    <Text style={styles.retryButtonText}>Retry</Text>
+                  </TouchableOpacity>
                 </View>
-              ) : (
-                <Image
-                  source={{ uri: previewUri }}
-                  style={styles.previewImage}
-                  contentFit="contain"
-                  transition={200}
-                />
+              )}
+              
+              {/* Portfolio Saved Success */}
+              {portfolioSaved && !portfolioSaveError && !isCreatingPortfolio && (
+                <View style={styles.portfolioSuccessContainer}>
+                  <Check size={16} color={Colors.light.success} />
+                  <Text style={styles.portfolioSuccessText}>Saved to portfolio</Text>
+                </View>
               )}
             </View>
-            
-            {/* Portfolio Save Error with Retry */}
-            {portfolioSaveError && !isCreatingPortfolio && (
-              <View style={styles.portfolioErrorContainer}>
-                <View style={styles.portfolioErrorContent}>
-                  <AlertCircle size={18} color={Colors.light.error} />
-                  <Text style={styles.portfolioErrorText}>{portfolioSaveError}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.retryButton}
-                  onPress={handleRetryPortfolioSave}
-                  activeOpacity={0.8}
-                >
-                  <RefreshCw size={14} color={Colors.light.surface} />
-                  <Text style={styles.retryButtonText}>Retry</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            
-            {/* Portfolio Saved Success */}
-            {portfolioSaved && !portfolioSaveError && !isCreatingPortfolio && (
-              <View style={styles.portfolioSuccessContainer}>
-                <Check size={16} color={Colors.light.success} />
-                <Text style={styles.portfolioSuccessText}>Saved to portfolio</Text>
-              </View>
-            )}
-          </View>
 
-          {/* Platform Options */}
-          <View style={styles.platformsSection}>
-            <Text style={styles.sectionTitle}>Share to</Text>
-            
-            <View style={styles.platformsGrid}>
-              {PLATFORM_OPTIONS.map((platform) => {
-                const isThisPlatformProcessing = processingPlatform === platform.id;
-                
-                return (
-                  <TouchableOpacity
-                    key={platform.id}
-                    style={[
-                      styles.platformCard,
-                      isProcessing && !isThisPlatformProcessing && styles.platformCardDisabled,
-                    ]}
-                    onPress={() => handlePlatformAction(platform.id)}
-                    disabled={isProcessing || isCreatingPortfolio}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.platformIconContainer}>
-                      {isThisPlatformProcessing ? (
-                        <ActivityIndicator size="small" color={Colors.light.accent} />
-                      ) : (
-                        getPlatformIcon(platform.icon, 28)
-                      )}
-                    </View>
-                    <Text style={styles.platformName}>{platform.name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+            {/* Platform Options */}
+            <View style={styles.platformsSection}>
+              <Text style={styles.sectionTitle}>Share to</Text>
+              
+              <View style={styles.platformsGrid}>
+                {PLATFORM_OPTIONS.map((platform) => {
+                  const isThisPlatformProcessing = processingPlatform === platform.id;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={platform.id}
+                      style={[
+                        styles.platformCard,
+                        dynamicStyles.platformCard,
+                        isProcessing && !isThisPlatformProcessing && styles.platformCardDisabled,
+                      ]}
+                      onPress={() => handlePlatformAction(platform.id)}
+                      disabled={isProcessing || isCreatingPortfolio}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.platformIconContainer}>
+                        {isThisPlatformProcessing ? (
+                          <ActivityIndicator size="small" color={Colors.light.accent} />
+                        ) : (
+                          getPlatformIcon(platform.icon, 28)
+                        )}
+                      </View>
+                      <Text style={styles.platformName}>{platform.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
           </View>
         </ScrollView>
 
         {/* Done Button at Bottom */}
-        <View style={styles.bottomSection}>
+        <View style={[styles.bottomSection, { maxWidth: dynamicStyles.contentContainer.maxWidth, alignSelf: responsive.isTablet ? 'center' : undefined, width: '100%' }]}>
           <TouchableOpacity
             style={styles.doneButton}
             onPress={handleDone}
@@ -567,7 +591,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   platformCard: {
-    width: (width - 40 - 12) / 2, // 2 columns with gap
     paddingVertical: 16,
     backgroundColor: Colors.light.surface,
     borderRadius: 16,

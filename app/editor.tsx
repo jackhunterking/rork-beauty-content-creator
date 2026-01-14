@@ -113,8 +113,12 @@ export default function EditorScreen() {
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
 
   // Window dimensions for canvas sizing
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const CANVAS_PADDING = 20;
+  
+  // Detect tablet for responsive layout adjustments
+  const isTablet = screenWidth >= 768;
+  const MAX_CANVAS_WIDTH_TABLET = 500; // Constrain canvas on iPad for better proportion
   
   // Overlay state
   const [overlays, setOverlays] = useState<Overlay[]>([]);
@@ -154,24 +158,27 @@ export default function EditorScreen() {
     setIsPreviewImageLoaded(true);
   }, []);
 
-  // Calculate canvas dimensions (matching TemplateCanvas logic)
+  // Calculate canvas dimensions (matching TemplateCanvas logic, with iPad constraints)
   const canvasDimensions = useMemo(() => {
     if (!template) return { width: 0, height: 0 };
     
-    const maxCanvasWidth = screenWidth - CANVAS_PADDING * 2;
+    // On tablets, constrain canvas to a max width for better proportion
+    const baseMaxWidth = screenWidth - CANVAS_PADDING * 2;
+    const maxCanvasWidth = isTablet ? Math.min(baseMaxWidth, MAX_CANVAS_WIDTH_TABLET) : baseMaxWidth;
     const aspectRatio = template.canvasWidth / template.canvasHeight;
     
     let width = maxCanvasWidth;
     let height = width / aspectRatio;
     
-    const maxHeight = screenWidth * 1.2;
+    // Constrain height - use a larger max height on tablets
+    const maxHeight = isTablet ? screenHeight * 0.6 : screenWidth * 1.2;
     if (height > maxHeight) {
       height = maxHeight;
       width = height * aspectRatio;
     }
     
     return { width, height };
-  }, [template, screenWidth]);
+  }, [template, screenWidth, screenHeight, isTablet]);
 
   // Extract slots from template
   const slots = useMemo(() => 
@@ -1524,7 +1531,10 @@ export default function EditorScreen() {
         <Pressable style={styles.contentPressable} onPress={handleCanvasTap}>
           <ScrollView
             style={styles.content}
-            contentContainerStyle={styles.contentContainer}
+            contentContainerStyle={[
+              styles.contentContainer, 
+              isTablet && styles.contentContainerTablet
+            ]}
             showsVerticalScrollIndicator={false}
           >
             {/* Template Canvas with rendered preview from Templated.io */}
@@ -1581,7 +1591,10 @@ export default function EditorScreen() {
         </Pressable>
 
         {/* Bottom Action Bar */}
-        <View style={styles.bottomSection}>
+        <View style={[
+          styles.bottomSection, 
+          isTablet && { maxWidth: MAX_CANVAS_WIDTH_TABLET + 40, alignSelf: 'center', width: '100%' }
+        ]}>
           {/* Overlay Action Bar - show as soon as template is selected */}
           {template && (
             <OverlayActionBar
@@ -1768,6 +1781,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 20,
+  },
+  contentContainerTablet: {
+    alignItems: 'center',
   },
   canvasWrapper: {
     position: 'relative',

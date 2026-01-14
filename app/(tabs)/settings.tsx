@@ -32,7 +32,7 @@ import {
   Cloud,
   CloudOff,
 } from "lucide-react-native";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
@@ -47,6 +47,7 @@ import {
   BrandKitSaveResult,
 } from "@/services/brandKitService";
 import { BrandKit } from "@/types";
+import { useResponsive } from "@/hooks/useResponsive";
 
 // App configuration - replace with your actual URLs
 const APP_CONFIG = {
@@ -56,6 +57,9 @@ const APP_CONFIG = {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  
+  // Responsive configuration
+  const responsive = useResponsive();
   
   // Auth state
   const { 
@@ -331,413 +335,433 @@ export default function SettingsScreen() {
   const appVersion = Application.nativeApplicationVersion || '1.0.0';
   const buildNumber = Application.nativeBuildVersion || '1';
 
+  // Dynamic styles for responsive layout
+  const dynamicStyles = useMemo(() => ({
+    header: {
+      paddingHorizontal: responsive.gridPadding,
+    },
+    title: {
+      fontSize: responsive.headerFontSize,
+    },
+    scrollContent: {
+      paddingHorizontal: responsive.gridPadding,
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+    },
+    contentContainer: {
+      width: '100%' as const,
+      maxWidth: responsive.maxContentWidth,
+    },
+  }), [responsive]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
+      <View style={[styles.header, dynamicStyles.header]}>
+        <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
       </View>
 
       <ScrollView 
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, dynamicStyles.scrollContent]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Subscription Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Subscription</Text>
-          <View style={styles.card}>
-            {isSubscribed ? (
-              // Active subscription view
-              <>
-                <View style={styles.subscriptionActive}>
-                  <View style={styles.subscriptionIcon}>
-                    <Crown size={24} color={Colors.light.accent} />
-                  </View>
-                  <View style={styles.subscriptionInfo}>
-                    <Text style={styles.subscriptionStatus}>Pro Member</Text>
-                    <Text style={styles.subscriptionDetail}>Unlimited access to all features</Text>
-                  </View>
-                  <View style={styles.activeBadge}>
-                    <Check size={14} color={Colors.light.success} />
-                    <Text style={styles.activeBadgeText}>Active</Text>
-                  </View>
-                </View>
-                <View style={styles.divider} />
-                <TouchableOpacity 
-                  style={styles.settingRow} 
-                  onPress={handleManageSubscription}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.settingLeft}>
-                    <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
-                      <ExternalLink size={18} color={Colors.light.success} />
+        <View style={dynamicStyles.contentContainer}>
+          {/* Subscription Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Subscription</Text>
+            <View style={styles.card}>
+              {isSubscribed ? (
+                // Active subscription view
+                <>
+                  <View style={styles.subscriptionActive}>
+                    <View style={styles.subscriptionIcon}>
+                      <Crown size={24} color={Colors.light.accent} />
                     </View>
-                    <View>
-                      <Text style={styles.settingLabel}>Manage Subscription</Text>
-                      <Text style={styles.settingHint}>View in App Store</Text>
+                    <View style={styles.subscriptionInfo}>
+                      <Text style={styles.subscriptionStatus}>Pro Member</Text>
+                      <Text style={styles.subscriptionDetail}>Unlimited access to all features</Text>
+                    </View>
+                    <View style={styles.activeBadge}>
+                      <Check size={14} color={Colors.light.success} />
+                      <Text style={styles.activeBadgeText}>Active</Text>
                     </View>
                   </View>
-                  <ChevronRight size={20} color={Colors.light.textTertiary} />
-                </TouchableOpacity>
-              </>
-            ) : (
-              // Upgrade prompt view
-              <>
-                <View style={styles.upgradePrompt}>
-                  <View style={styles.subscriptionIcon}>
-                    <Crown size={24} color={Colors.light.textSecondary} />
-                  </View>
-                  <View style={styles.subscriptionInfo}>
-                    <Text style={styles.subscriptionStatus}>Free Plan</Text>
-                    <Text style={styles.subscriptionDetail}>Upgrade to unlock unlimited access</Text>
-                  </View>
-                </View>
-                <View style={styles.featuresList}>
-                  <View style={styles.featureItem}>
-                    <Check size={16} color={Colors.light.success} />
-                    <Text style={styles.featureText}>Unlimited downloads</Text>
-                  </View>
-                  <View style={styles.featureItem}>
-                    <Check size={16} color={Colors.light.success} />
-                    <Text style={styles.featureText}>All templates included</Text>
-                  </View>
-                  <View style={styles.featureItem}>
-                    <Check size={16} color={Colors.light.success} />
-                    <Text style={styles.featureText}>No watermarks</Text>
-                  </View>
-                </View>
-                <TouchableOpacity 
-                  style={[
-                    styles.upgradeButton,
-                    (isLoading || paywallState === 'presenting') && styles.upgradeButtonDisabled,
-                  ]} 
-                  activeOpacity={0.8}
-                  onPress={handleUpgradeToPro}
-                  disabled={isLoading || paywallState === 'presenting'}
-                >
-                  {isLoading || paywallState === 'presenting' ? (
-                    <ActivityIndicator size="small" color={Colors.light.surface} />
-                  ) : (
-                    <Crown size={18} color={Colors.light.surface} />
-                  )}
-                  <Text style={styles.upgradeButtonText}>
-                    {paywallState === 'presenting' ? 'Loading...' : 'Upgrade to Pro'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.restoreButton}
-                  onPress={handleRestorePurchases}
-                  disabled={isRestoringPurchases}
-                  activeOpacity={0.7}
-                >
-                  {isRestoringPurchases ? (
-                    <ActivityIndicator size="small" color={Colors.light.textSecondary} />
-                  ) : (
-                    <>
-                      <RefreshCw size={16} color={Colors.light.textSecondary} />
-                      <Text style={styles.restoreButtonText}>Restore Purchases</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
-
-        {/* Account Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.card}>
-            {isAuthenticated && user ? (
-              // Signed in state
-              <>
-                <View style={styles.profileRow}>
-                  <View style={styles.avatarContainer}>
-                    {user.avatarUrl ? (
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                          {(user.displayName || user.email)?.[0]?.toUpperCase() || 'U'}
-                        </Text>
+                  <View style={styles.divider} />
+                  <TouchableOpacity 
+                    style={styles.settingRow} 
+                    onPress={handleManageSubscription}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.settingLeft}>
+                      <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
+                        <ExternalLink size={18} color={Colors.light.success} />
                       </View>
+                      <View>
+                        <Text style={styles.settingLabel}>Manage Subscription</Text>
+                        <Text style={styles.settingHint}>View in App Store</Text>
+                      </View>
+                    </View>
+                    <ChevronRight size={20} color={Colors.light.textTertiary} />
+                  </TouchableOpacity>
+                </>
+              ) : (
+                // Upgrade prompt view
+                <>
+                  <View style={styles.upgradePrompt}>
+                    <View style={styles.subscriptionIcon}>
+                      <Crown size={24} color={Colors.light.textSecondary} />
+                    </View>
+                    <View style={styles.subscriptionInfo}>
+                      <Text style={styles.subscriptionStatus}>Free Plan</Text>
+                      <Text style={styles.subscriptionDetail}>Upgrade to unlock unlimited access</Text>
+                    </View>
+                  </View>
+                  <View style={styles.featuresList}>
+                    <View style={styles.featureItem}>
+                      <Check size={16} color={Colors.light.success} />
+                      <Text style={styles.featureText}>Unlimited downloads</Text>
+                    </View>
+                    <View style={styles.featureItem}>
+                      <Check size={16} color={Colors.light.success} />
+                      <Text style={styles.featureText}>All templates included</Text>
+                    </View>
+                    <View style={styles.featureItem}>
+                      <Check size={16} color={Colors.light.success} />
+                      <Text style={styles.featureText}>No watermarks</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity 
+                    style={[
+                      styles.upgradeButton,
+                      (isLoading || paywallState === 'presenting') && styles.upgradeButtonDisabled,
+                    ]} 
+                    activeOpacity={0.8}
+                    onPress={handleUpgradeToPro}
+                    disabled={isLoading || paywallState === 'presenting'}
+                  >
+                    {isLoading || paywallState === 'presenting' ? (
+                      <ActivityIndicator size="small" color={Colors.light.surface} />
                     ) : (
-                      <View style={styles.avatar}>
-                        <User size={24} color={Colors.light.textSecondary} />
-                      </View>
+                      <Crown size={18} color={Colors.light.surface} />
                     )}
-                  </View>
-                  <View style={styles.profileInfo}>
-                    <Text style={styles.profileName}>
-                      {user.displayName || user.businessName || 'Beauty Creator'}
+                    <Text style={styles.upgradeButtonText}>
+                      {paywallState === 'presenting' ? 'Loading...' : 'Upgrade to Pro'}
                     </Text>
-                    <Text style={styles.profileEmail}>{user.email}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.restoreButton}
+                    onPress={handleRestorePurchases}
+                    disabled={isRestoringPurchases}
+                    activeOpacity={0.7}
+                  >
+                    {isRestoringPurchases ? (
+                      <ActivityIndicator size="small" color={Colors.light.textSecondary} />
+                    ) : (
+                      <>
+                        <RefreshCw size={16} color={Colors.light.textSecondary} />
+                        <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Account Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Account</Text>
+            <View style={styles.card}>
+              {isAuthenticated && user ? (
+                // Signed in state
+                <>
+                  <View style={styles.profileRow}>
+                    <View style={styles.avatarContainer}>
+                      {user.avatarUrl ? (
+                        <View style={styles.avatar}>
+                          <Text style={styles.avatarText}>
+                            {(user.displayName || user.email)?.[0]?.toUpperCase() || 'U'}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.avatar}>
+                          <User size={24} color={Colors.light.textSecondary} />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.profileInfo}>
+                      <Text style={styles.profileName}>
+                        {user.displayName || user.businessName || 'Beauty Creator'}
+                      </Text>
+                      <Text style={styles.profileEmail}>{user.email}</Text>
+                    </View>
                   </View>
-                </View>
-                
-                <View style={styles.divider} />
-                
+                  
+                  <View style={styles.divider} />
+                  
+                  <TouchableOpacity 
+                    style={styles.settingRow} 
+                    onPress={handleSignOut}
+                    disabled={isSigningOut}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.settingLeft}>
+                      <View style={[styles.settingIcon, { backgroundColor: Colors.light.surfaceSecondary }]}>
+                        <LogOut size={18} color={Colors.light.textSecondary} />
+                      </View>
+                      <View>
+                        <Text style={styles.settingLabel}>Sign Out</Text>
+                      </View>
+                    </View>
+                    {isSigningOut ? (
+                      <ActivityIndicator size="small" color={Colors.light.textTertiary} />
+                    ) : (
+                      <ChevronRight size={20} color={Colors.light.textTertiary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <View style={styles.divider} />
+                  
+                  <TouchableOpacity 
+                    style={styles.settingRow} 
+                    onPress={handleDeleteAccount}
+                    disabled={isDeletingAccount}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.settingLeft}>
+                      <View style={[styles.settingIcon, { backgroundColor: '#FFEBEE' }]}>
+                        <Trash2 size={18} color={Colors.light.error} />
+                      </View>
+                      <View>
+                        <Text style={[styles.settingLabel, { color: Colors.light.error }]}>
+                          Delete Account
+                        </Text>
+                        <Text style={styles.settingHint}>Permanently delete all data</Text>
+                      </View>
+                    </View>
+                    {isDeletingAccount ? (
+                      <ActivityIndicator size="small" color={Colors.light.error} />
+                    ) : (
+                      <ChevronRight size={20} color={Colors.light.textTertiary} />
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                // Signed out state
                 <TouchableOpacity 
                   style={styles.settingRow} 
-                  onPress={handleSignOut}
-                  disabled={isSigningOut}
+                  onPress={handleSignIn}
                   activeOpacity={0.7}
                 >
                   <View style={styles.settingLeft}>
                     <View style={[styles.settingIcon, { backgroundColor: Colors.light.surfaceSecondary }]}>
-                      <LogOut size={18} color={Colors.light.textSecondary} />
+                      <User size={18} color={Colors.light.textSecondary} />
                     </View>
                     <View>
-                      <Text style={styles.settingLabel}>Sign Out</Text>
+                      <Text style={styles.settingLabel}>Sign In</Text>
+                      <Text style={styles.settingHint}>Sync your portfolio across devices</Text>
                     </View>
                   </View>
-                  {isSigningOut ? (
-                    <ActivityIndicator size="small" color={Colors.light.textTertiary} />
-                  ) : (
-                    <ChevronRight size={20} color={Colors.light.textTertiary} />
-                  )}
+                  <ChevronRight size={20} color={Colors.light.textTertiary} />
                 </TouchableOpacity>
-                
-                <View style={styles.divider} />
-                
+              )}
+            </View>
+          </View>
+
+          {/* Brand Kit Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitleInline}>Brand Kit</Text>
+              {!isPremium && (
+                <View style={styles.proBadge}>
+                  <Crown size={10} color={Colors.light.surface} />
+                  <Text style={styles.proBadgeText}>PRO</Text>
+                </View>
+              )}
+              {/* Cloud sync indicator */}
+              {isPremium && (
+                <View style={styles.syncBadge}>
+                  {isSyncingBrandKit ? (
+                    <ActivityIndicator size="small" color={Colors.light.textSecondary} />
+                  ) : isAuthenticated ? (
+                    <Cloud size={12} color={Colors.light.success} />
+                  ) : (
+                    <CloudOff size={12} color={Colors.light.textTertiary} />
+                  )}
+                </View>
+              )}
+            </View>
+            <View style={styles.card}>
+              {/* Logo Section */}
+              {brandKit?.logoUri ? (
+                // Logo is set - show preview
+                <View style={styles.logoPreviewContainer}>
+                  <Image
+                    source={{ uri: brandKit.logoUri }}
+                    style={styles.logoPreview}
+                    contentFit="contain"
+                    cachePolicy="none"
+                    key={brandKit.updatedAt || brandKit.logoUri}
+                  />
+                  <View style={styles.logoActions}>
+                    <TouchableOpacity
+                      style={styles.logoChangeButton}
+                      onPress={handleUploadLogo}
+                      disabled={isUploadingLogo}
+                      activeOpacity={0.7}
+                    >
+                      <ImageIcon size={16} color={Colors.light.accent} />
+                      <Text style={styles.logoChangeText}>Change</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.logoRemoveButton}
+                      onPress={handleRemoveLogo}
+                      activeOpacity={0.7}
+                    >
+                      <X size={16} color={Colors.light.error} />
+                      <Text style={styles.logoRemoveText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                // No logo - show upload button
                 <TouchableOpacity 
                   style={styles.settingRow} 
-                  onPress={handleDeleteAccount}
-                  disabled={isDeletingAccount}
+                  onPress={handleUploadLogo}
+                  disabled={isUploadingLogo}
                   activeOpacity={0.7}
                 >
                   <View style={styles.settingLeft}>
-                    <View style={[styles.settingIcon, { backgroundColor: '#FFEBEE' }]}>
-                      <Trash2 size={18} color={Colors.light.error} />
+                    <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
+                      {isUploadingLogo ? (
+                        <ActivityIndicator size="small" color="#5AAB61" />
+                      ) : (
+                        <ImageIcon size={18} color="#5AAB61" />
+                      )}
                     </View>
                     <View>
-                      <Text style={[styles.settingLabel, { color: Colors.light.error }]}>
-                        Delete Account
-                      </Text>
-                      <Text style={styles.settingHint}>Permanently delete all data</Text>
+                      <Text style={styles.settingLabel}>Upload Logo</Text>
+                      <Text style={styles.settingHint}>Add your business logo</Text>
                     </View>
                   </View>
-                  {isDeletingAccount ? (
-                    <ActivityIndicator size="small" color={Colors.light.error} />
-                  ) : (
-                    <ChevronRight size={20} color={Colors.light.textTertiary} />
-                  )}
+                  <ChevronRight size={20} color={Colors.light.textTertiary} />
                 </TouchableOpacity>
-              </>
-            ) : (
-              // Signed out state
-              <TouchableOpacity 
-                style={styles.settingRow} 
-                onPress={handleSignIn}
-                activeOpacity={0.7}
-              >
-                <View style={styles.settingLeft}>
-                  <View style={[styles.settingIcon, { backgroundColor: Colors.light.surfaceSecondary }]}>
-                    <User size={18} color={Colors.light.textSecondary} />
-                  </View>
-                  <View>
-                    <Text style={styles.settingLabel}>Sign In</Text>
-                    <Text style={styles.settingHint}>Sync your portfolio across devices</Text>
-                  </View>
-                </View>
-                <ChevronRight size={20} color={Colors.light.textTertiary} />
-              </TouchableOpacity>
-            )}
+              )}
+              
+              <View style={styles.divider} />
+              
+              {/* Logo Usage Info */}
+              <View style={styles.brandKitInfo}>
+                <Text style={styles.brandKitInfoText}>
+                  Your logo will be available as an overlay option when editing templates.
+                  {isAuthenticated && ' Your brand kit is synced to the cloud.'}
+                  {!isAuthenticated && ' Sign in to sync across devices.'}
+                </Text>
+              </View>
+            </View>
           </View>
-        </View>
 
-        {/* Brand Kit Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitleInline}>Brand Kit</Text>
-            {!isPremium && (
-              <View style={styles.proBadge}>
-                <Crown size={10} color={Colors.light.surface} />
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            )}
-            {/* Cloud sync indicator */}
-            {isPremium && (
-              <View style={styles.syncBadge}>
-                {isSyncingBrandKit ? (
-                  <ActivityIndicator size="small" color={Colors.light.textSecondary} />
-                ) : isAuthenticated ? (
-                  <Cloud size={12} color={Colors.light.success} />
-                ) : (
-                  <CloudOff size={12} color={Colors.light.textTertiary} />
-                )}
-              </View>
-            )}
-          </View>
-          <View style={styles.card}>
-            {/* Logo Section */}
-            {brandKit?.logoUri ? (
-              // Logo is set - show preview
-              <View style={styles.logoPreviewContainer}>
-                <Image
-                  source={{ uri: brandKit.logoUri }}
-                  style={styles.logoPreview}
-                  contentFit="contain"
-                  cachePolicy="none"
-                  key={brandKit.updatedAt || brandKit.logoUri}
-                />
-                <View style={styles.logoActions}>
-                  <TouchableOpacity
-                    style={styles.logoChangeButton}
-                    onPress={handleUploadLogo}
-                    disabled={isUploadingLogo}
-                    activeOpacity={0.7}
-                  >
-                    <ImageIcon size={16} color={Colors.light.accent} />
-                    <Text style={styles.logoChangeText}>Change</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.logoRemoveButton}
-                    onPress={handleRemoveLogo}
-                    activeOpacity={0.7}
-                  >
-                    <X size={16} color={Colors.light.error} />
-                    <Text style={styles.logoRemoveText}>Remove</Text>
-                  </TouchableOpacity>
+          {/* Feedback Section */}
+          <View style={styles.section}>
+            <View style={styles.card}>
+              <View style={styles.feedbackHeader}>
+                <View style={styles.feedbackIconContainer}>
+                  <MessageCircle size={24} color={Colors.light.accent} />
+                </View>
+                <View style={styles.feedbackHeaderText}>
+                  <Text style={styles.feedbackTitle}>We'd love to hear from you!</Text>
+                  <Text style={styles.feedbackSubtitle}>Got feedback or need help?</Text>
                 </View>
               </View>
-            ) : (
-              // No logo - show upload button
-              <TouchableOpacity 
-                style={styles.settingRow} 
-                onPress={handleUploadLogo}
-                disabled={isUploadingLogo}
-                activeOpacity={0.7}
-              >
-                <View style={styles.settingLeft}>
-                  <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
-                    {isUploadingLogo ? (
-                      <ActivityIndicator size="small" color="#5AAB61" />
+              
+              {feedbackSent ? (
+                <View style={styles.feedbackSuccessContainer}>
+                  <Check size={24} color={Colors.light.success} />
+                  <Text style={styles.feedbackSuccessText}>Thank you for your message!</Text>
+                </View>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.feedbackInput}
+                    placeholder="Type your message here..."
+                    placeholderTextColor={Colors.light.textTertiary}
+                    value={feedbackMessage}
+                    onChangeText={setFeedbackMessage}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    maxLength={2000}
+                    editable={!isSendingFeedback}
+                  />
+                  
+                  <TouchableOpacity
+                    style={[
+                      styles.feedbackButton,
+                      (!feedbackMessage.trim() || isSendingFeedback) && styles.feedbackButtonDisabled,
+                    ]}
+                    onPress={handleSendFeedback}
+                    disabled={!feedbackMessage.trim() || isSendingFeedback}
+                    activeOpacity={0.8}
+                  >
+                    {isSendingFeedback ? (
+                      <ActivityIndicator size="small" color={Colors.light.surface} />
                     ) : (
-                      <ImageIcon size={18} color="#5AAB61" />
+                      <>
+                        <Send size={18} color={Colors.light.surface} />
+                        <Text style={styles.feedbackButtonText}>Send Message</Text>
+                      </>
                     )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* Support Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Legal</Text>
+            <View style={styles.card}>
+              <TouchableOpacity 
+                style={styles.settingRow} 
+                onPress={handlePrivacyPolicy}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.settingIcon, { backgroundColor: '#FFF3E0' }]}>
+                    <Shield size={18} color="#FF9800" />
                   </View>
                   <View>
-                    <Text style={styles.settingLabel}>Upload Logo</Text>
-                    <Text style={styles.settingHint}>Add your business logo</Text>
+                    <Text style={styles.settingLabel}>Privacy Policy</Text>
                   </View>
                 </View>
                 <ChevronRight size={20} color={Colors.light.textTertiary} />
               </TouchableOpacity>
-            )}
-            
-            <View style={styles.divider} />
-            
-            {/* Logo Usage Info */}
-            <View style={styles.brandKitInfo}>
-              <Text style={styles.brandKitInfoText}>
-                Your logo will be available as an overlay option when editing templates.
-                {isAuthenticated && ' Your brand kit is synced to the cloud.'}
-                {!isAuthenticated && ' Sign in to sync across devices.'}
-              </Text>
+              
+              <View style={styles.divider} />
+              
+              <TouchableOpacity 
+                style={styles.settingRow} 
+                onPress={handleTermsOfService}
+                activeOpacity={0.7}
+              >
+                <View style={styles.settingLeft}>
+                  <View style={[styles.settingIcon, { backgroundColor: '#F3E5F5' }]}>
+                    <FileText size={18} color="#9C27B0" />
+                  </View>
+                  <View>
+                    <Text style={styles.settingLabel}>Terms of Service</Text>
+                  </View>
+                </View>
+                <ChevronRight size={20} color={Colors.light.textTertiary} />
+              </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        {/* Feedback Section */}
-        <View style={styles.section}>
-          <View style={styles.card}>
-            <View style={styles.feedbackHeader}>
-              <View style={styles.feedbackIconContainer}>
-                <MessageCircle size={24} color={Colors.light.accent} />
-              </View>
-              <View style={styles.feedbackHeaderText}>
-                <Text style={styles.feedbackTitle}>We'd love to hear from you!</Text>
-                <Text style={styles.feedbackSubtitle}>Got feedback or need help?</Text>
-              </View>
-            </View>
-            
-            {feedbackSent ? (
-              <View style={styles.feedbackSuccessContainer}>
-                <Check size={24} color={Colors.light.success} />
-                <Text style={styles.feedbackSuccessText}>Thank you for your message!</Text>
-              </View>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.feedbackInput}
-                  placeholder="Type your message here..."
-                  placeholderTextColor={Colors.light.textTertiary}
-                  value={feedbackMessage}
-                  onChangeText={setFeedbackMessage}
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                  maxLength={2000}
-                  editable={!isSendingFeedback}
-                />
-                
-                <TouchableOpacity
-                  style={[
-                    styles.feedbackButton,
-                    (!feedbackMessage.trim() || isSendingFeedback) && styles.feedbackButtonDisabled,
-                  ]}
-                  onPress={handleSendFeedback}
-                  disabled={!feedbackMessage.trim() || isSendingFeedback}
-                  activeOpacity={0.8}
-                >
-                  {isSendingFeedback ? (
-                    <ActivityIndicator size="small" color={Colors.light.surface} />
-                  ) : (
-                    <>
-                      <Send size={18} color={Colors.light.surface} />
-                      <Text style={styles.feedbackButtonText}>Send Message</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </>
-            )}
+          {/* App Version */}
+          <View style={styles.versionContainer}>
+            <Text style={styles.versionText}>
+              Version {appVersion} ({buildNumber})
+            </Text>
           </View>
-        </View>
-
-        {/* Support Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Legal</Text>
-          <View style={styles.card}>
-            <TouchableOpacity 
-              style={styles.settingRow} 
-              onPress={handlePrivacyPolicy}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#FFF3E0' }]}>
-                  <Shield size={18} color="#FF9800" />
-                </View>
-                <View>
-                  <Text style={styles.settingLabel}>Privacy Policy</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.textTertiary} />
-            </TouchableOpacity>
-            
-            <View style={styles.divider} />
-            
-            <TouchableOpacity 
-              style={styles.settingRow} 
-              onPress={handleTermsOfService}
-              activeOpacity={0.7}
-            >
-              <View style={styles.settingLeft}>
-                <View style={[styles.settingIcon, { backgroundColor: '#F3E5F5' }]}>
-                  <FileText size={18} color="#9C27B0" />
-                </View>
-                <View>
-                  <Text style={styles.settingLabel}>Terms of Service</Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color={Colors.light.textTertiary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* App Version */}
-        <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>
-            Version {appVersion} ({buildNumber})
-          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -750,12 +774,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.background,
   },
   header: {
-    paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 16,
   },
   title: {
-    fontSize: 32,
     fontWeight: '700' as const,
     color: Colors.light.text,
     letterSpacing: -0.5,
@@ -764,7 +786,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
     paddingBottom: 120,
   },
   section: {

@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
   Pressable,
   ActivityIndicator,
 } from 'react-native';
@@ -20,22 +19,7 @@ import { Draft, Template, TemplateFormat } from '@/types';
 import { extractSlots } from '@/utils/slotParser';
 import { getDraftPreviewUri } from '@/services/imageUtils';
 import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
-
-const { width } = Dimensions.get('window');
-const GRID_GAP = 12;
-const GRID_PADDING = 20;
-const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
-
-// Dynamic tile height based on format - uses centralized config
-const getTileHeight = (format: TemplateFormat) => {
-  const config = getFormatById(format);
-  if (config) {
-    // Use inverse of aspect ratio to get height multiplier
-    return TILE_WIDTH / config.aspectRatio;
-  }
-  // Fallback to square
-  return TILE_WIDTH;
-};
+import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -84,6 +68,9 @@ export default function DraftsScreen() {
     isDraftsLoading,
     refreshDrafts,
   } = useApp();
+
+  // Responsive configuration
+  const responsive = useResponsive();
 
   // DEBUG: Log drafts and templates on every render
   console.log('[DraftsScreen] Render:', {
@@ -135,6 +122,15 @@ export default function DraftsScreen() {
     return { filled, total };
   }, []);
 
+  // Dynamic tile height calculation
+  const getTileHeight = useCallback((format: TemplateFormat) => {
+    const config = getFormatById(format);
+    if (config) {
+      return getResponsiveTileHeight(responsive.tileWidth, config.aspectRatio);
+    }
+    return responsive.tileWidth;
+  }, [responsive.tileWidth]);
+
   // Filter drafts by format
   const filteredDrafts = useMemo(() => {
     // DEBUG: Log each draft's template matching
@@ -175,6 +171,26 @@ export default function DraftsScreen() {
     loadDraft(draft, template);
     router.push('/editor');
   }, [getTemplateForDraft, loadDraft, router]);
+
+  // Dynamic styles
+  const dynamicStyles = useMemo(() => ({
+    filterSection: {
+      paddingHorizontal: responsive.gridPadding,
+    },
+    gridContainer: {
+      paddingHorizontal: responsive.gridPadding,
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+    },
+    grid: {
+      gap: responsive.gridGap,
+      maxWidth: responsive.isTablet 
+        ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap 
+        : undefined,
+    },
+    draftTile: {
+      width: responsive.tileWidth,
+    },
+  }), [responsive]);
 
   if (isDraftsLoading) {
     return (
@@ -222,8 +238,12 @@ export default function DraftsScreen() {
         }}
       />
       {/* Format Filter Row */}
-      <View style={styles.filterSection}>
-        <View style={styles.filterRow}>
+      <View style={[styles.filterSection, dynamicStyles.filterSection]}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
           {formatFilters.map((item) => {
             const isActive = selectedFormat === item.format;
             return (
@@ -246,7 +266,7 @@ export default function DraftsScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       </View>
 
       {filteredDrafts.length === 0 ? (
@@ -267,10 +287,10 @@ export default function DraftsScreen() {
       ) : (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[styles.gridContainer, dynamicStyles.gridContainer]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.grid}>
+          <View style={[styles.grid, dynamicStyles.grid]}>
             {filteredDrafts.map((draft) => {
               const template = getTemplateForDraft(draft.templateId);
               const previewUri = getDraftPreviewUri(draft);
@@ -282,6 +302,7 @@ export default function DraftsScreen() {
                   key={draft.id}
                   style={[
                     styles.draftTile,
+                    dynamicStyles.draftTile,
                     { height: getTileHeight(format) }
                   ]}
                   onPress={() => handleResumeDraft(draft)}
@@ -354,7 +375,6 @@ const styles = StyleSheet.create({
   
   // Filter Section
   filterSection: {
-    paddingHorizontal: GRID_PADDING,
     paddingTop: 16,
     paddingBottom: 16,
   },
@@ -422,18 +442,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gridContainer: {
-    paddingHorizontal: GRID_PADDING,
     paddingBottom: 20,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: GRID_GAP,
   },
   
   // Draft Tile
   draftTile: {
-    width: TILE_WIDTH,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,

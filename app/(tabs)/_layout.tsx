@@ -1,15 +1,19 @@
 import { Tabs, useRouter } from "expo-router";
 import { Plus, FolderOpen, Settings } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { StyleSheet, View, ActivityIndicator } from "react-native";
 import Colors from "@/constants/colors";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { hasCompletedOnboarding } from "@/services/onboardingService";
+import { useResponsive } from "@/hooks/useResponsive";
 
 export default function TabLayout() {
   const { isAuthenticated, isLoading, user } = useAuthContext();
   const router = useRouter();
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  
+  // Responsive configuration for iPad/iPhone
+  const responsive = useResponsive();
 
   // Check if onboarding is complete
   useEffect(() => {
@@ -26,6 +30,18 @@ export default function TabLayout() {
       router.replace('/auth/onboarding-auth');
     }
   }, [isLoading, isAuthenticated, onboardingDone, router]);
+
+  // Dynamic tab bar styles for responsive design
+  const dynamicTabStyles = useMemo(() => ({
+    tabBar: {
+      height: responsive.tabBarHeight,
+      paddingTop: responsive.isTablet ? 12 : 8,
+      paddingBottom: responsive.isTablet ? 8 : 4,
+    },
+    tabLabel: {
+      fontSize: responsive.isTablet ? 12 : 11,
+    },
+  }), [responsive]);
 
   // Show loading state while checking auth status
   // This blocks access to tabs until we confirm authentication
@@ -51,8 +67,8 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Colors.light.accent,
         tabBarInactiveTintColor: Colors.light.tabIconDefault,
-        tabBarStyle: styles.tabBar,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarStyle: [styles.tabBar, dynamicTabStyles.tabBar],
+        tabBarLabelStyle: [styles.tabLabel, dynamicTabStyles.tabLabel],
         headerShown: false,
       }}
     >
@@ -61,8 +77,16 @@ export default function TabLayout() {
         options={{
           title: "Create",
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.createIcon, focused && styles.createIconActive]}>
-              <Plus color={focused ? Colors.light.surface : color} size={22} strokeWidth={2.5} />
+            <View style={[
+              styles.createIcon,
+              focused && styles.createIconActive,
+              responsive.isTablet && styles.createIconTablet,
+            ]}>
+              <Plus 
+                color={focused ? Colors.light.surface : color} 
+                size={responsive.tabIconSize} 
+                strokeWidth={2.5} 
+              />
             </View>
           ),
         }}
@@ -71,14 +95,18 @@ export default function TabLayout() {
         name="library"
         options={{
           title: "Portfolio",
-          tabBarIcon: ({ color }) => <FolderOpen color={color} size={22} />,
+          tabBarIcon: ({ color }) => (
+            <FolderOpen color={color} size={responsive.tabIconSize} />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => <Settings color={color} size={22} />,
+          tabBarIcon: ({ color }) => (
+            <Settings color={color} size={responsive.tabIconSize} />
+          ),
         }}
       />
     </Tabs>
@@ -96,12 +124,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.surface,
     borderTopColor: Colors.light.borderLight,
     borderTopWidth: 1,
-    paddingTop: 8,
-    paddingBottom: 4,
-    height: 88,
   },
   tabLabel: {
-    fontSize: 11,
     fontWeight: '500' as const,
     marginTop: 4,
     marginBottom: 2,
@@ -113,6 +137,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  createIconTablet: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   createIconActive: {
     backgroundColor: Colors.light.accent,

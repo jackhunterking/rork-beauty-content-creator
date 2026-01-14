@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
   Pressable,
   Alert,
   ActivityIndicator,
@@ -34,11 +33,7 @@ import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { getPortfolioPreviewUri } from '@/services/imageUtils';
 import { getAllFormats, getFormatById, getDefaultFormat, getFormatLabel, FormatConfig } from '@/constants/formats';
-
-const { width, height } = Dimensions.get('window');
-const GRID_GAP = 12;
-const GRID_PADDING = 20;
-const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
+import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -171,6 +166,9 @@ interface BottomSheetProps {
   onPlatformAction: (platformId: PublishPlatform) => void;
   isProcessing: boolean;
   processingPlatform: string | null;
+  screenWidth: number;
+  screenHeight: number;
+  isTablet: boolean;
 }
 
 const BottomSheet = ({ 
@@ -181,8 +179,11 @@ const BottomSheet = ({
   onPlatformAction,
   isProcessing,
   processingPlatform,
+  screenWidth,
+  screenHeight,
+  isTablet,
 }: BottomSheetProps) => {
-  const slideAnim = useRef(new Animated.Value(height)).current;
+  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
 
   useEffect(() => {
     if (visible) {
@@ -194,17 +195,17 @@ const BottomSheet = ({
       }).start();
     } else {
       Animated.timing(slideAnim, {
-        toValue: height,
+        toValue: screenHeight,
         duration: 250,
         useNativeDriver: true,
       }).start();
     }
-  }, [visible, slideAnim]);
+  }, [visible, slideAnim, screenHeight]);
 
   if (!item) return null;
 
   // Calculate preview dimensions dynamically based on format
-  const previewMaxWidth = width - 80;
+  const previewMaxWidth = Math.min(screenWidth - 80, 400);
   const previewDimensions = (() => {
     const config = getFormatById(item.format);
     if (!config) {
@@ -222,6 +223,12 @@ const BottomSheet = ({
     return { width: previewWidth, height: previewHeight };
   })();
 
+  // Constrain bottom sheet width on iPad
+  const sheetMaxWidth = isTablet ? 500 : screenWidth;
+  const platformCardWidth = isTablet 
+    ? (sheetMaxWidth - 60 - 10) / 2 
+    : (screenWidth - 40 - 10) / 2;
+
   return (
     <Modal
       visible={visible}
@@ -234,7 +241,12 @@ const BottomSheet = ({
         <Animated.View 
           style={[
             styles.bottomSheetContainer,
-            { transform: [{ translateY: slideAnim }] }
+            { 
+              transform: [{ translateY: slideAnim }],
+              maxWidth: sheetMaxWidth,
+              alignSelf: 'center',
+              width: '100%',
+            }
           ]}
         >
           {/* Handle bar */}
@@ -277,6 +289,7 @@ const BottomSheet = ({
                     key={platform.id}
                     style={[
                       styles.platformCard,
+                      { width: platformCardWidth },
                       isProcessing && !isThisPlatformProcessing && styles.platformCardDisabled,
                     ]}
                     onPress={() => onPlatformAction(platform.id)}
@@ -321,6 +334,9 @@ export default function PortfolioScreen() {
     deleteFromPortfolio,
   } = useApp();
 
+  // Responsive configuration
+  const responsive = useResponsive();
+
   // Format filter state - use centralized default
   const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>(getDefaultFormat() as TemplateFormat);
   
@@ -341,6 +357,15 @@ export default function PortfolioScreen() {
     if (selectedFormat === 'all') return portfolio;
     return portfolio.filter(item => item.format === selectedFormat);
   }, [portfolio, selectedFormat]);
+
+  // Dynamic tile height calculation
+  const getTileHeight = useCallback((format: TemplateFormat) => {
+    const config = getFormatById(format);
+    if (config) {
+      return getResponsiveTileHeight(responsive.tileWidth, config.aspectRatio);
+    }
+    return responsive.tileWidth;
+  }, [responsive.tileWidth]);
 
   // Show toast message
   const showToastMessage = useCallback((message: string) => {
@@ -440,19 +465,41 @@ export default function PortfolioScreen() {
     router.push('/(tabs)');
   }, [router]);
 
+  // Dynamic styles based on responsive configuration
+  const dynamicStyles = useMemo(() => ({
+    header: {
+      paddingHorizontal: responsive.gridPadding,
+    },
+    title: {
+      fontSize: responsive.headerFontSize,
+    },
+    filterSection: {
+      paddingHorizontal: responsive.gridPadding,
+    },
+    gridContainer: {
+      paddingHorizontal: responsive.gridPadding,
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+    },
+    grid: {
+      gap: responsive.gridGap,
+      maxWidth: responsive.isTablet 
+        ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap 
+        : undefined,
+    },
+    itemTile: {
+      width: responsive.tileWidth,
+    },
+  }), [responsive]);
+
   // Render a portfolio card (clean, no overlays)
   const renderPortfolioCard = useCallback(
     (item: PortfolioItem) => {
-      // Calculate tile height based on format - uses centralized config
-      const config = getFormatById(item.format);
-      const tileHeight = config 
-        ? TILE_WIDTH / config.aspectRatio 
-        : TILE_WIDTH;
+      const tileHeight = getTileHeight(item.format);
 
       return (
         <Pressable
           key={item.id}
-          style={[styles.itemTile, { height: tileHeight }]}
+          style={[styles.itemTile, dynamicStyles.itemTile, { height: tileHeight }]}
           onPress={() => handleItemPress(item)}
         >
           <Image
@@ -464,18 +511,22 @@ export default function PortfolioScreen() {
         </Pressable>
       );
     },
-    [handleItemPress]
+    [handleItemPress, getTileHeight, dynamicStyles.itemTile]
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Portfolio</Text>
+      <View style={[styles.header, dynamicStyles.header]}>
+        <Text style={[styles.title, dynamicStyles.title]}>Portfolio</Text>
       </View>
 
       {/* Format Filter Row */}
-      <View style={styles.filterSection}>
-        <View style={styles.filterRow}>
+      <View style={[styles.filterSection, dynamicStyles.filterSection]}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
           {formatFilters.map((item) => {
             const isActive = selectedFormat === item.format;
             return (
@@ -498,7 +549,7 @@ export default function PortfolioScreen() {
               </TouchableOpacity>
             );
           })}
-        </View>
+        </ScrollView>
       </View>
 
       {isPortfolioLoading ? (
@@ -534,10 +585,10 @@ export default function PortfolioScreen() {
       ) : (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[styles.gridContainer, dynamicStyles.gridContainer]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.grid}>
+          <View style={[styles.grid, dynamicStyles.grid]}>
             {filteredPortfolio.map((item) => renderPortfolioCard(item))}
           </View>
         </ScrollView>
@@ -552,6 +603,9 @@ export default function PortfolioScreen() {
         onPlatformAction={handlePlatformAction}
         isProcessing={isProcessing}
         processingPlatform={processingPlatform}
+        screenWidth={responsive.screenWidth}
+        screenHeight={responsive.screenHeight}
+        isTablet={responsive.isTablet}
       />
 
       {/* Toast */}
@@ -566,12 +620,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.background,
   },
   header: {
-    paddingHorizontal: GRID_PADDING,
     paddingTop: 8,
     paddingBottom: 16,
   },
   title: {
-    fontSize: 32,
     fontWeight: '700' as const,
     color: Colors.light.text,
     letterSpacing: -0.5,
@@ -579,7 +631,6 @@ const styles = StyleSheet.create({
   
   // Filter Section
   filterSection: {
-    paddingHorizontal: GRID_PADDING,
     marginBottom: 16,
   },
   filterRow: {
@@ -671,18 +722,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gridContainer: {
-    paddingHorizontal: GRID_PADDING,
     paddingBottom: 20,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: GRID_GAP,
   },
   
   // Portfolio Item Tile (Clean, no overlays)
   itemTile: {
-    width: TILE_WIDTH,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
@@ -706,7 +754,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingBottom: 40,
-    maxHeight: height * 0.85,
   },
   bottomSheetHandle: {
     alignItems: 'center',
@@ -785,7 +832,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   platformCard: {
-    width: (width - 40 - 10) / 2,
     paddingVertical: 16,
     backgroundColor: Colors.light.surface,
     borderRadius: 14,

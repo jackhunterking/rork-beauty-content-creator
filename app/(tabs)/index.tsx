@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Dimensions, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -10,22 +10,7 @@ import { ContentType, Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
 import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
 import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
-
-const { width } = Dimensions.get('window');
-const GRID_GAP = 12;
-const GRID_PADDING = 20;
-const TILE_WIDTH = (width - GRID_PADDING * 2 - GRID_GAP) / 2;
-
-// Dynamic tile height based on format - uses centralized config
-const getTileHeight = (format: TemplateFormat) => {
-  const config = getFormatById(format);
-  if (config) {
-    // Use inverse of aspect ratio to get height multiplier (width / height = aspectRatio)
-    return TILE_WIDTH / config.aspectRatio;
-  }
-  // Fallback to square
-  return TILE_WIDTH;
-};
+import { useResponsive, getResponsiveTileHeight } from "@/hooks/useResponsive";
 
 const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; disabled?: boolean }[] = [
   { type: 'single', icon: <ImageIcon size={20} color={Colors.light.text} />, label: 'Single' },
@@ -69,6 +54,9 @@ export default function CreateScreen() {
     drafts,
   } = useApp();
 
+  // Responsive configuration for iPad/iPhone
+  const responsive = useResponsive();
+
   // Premium status for template gating
   const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
   const { requestPremiumAccess } = usePremiumFeature();
@@ -86,6 +74,16 @@ export default function CreateScreen() {
     }
     return filteredTemplates;
   }, [filteredTemplates, showFavoritesOnly]);
+
+  // Dynamic tile height based on format and responsive tile width
+  const getTileHeight = useCallback((format: TemplateFormat) => {
+    const config = getFormatById(format);
+    if (config) {
+      return getResponsiveTileHeight(responsive.tileWidth, config.aspectRatio);
+    }
+    // Fallback to square
+    return responsive.tileWidth;
+  }, [responsive.tileWidth]);
 
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
@@ -135,10 +133,37 @@ export default function CreateScreen() {
     setShowFavoritesOnly(prev => !prev);
   }, []);
 
+  // Dynamic styles based on responsive configuration
+  const dynamicStyles = useMemo(() => ({
+    header: {
+      paddingHorizontal: responsive.gridPadding,
+    },
+    title: {
+      fontSize: responsive.headerFontSize,
+    },
+    typeSelector: {
+      paddingHorizontal: responsive.gridPadding,
+      maxWidth: responsive.isTablet ? 600 : undefined,
+      alignSelf: responsive.isTablet ? 'center' as const : undefined,
+      width: responsive.isTablet ? '100%' : undefined,
+    },
+    templatesSection: {
+      paddingHorizontal: responsive.gridPadding,
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+    },
+    grid: {
+      gap: responsive.gridGap,
+      maxWidth: responsive.isTablet ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap : undefined,
+    },
+    templateTile: {
+      width: responsive.tileWidth,
+    },
+  }), [responsive]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Create</Text>
+      <View style={[styles.header, dynamicStyles.header]}>
+        <Text style={[styles.title, dynamicStyles.title]}>Create</Text>
         {drafts.length > 0 && (
           <TouchableOpacity 
             style={styles.draftsHeaderButton}
@@ -154,7 +179,7 @@ export default function CreateScreen() {
         )}
       </View>
 
-      <View style={styles.typeSelector}>
+      <View style={[styles.typeSelector, dynamicStyles.typeSelector]}>
         {contentTypes.map((item) => (
           <TouchableOpacity
             key={item.type}
@@ -204,34 +229,37 @@ export default function CreateScreen() {
           }
         >
           {/* Templates Section */}
-          <View style={styles.templatesSection}>
+          <View style={[styles.templatesSection, dynamicStyles.templatesSection]}>
             {/* Format Filter Row with Favorites Toggle */}
-            <View style={styles.filterRow}>
-              {formatFilters.map((item) => {
-                const isActive = selectedFormat === item.format;
-                return (
-                  <TouchableOpacity
-                    key={item.format}
-                    style={[
-                      styles.formatButton,
-                      isActive && styles.formatButtonActive,
-                    ]}
-                    onPress={() => handleFormatSelect(item.format)}
-                    activeOpacity={0.7}
-                  >
-                    {item.icon(isActive)}
-                    <Text style={[
-                      styles.formatLabel,
-                      isActive && styles.formatLabelActive,
-                    ]}>
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-              
-              {/* Spacer */}
-              <View style={styles.filterSpacer} />
+            <View style={[styles.filterRow, { maxWidth: dynamicStyles.grid.maxWidth }]}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterScrollContent}
+              >
+                {formatFilters.map((item) => {
+                  const isActive = selectedFormat === item.format;
+                  return (
+                    <TouchableOpacity
+                      key={item.format}
+                      style={[
+                        styles.formatButton,
+                        isActive && styles.formatButtonActive,
+                      ]}
+                      onPress={() => handleFormatSelect(item.format)}
+                      activeOpacity={0.7}
+                    >
+                      {item.icon(isActive)}
+                      <Text style={[
+                        styles.formatLabel,
+                        isActive && styles.formatLabelActive,
+                      ]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
               
               {/* Favorites Filter Toggle */}
               <TouchableOpacity
@@ -247,12 +275,14 @@ export default function CreateScreen() {
                   color={showFavoritesOnly ? Colors.light.accent : Colors.light.textSecondary}
                   fill={showFavoritesOnly ? Colors.light.accent : 'transparent'}
                 />
-                <Text style={[
-                  styles.favoritesFilterText,
-                  showFavoritesOnly && styles.favoritesFilterTextActive,
-                ]}>
-                  Favorites
-                </Text>
+                {!responsive.isTablet && (
+                  <Text style={[
+                    styles.favoritesFilterText,
+                    showFavoritesOnly && styles.favoritesFilterTextActive,
+                  ]}>
+                    Favorites
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
 
@@ -275,7 +305,7 @@ export default function CreateScreen() {
                 )}
               </View>
             ) : (
-              <View style={styles.grid}>
+              <View style={[styles.grid, dynamicStyles.grid]}>
                 {displayedTemplates.map((template) => {
                   // Show premium badge if template is premium and user is not subscribed
                   const showPremiumBadge = template.isPremium && !isPremium;
@@ -285,6 +315,7 @@ export default function CreateScreen() {
                       key={template.id}
                       style={[
                         styles.templateTile,
+                        dynamicStyles.templateTile,
                         { height: getTileHeight(template.format) }
                       ]}
                       onPress={() => handleTemplateSelect(template)}
@@ -336,12 +367,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: GRID_PADDING,
     paddingTop: 8,
     paddingBottom: 16,
   },
   title: {
-    fontSize: 32,
     fontWeight: '700' as const,
     color: Colors.light.text,
     letterSpacing: -0.5,
@@ -372,7 +401,6 @@ const styles = StyleSheet.create({
   },
   typeSelector: {
     flexDirection: 'row',
-    paddingHorizontal: GRID_PADDING,
     gap: 10,
     marginBottom: 16,
   },
@@ -441,7 +469,7 @@ const styles = StyleSheet.create({
   
   // Templates Section
   templatesSection: {
-    paddingHorizontal: GRID_PADDING,
+    width: '100%',
   },
   filterRow: {
     flexDirection: 'row',
@@ -449,9 +477,13 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
     marginBottom: 16,
+    width: '100%',
   },
-  filterSpacer: {
-    flex: 1,
+  filterScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexGrow: 1,
   },
   formatButton: {
     flexDirection: 'row',
@@ -487,6 +519,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     borderColor: Colors.light.border,
+    flexShrink: 0,
   },
   favoritesFilterButtonActive: {
     borderColor: Colors.light.accent,
@@ -524,10 +557,8 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: GRID_GAP,
   },
   templateTile: {
-    width: TILE_WIDTH,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,

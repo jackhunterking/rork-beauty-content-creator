@@ -4,7 +4,6 @@ import {
   View, 
   Text, 
   TouchableOpacity, 
-  Dimensions, 
   Platform, 
   Alert 
 } from 'react-native';
@@ -17,13 +16,15 @@ import { Share2, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { getFormatLabel } from '@/constants/formats';
-
-const { width } = Dimensions.get('window');
+import { useResponsive } from '@/hooks/useResponsive';
 
 export default function PortfolioViewerScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { portfolio, deleteFromPortfolio } = useApp();
+  
+  // Responsive configuration
+  const responsive = useResponsive();
 
   const item = useMemo(() => 
     portfolio.find(p => p.id === id),
@@ -77,10 +78,31 @@ export default function PortfolioViewerScreen() {
     );
   }, [id, deleteFromPortfolio, router]);
 
+  // Dynamic styles for responsive layout
+  const dynamicStyles = useMemo(() => ({
+    safeArea: {
+      alignItems: responsive.isTablet ? 'center' as const : undefined,
+    },
+    contentContainer: {
+      width: '100%' as const,
+      maxWidth: responsive.isTablet ? 600 : undefined,
+      flex: 1,
+    },
+    previewContainer: {
+      paddingHorizontal: responsive.isTablet ? 40 : 20,
+    },
+    infoSection: {
+      marginHorizontal: responsive.isTablet ? 40 : 20,
+    },
+    actions: {
+      paddingHorizontal: responsive.isTablet ? 40 : 20,
+    },
+  }), [responsive]);
+
   if (!item) {
     return (
       <View style={styles.container}>
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={[styles.safeArea, dynamicStyles.safeArea]}>
           <Text style={styles.errorText}>Content not found</Text>
           <TouchableOpacity style={styles.backLink} onPress={() => router.back()}>
             <Text style={styles.backLinkText}>Go back</Text>
@@ -113,54 +135,56 @@ export default function PortfolioViewerScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-            <X size={22} color={Colors.light.text} />
-          </TouchableOpacity>
-          <View style={styles.meta}>
-            <Text style={styles.metaFormat}>{getFormatLabel(item.format)}</Text>
-            <Text style={styles.metaDate}>{formattedDate}</Text>
+      <SafeAreaView style={[styles.safeArea, dynamicStyles.safeArea]} edges={['top', 'bottom']}>
+        <View style={dynamicStyles.contentContainer}>
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+              <X size={22} color={Colors.light.text} />
+            </TouchableOpacity>
+            <View style={styles.meta}>
+              <Text style={styles.metaFormat}>{getFormatLabel(item.format)}</Text>
+              <Text style={styles.metaDate}>{formattedDate}</Text>
+            </View>
+            <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+              <Trash2 size={20} color={Colors.light.error} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Trash2 size={20} color={Colors.light.error} />
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.previewContainer}>
-          <View style={styles.imageWrapper}>
-            <Image
-              source={{ uri: item.imageUrl }}
-              style={styles.image}
-              contentFit="contain"
-            />
-            {item.hasWatermark && (
-              <View style={styles.watermarkBadge}>
-                <Text style={styles.watermarkText}>Watermarked</Text>
+          <View style={[styles.previewContainer, dynamicStyles.previewContainer]}>
+            <View style={styles.imageWrapper}>
+              <Image
+                source={{ uri: item.imageUrl }}
+                style={styles.image}
+                contentFit="contain"
+              />
+              {item.hasWatermark && (
+                <View style={styles.watermarkBadge}>
+                  <Text style={styles.watermarkText}>Watermarked</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Info section */}
+          <View style={[styles.infoSection, dynamicStyles.infoSection]}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Template</Text>
+              <Text style={styles.infoValue}>{item.templateName}</Text>
+            </View>
+            {publishedPlatforms && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Published to</Text>
+                <Text style={styles.infoValue}>{publishedPlatforms}</Text>
               </View>
             )}
           </View>
-        </View>
 
-        {/* Info section */}
-        <View style={styles.infoSection}>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Template</Text>
-            <Text style={styles.infoValue}>{item.templateName}</Text>
+          <View style={[styles.actions, dynamicStyles.actions]}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare} activeOpacity={0.8}>
+              <Share2 size={20} color={Colors.light.surface} />
+              <Text style={styles.actionButtonText}>Share Again</Text>
+            </TouchableOpacity>
           </View>
-          {publishedPlatforms && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Published to</Text>
-              <Text style={styles.infoValue}>{publishedPlatforms}</Text>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleShare} activeOpacity={0.8}>
-            <Share2 size={20} color={Colors.light.surface} />
-            <Text style={styles.actionButtonText}>Share Again</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     </View>
@@ -214,7 +238,6 @@ const styles = StyleSheet.create({
   previewContainer: {
     flex: 1,
     paddingVertical: 16,
-    paddingHorizontal: 20,
   },
   imageWrapper: {
     flex: 1,
@@ -241,7 +264,6 @@ const styles = StyleSheet.create({
     color: Colors.light.surface,
   },
   infoSection: {
-    marginHorizontal: 20,
     padding: 16,
     backgroundColor: Colors.light.surface,
     borderRadius: 12,
@@ -265,7 +287,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   actions: {
-    paddingHorizontal: 20,
     paddingBottom: 20,
   },
   actionButton: {
