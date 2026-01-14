@@ -12,11 +12,19 @@
       theme: {
         extend: {
           colors: {
-            primary: '#E91E63',
-            dark: '#1a1a1a',
+            primary: '#C9A87C',
+            primaryDark: '#A88B5E',
+            background: '#FEFCF9',
+            surface: '#FFFFFF',
+            surfaceSecondary: '#F7F4F0',
+            textPrimary: '#1A1614',
+            textSecondary: '#6B635B',
+            textTertiary: '#9C948C',
+            border: '#E8E4DF',
+            borderLight: '#F0EDE9',
           },
           fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
           }
         }
       }
@@ -24,12 +32,16 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Inter', system-ui, sans-serif; }
+    * { font-family: 'DM Sans', system-ui, sans-serif; }
+    
+    body {
+      background: linear-gradient(180deg, #FEFCF9 0%, #F7F4F0 100%);
+    }
     
     .gradient-text {
-      background: linear-gradient(135deg, #E91E63 0%, #FF6B6B 100%);
+      background: linear-gradient(135deg, #C9A87C 0%, #A88B5E 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -44,7 +56,7 @@
     }
     
     .toc-link:hover {
-      color: #E91E63;
+      color: #C9A87C;
       padding-left: 8px;
     }
     
@@ -53,16 +65,17 @@
     }
   </style>
 </head>
-<body class="bg-dark text-white">
+<body class="text-textPrimary">
   
   <!-- Header -->
-  <header class="fixed top-0 left-0 right-0 z-50 bg-dark/90 backdrop-blur-lg border-b border-white/10">
+  <header class="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-b border-border">
     <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
       <a href="/" class="text-2xl font-bold gradient-text">Resulta</a>
-      <nav class="flex gap-6 text-gray-400">
-        <a href="/" class="hover:text-white transition">Home</a>
-        <a href="/privacy" class="text-white">Privacy</a>
-        <a href="/terms" class="hover:text-white transition">Terms</a>
+      <nav class="flex gap-6 text-textSecondary">
+        <a href="/" class="hover:text-textPrimary transition">Home</a>
+        <a href="/support" class="hover:text-textPrimary transition">Support</a>
+        <a href="/privacy" class="text-textPrimary font-medium">Privacy</a>
+        <a href="/terms" class="hover:text-textPrimary transition">Terms</a>
       </nav>
     </div>
   </header>
@@ -73,18 +86,18 @@
       
       <!-- Page Header -->
       <div class="text-center mb-16">
-        <h1 class="text-4xl md:text-5xl font-extrabold mb-4">Privacy Policy</h1>
-        <p class="text-gray-400 text-lg">Last Updated: January 10, 2026</p>
-        <p class="text-gray-500 mt-2">Effective Date: January 10, 2026</p>
+        <h1 class="text-4xl md:text-5xl font-extrabold mb-4 text-textPrimary">Privacy Policy</h1>
+        <p class="text-textSecondary text-lg">Last Updated: January 10, 2026</p>
+        <p class="text-textTertiary mt-2">Effective Date: January 10, 2026</p>
       </div>
       
       <div class="grid lg:grid-cols-4 gap-12">
         
         <!-- Table of Contents (Sidebar) -->
         <aside class="lg:col-span-1">
-          <div class="sticky top-28 bg-white/5 rounded-2xl p-6 border border-white/10">
-            <h3 class="font-bold text-lg mb-4">Contents</h3>
-            <nav class="space-y-2 text-sm text-gray-400">
+          <div class="sticky top-28 bg-white rounded-2xl p-6 border border-border shadow-sm">
+            <h3 class="font-bold text-lg mb-4 text-textPrimary">Contents</h3>
+            <nav class="space-y-2 text-sm text-textSecondary">
               <a href="#introduction" class="block toc-link">1. Introduction</a>
               <a href="#information-collected" class="block toc-link">2. Information We Collect</a>
               <a href="#how-we-use" class="block toc-link">3. How We Use Information</a>
@@ -108,8 +121,8 @@
           
           <!-- Introduction -->
           <section id="introduction" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">1. Introduction</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">1. Introduction</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 Welcome to Resulta ("we," "our," or "us"). Resulta Inc. operates the Resulta mobile application (the "App") and the website resulta.app (the "Website"). This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our App and Website.
               </p>
@@ -124,33 +137,33 @@
           
           <!-- Information We Collect -->
           <section id="information-collected" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">2. Information We Collect</h2>
-            <div class="prose prose-invert text-gray-300 space-y-6">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">2. Information We Collect</h2>
+            <div class="prose text-textSecondary space-y-6">
               
-              <h3 class="text-xl font-semibold text-white">2.1 Information You Provide Directly</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">2.1 Information You Provide Directly</h3>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Account Information:</strong> When you create an account, we collect your email address, display name, and optionally your business name.</li>
-                <li><strong>Profile Data:</strong> You may upload a profile picture (avatar) which is stored securely in our systems.</li>
-                <li><strong>User-Generated Content:</strong> Photos you capture or upload for before/after comparisons, saved drafts, and portfolio items.</li>
-                <li><strong>Communication Data:</strong> If you contact us for support, we collect the content of your messages.</li>
+                <li><strong class="text-textPrimary">Account Information:</strong> When you create an account, we collect your email address, display name, and optionally your business name.</li>
+                <li><strong class="text-textPrimary">Profile Data:</strong> You may upload a profile picture (avatar) which is stored securely in our systems.</li>
+                <li><strong class="text-textPrimary">User-Generated Content:</strong> Photos you capture or upload for before/after comparisons, saved drafts, and portfolio items.</li>
+                <li><strong class="text-textPrimary">Communication Data:</strong> If you contact us for support, we collect the content of your messages.</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">2.2 Information from Third-Party Authentication</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">2.2 Information from Third-Party Authentication</h3>
               <p>When you sign in using Apple or Google, we receive:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Apple Sign In:</strong> Your Apple ID, email address (if shared), and name (if provided)</li>
-                <li><strong>Google Sign In:</strong> Your Google ID, email address, and profile name</li>
+                <li><strong class="text-textPrimary">Apple Sign In:</strong> Your Apple ID, email address (if shared), and name (if provided)</li>
+                <li><strong class="text-textPrimary">Google Sign In:</strong> Your Google ID, email address, and profile name</li>
               </ul>
               <p>We do not receive or store your Apple or Google account passwords.</p>
               
-              <h3 class="text-xl font-semibold text-white">2.3 Automatically Collected Information</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">2.3 Automatically Collected Information</h3>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Device Information:</strong> Device type, operating system version, unique device identifiers</li>
-                <li><strong>Usage Data:</strong> App features used, templates selected, session duration</li>
-                <li><strong>Log Data:</strong> Access times, pages viewed, app crashes and errors</li>
+                <li><strong class="text-textPrimary">Device Information:</strong> Device type, operating system version, unique device identifiers</li>
+                <li><strong class="text-textPrimary">Usage Data:</strong> App features used, templates selected, session duration</li>
+                <li><strong class="text-textPrimary">Log Data:</strong> Access times, pages viewed, app crashes and errors</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">2.4 Subscription Information</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">2.4 Subscription Information</h3>
               <p>
                 When you subscribe to premium features, our payment processor (Superwall, via Apple App Store or Google Play Store) handles payment information. We receive confirmation of your subscription status but do not store your payment card details.
               </p>
@@ -159,33 +172,33 @@
           
           <!-- How We Use Information -->
           <section id="how-we-use" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">3. How We Use Your Information</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">3. How We Use Your Information</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>We use the information we collect to:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Provide Services:</strong> Create and manage your account, save your content, and deliver app functionality</li>
-                <li><strong>Personalization:</strong> Remember your preferences and provide a customized experience</li>
-                <li><strong>Subscription Management:</strong> Process and manage your premium subscription status</li>
-                <li><strong>Communication:</strong> Send service-related notifications, respond to inquiries, and provide customer support</li>
-                <li><strong>Improvement:</strong> Analyze usage patterns to improve the App and develop new features</li>
-                <li><strong>Security:</strong> Detect and prevent fraud, abuse, and security incidents</li>
-                <li><strong>Legal Compliance:</strong> Comply with applicable laws and legal obligations</li>
+                <li><strong class="text-textPrimary">Provide Services:</strong> Create and manage your account, save your content, and deliver app functionality</li>
+                <li><strong class="text-textPrimary">Personalization:</strong> Remember your preferences and provide a customized experience</li>
+                <li><strong class="text-textPrimary">Subscription Management:</strong> Process and manage your premium subscription status</li>
+                <li><strong class="text-textPrimary">Communication:</strong> Send service-related notifications, respond to inquiries, and provide customer support</li>
+                <li><strong class="text-textPrimary">Improvement:</strong> Analyze usage patterns to improve the App and develop new features</li>
+                <li><strong class="text-textPrimary">Security:</strong> Detect and prevent fraud, abuse, and security incidents</li>
+                <li><strong class="text-textPrimary">Legal Compliance:</strong> Comply with applicable laws and legal obligations</li>
               </ul>
             </div>
           </section>
           
           <!-- Data Sharing -->
           <section id="data-sharing" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">4. Data Sharing and Disclosure</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">4. Data Sharing and Disclosure</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>We do not sell your personal information. We may share your information in the following circumstances:</p>
               
-              <h3 class="text-xl font-semibold text-white">4.1 Service Providers</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.1 Service Providers</h3>
               <p>
                 We work with third-party service providers who assist us in operating the App. These providers have access to your information only to perform specific tasks on our behalf and are obligated to protect your data.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">4.2 Legal Requirements</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.2 Legal Requirements</h3>
               <p>We may disclose your information if required by law, court order, or government request, or if we believe disclosure is necessary to:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>Comply with legal obligations</li>
@@ -194,7 +207,7 @@
                 <li>Protect the rights of other users</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">4.3 Business Transfers</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.3 Business Transfers</h3>
               <p>
                 In the event of a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction. We will notify you of any change in ownership or control of your personal information.
               </p>
@@ -203,25 +216,25 @@
           
           <!-- Third-Party Services -->
           <section id="third-party" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">5. Third-Party Services</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">5. Third-Party Services</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>Resulta integrates with the following third-party services:</p>
               
-              <div class="bg-white/5 rounded-xl p-6 space-y-4 border border-white/10">
+              <div class="bg-surfaceSecondary rounded-xl p-6 space-y-4 border border-border">
                 <div>
-                  <h4 class="font-semibold text-white">Supabase</h4>
+                  <h4 class="font-semibold text-textPrimary">Supabase</h4>
                   <p class="text-sm">Provides database storage, authentication services, and file storage. Your account data and content are stored securely on Supabase infrastructure.</p>
                   <a href="https://supabase.com/privacy" target="_blank" class="text-primary text-sm hover:underline">Supabase Privacy Policy →</a>
                 </div>
                 
                 <div>
-                  <h4 class="font-semibold text-white">Superwall</h4>
+                  <h4 class="font-semibold text-textPrimary">Superwall</h4>
                   <p class="text-sm">Manages subscription and payment processing. Superwall receives subscription status but does not access your content.</p>
                   <a href="https://superwall.com/privacy" target="_blank" class="text-primary text-sm hover:underline">Superwall Privacy Policy →</a>
                 </div>
                 
                 <div>
-                  <h4 class="font-semibold text-white">Apple & Google</h4>
+                  <h4 class="font-semibold text-textPrimary">Apple & Google</h4>
                   <p class="text-sm">Provide authentication services. When you sign in with Apple or Google, their respective privacy policies apply to the data they collect.</p>
                 </div>
               </div>
@@ -230,14 +243,14 @@
           
           <!-- Data Retention -->
           <section id="data-retention" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">6. Data Retention</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">6. Data Retention</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>We retain your information for as long as your account is active or as needed to provide services. Specifically:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Account Data:</strong> Retained until you delete your account</li>
-                <li><strong>User Content:</strong> Retained until you delete it or your account</li>
-                <li><strong>Usage Data:</strong> Retained for up to 24 months for analytics purposes</li>
-                <li><strong>Legal Records:</strong> May be retained longer if required by law</li>
+                <li><strong class="text-textPrimary">Account Data:</strong> Retained until you delete your account</li>
+                <li><strong class="text-textPrimary">User Content:</strong> Retained until you delete it or your account</li>
+                <li><strong class="text-textPrimary">Usage Data:</strong> Retained for up to 24 months for analytics purposes</li>
+                <li><strong class="text-textPrimary">Legal Records:</strong> May be retained longer if required by law</li>
               </ul>
               <p>
                 When you delete your account, we will delete or anonymize your personal information within 30 days, except where retention is required by law.
@@ -247,28 +260,28 @@
           
           <!-- Your Rights -->
           <section id="your-rights" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">7. Your Rights and Choices</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">7. Your Rights and Choices</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>You have the following rights regarding your personal information:</p>
               
               <div class="grid md:grid-cols-2 gap-4">
-                <div class="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <h4 class="font-semibold text-white mb-2">Access Your Data</h4>
+                <div class="bg-white rounded-xl p-4 border border-border shadow-sm">
+                  <h4 class="font-semibold text-textPrimary mb-2">Access Your Data</h4>
                   <p class="text-sm">Export all your data directly from the app's settings menu.</p>
                 </div>
                 
-                <div class="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <h4 class="font-semibold text-white mb-2">Update Your Data</h4>
+                <div class="bg-white rounded-xl p-4 border border-border shadow-sm">
+                  <h4 class="font-semibold text-textPrimary mb-2">Update Your Data</h4>
                   <p class="text-sm">Edit your profile information at any time in the app.</p>
                 </div>
                 
-                <div class="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <h4 class="font-semibold text-white mb-2">Delete Your Data</h4>
+                <div class="bg-white rounded-xl p-4 border border-border shadow-sm">
+                  <h4 class="font-semibold text-textPrimary mb-2">Delete Your Data</h4>
                   <p class="text-sm">Delete your account and all associated data from settings.</p>
                 </div>
                 
-                <div class="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <h4 class="font-semibold text-white mb-2">Withdraw Consent</h4>
+                <div class="bg-white rounded-xl p-4 border border-border shadow-sm">
+                  <h4 class="font-semibold text-textPrimary mb-2">Withdraw Consent</h4>
                   <p class="text-sm">Opt out of optional data collection at any time.</p>
                 </div>
               </div>
@@ -277,27 +290,27 @@
           
           <!-- GDPR Rights -->
           <section id="gdpr" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">8. Rights for European Users (GDPR)</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">8. Rights for European Users (GDPR)</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>If you are located in the European Economic Area (EEA), United Kingdom, or Switzerland, you have additional rights under the General Data Protection Regulation (GDPR):</p>
               
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Right of Access:</strong> Request a copy of your personal data</li>
-                <li><strong>Right to Rectification:</strong> Request correction of inaccurate data</li>
-                <li><strong>Right to Erasure:</strong> Request deletion of your data ("right to be forgotten")</li>
-                <li><strong>Right to Restriction:</strong> Request limitation of processing</li>
-                <li><strong>Right to Data Portability:</strong> Receive your data in a portable format</li>
-                <li><strong>Right to Object:</strong> Object to processing based on legitimate interests</li>
-                <li><strong>Right to Withdraw Consent:</strong> Withdraw consent at any time where processing is based on consent</li>
+                <li><strong class="text-textPrimary">Right of Access:</strong> Request a copy of your personal data</li>
+                <li><strong class="text-textPrimary">Right to Rectification:</strong> Request correction of inaccurate data</li>
+                <li><strong class="text-textPrimary">Right to Erasure:</strong> Request deletion of your data ("right to be forgotten")</li>
+                <li><strong class="text-textPrimary">Right to Restriction:</strong> Request limitation of processing</li>
+                <li><strong class="text-textPrimary">Right to Data Portability:</strong> Receive your data in a portable format</li>
+                <li><strong class="text-textPrimary">Right to Object:</strong> Object to processing based on legitimate interests</li>
+                <li><strong class="text-textPrimary">Right to Withdraw Consent:</strong> Withdraw consent at any time where processing is based on consent</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">Legal Basis for Processing</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">Legal Basis for Processing</h3>
               <p>We process your data based on:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Contract:</strong> To provide our services to you</li>
-                <li><strong>Consent:</strong> Where you have given explicit consent</li>
-                <li><strong>Legitimate Interests:</strong> For security, fraud prevention, and service improvement</li>
-                <li><strong>Legal Obligation:</strong> To comply with applicable laws</li>
+                <li><strong class="text-textPrimary">Contract:</strong> To provide our services to you</li>
+                <li><strong class="text-textPrimary">Consent:</strong> Where you have given explicit consent</li>
+                <li><strong class="text-textPrimary">Legitimate Interests:</strong> For security, fraud prevention, and service improvement</li>
+                <li><strong class="text-textPrimary">Legal Obligation:</strong> To comply with applicable laws</li>
               </ul>
               
               <p>
@@ -308,11 +321,11 @@
           
           <!-- CCPA Rights -->
           <section id="ccpa" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">9. Rights for California Residents (CCPA)</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">9. Rights for California Residents (CCPA)</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>If you are a California resident, you have the following rights under the California Consumer Privacy Act (CCPA):</p>
               
-              <h3 class="text-xl font-semibold text-white">Right to Know</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">Right to Know</h3>
               <p>You can request disclosure of:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>Categories of personal information collected</li>
@@ -322,34 +335,34 @@
                 <li>Specific pieces of personal information collected about you</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">Right to Delete</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">Right to Delete</h3>
               <p>You can request deletion of your personal information, subject to certain exceptions.</p>
               
-              <h3 class="text-xl font-semibold text-white">Right to Opt-Out of Sale</h3>
-              <p><strong>We do not sell your personal information.</strong> We have not sold personal information in the preceding 12 months.</p>
+              <h3 class="text-xl font-semibold text-textPrimary">Right to Opt-Out of Sale</h3>
+              <p><strong class="text-textPrimary">We do not sell your personal information.</strong> We have not sold personal information in the preceding 12 months.</p>
               
-              <h3 class="text-xl font-semibold text-white">Right to Non-Discrimination</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">Right to Non-Discrimination</h3>
               <p>We will not discriminate against you for exercising your CCPA rights. You will not receive different pricing or quality of services based on exercising these rights.</p>
               
-              <h3 class="text-xl font-semibold text-white">Categories of Information Collected</h3>
-              <div class="bg-white/5 rounded-xl p-4 border border-white/10 overflow-x-auto">
+              <h3 class="text-xl font-semibold text-textPrimary">Categories of Information Collected</h3>
+              <div class="bg-white rounded-xl p-4 border border-border overflow-x-auto">
                 <table class="w-full text-sm">
                   <thead>
-                    <tr class="border-b border-white/10">
-                      <th class="text-left py-2 pr-4 text-white">Category</th>
-                      <th class="text-left py-2 text-white">Examples</th>
+                    <tr class="border-b border-border">
+                      <th class="text-left py-2 pr-4 text-textPrimary font-semibold">Category</th>
+                      <th class="text-left py-2 text-textPrimary font-semibold">Examples</th>
                     </tr>
                   </thead>
-                  <tbody class="text-gray-400">
-                    <tr class="border-b border-white/5">
+                  <tbody class="text-textSecondary">
+                    <tr class="border-b border-borderLight">
                       <td class="py-2 pr-4">Identifiers</td>
                       <td class="py-2">Email, name, account ID</td>
                     </tr>
-                    <tr class="border-b border-white/5">
+                    <tr class="border-b border-borderLight">
                       <td class="py-2 pr-4">Commercial Info</td>
                       <td class="py-2">Subscription status, purchase history</td>
                     </tr>
-                    <tr class="border-b border-white/5">
+                    <tr class="border-b border-borderLight">
                       <td class="py-2 pr-4">Internet Activity</td>
                       <td class="py-2">App usage, feature interactions</td>
                     </tr>
@@ -369,15 +382,15 @@
           
           <!-- Data Security -->
           <section id="security" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">10. Data Security</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">10. Data Security</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>We implement appropriate technical and organizational measures to protect your personal information, including:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Encryption:</strong> Data is encrypted in transit (TLS/SSL) and at rest</li>
-                <li><strong>Access Controls:</strong> Strict access controls limit who can access your data</li>
-                <li><strong>Secure Infrastructure:</strong> We use enterprise-grade cloud infrastructure (Supabase/AWS)</li>
-                <li><strong>Regular Audits:</strong> We conduct regular security assessments</li>
-                <li><strong>Authentication:</strong> Secure authentication via industry-standard providers</li>
+                <li><strong class="text-textPrimary">Encryption:</strong> Data is encrypted in transit (TLS/SSL) and at rest</li>
+                <li><strong class="text-textPrimary">Access Controls:</strong> Strict access controls limit who can access your data</li>
+                <li><strong class="text-textPrimary">Secure Infrastructure:</strong> We use enterprise-grade cloud infrastructure (Supabase/AWS)</li>
+                <li><strong class="text-textPrimary">Regular Audits:</strong> We conduct regular security assessments</li>
+                <li><strong class="text-textPrimary">Authentication:</strong> Secure authentication via industry-standard providers</li>
               </ul>
               <p>
                 While we strive to protect your data, no method of transmission over the Internet is 100% secure. We cannot guarantee absolute security but will notify you of any breach affecting your data as required by law.
@@ -387,8 +400,8 @@
           
           <!-- Children's Privacy -->
           <section id="children" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">11. Children's Privacy</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">11. Children's Privacy</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 Resulta is not intended for children under 13 years of age (or 16 in the EEA). We do not knowingly collect personal information from children under these ages.
               </p>
@@ -400,8 +413,8 @@
           
           <!-- International Transfers -->
           <section id="international" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">12. International Data Transfers</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">12. International Data Transfers</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 Your information may be transferred to and processed in countries other than your country of residence. These countries may have different data protection laws.
               </p>
@@ -418,8 +431,8 @@
           
           <!-- Policy Changes -->
           <section id="changes" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">13. Changes to This Privacy Policy</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">13. Changes to This Privacy Policy</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 We may update this Privacy Policy from time to time. We will notify you of any material changes by:
               </p>
@@ -436,25 +449,25 @@
           
           <!-- Contact Us -->
           <section id="contact" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">14. Contact Us</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">14. Contact Us</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>If you have any questions about this Privacy Policy or our data practices, please contact us:</p>
               
-              <div class="bg-white/5 rounded-xl p-6 border border-white/10 space-y-3">
+              <div class="bg-white rounded-xl p-6 border border-border shadow-sm space-y-3">
                 <div>
-                  <span class="text-gray-500 text-sm">Company</span>
-                  <p class="text-white font-medium">Resulta Inc.</p>
+                  <span class="text-textTertiary text-sm">Company</span>
+                  <p class="text-textPrimary font-medium">Resulta Inc.</p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">Privacy Inquiries</span>
+                  <span class="text-textTertiary text-sm">Privacy Inquiries</span>
                   <p><a href="mailto:privacy@resulta.app" class="text-primary hover:underline">privacy@resulta.app</a></p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">General Support</span>
+                  <span class="text-textTertiary text-sm">General Support</span>
                   <p><a href="mailto:support@resulta.app" class="text-primary hover:underline">support@resulta.app</a></p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">Website</span>
+                  <span class="text-textTertiary text-sm">Website</span>
                   <p><a href="https://resulta.app" class="text-primary hover:underline">resulta.app</a></p>
                 </div>
               </div>
@@ -471,15 +484,16 @@
   </main>
   
   <!-- Footer -->
-  <footer class="py-12 px-6 border-t border-white/10">
+  <footer class="py-12 px-6 border-t border-border bg-white">
     <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
       <div class="text-2xl font-bold gradient-text">Resulta</div>
-      <div class="flex gap-8 text-gray-400">
-        <a href="/" class="hover:text-white transition">Home</a>
-        <a href="/privacy" class="text-white">Privacy</a>
-        <a href="/terms" class="hover:text-white transition">Terms</a>
+      <div class="flex gap-8 text-textSecondary">
+        <a href="/" class="hover:text-textPrimary transition">Home</a>
+        <a href="/support" class="hover:text-textPrimary transition">Support</a>
+        <a href="/privacy" class="text-textPrimary font-medium">Privacy</a>
+        <a href="/terms" class="hover:text-textPrimary transition">Terms</a>
       </div>
-      <div class="text-gray-500 text-sm">
+      <div class="text-textTertiary text-sm">
         © 2026 Resulta Inc. All rights reserved.
       </div>
     </div>

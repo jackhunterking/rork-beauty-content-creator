@@ -12,11 +12,19 @@
       theme: {
         extend: {
           colors: {
-            primary: '#E91E63',
-            dark: '#1a1a1a',
+            primary: '#C9A87C',
+            primaryDark: '#A88B5E',
+            background: '#FEFCF9',
+            surface: '#FFFFFF',
+            surfaceSecondary: '#F7F4F0',
+            textPrimary: '#1A1614',
+            textSecondary: '#6B635B',
+            textTertiary: '#9C948C',
+            border: '#E8E4DF',
+            borderLight: '#F0EDE9',
           },
           fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
           }
         }
       }
@@ -24,12 +32,16 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Inter', system-ui, sans-serif; }
+    * { font-family: 'DM Sans', system-ui, sans-serif; }
+    
+    body {
+      background: linear-gradient(180deg, #FEFCF9 0%, #F7F4F0 100%);
+    }
     
     .gradient-text {
-      background: linear-gradient(135deg, #E91E63 0%, #FF6B6B 100%);
+      background: linear-gradient(135deg, #C9A87C 0%, #A88B5E 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -44,7 +56,7 @@
     }
     
     .toc-link:hover {
-      color: #E91E63;
+      color: #C9A87C;
       padding-left: 8px;
     }
     
@@ -53,16 +65,17 @@
     }
   </style>
 </head>
-<body class="bg-dark text-white">
+<body class="text-textPrimary">
   
   <!-- Header -->
-  <header class="fixed top-0 left-0 right-0 z-50 bg-dark/90 backdrop-blur-lg border-b border-white/10">
+  <header class="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-b border-border">
     <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
       <a href="/" class="text-2xl font-bold gradient-text">Resulta</a>
-      <nav class="flex gap-6 text-gray-400">
-        <a href="/" class="hover:text-white transition">Home</a>
-        <a href="/privacy" class="hover:text-white transition">Privacy</a>
-        <a href="/terms" class="text-white">Terms</a>
+      <nav class="flex gap-6 text-textSecondary">
+        <a href="/" class="hover:text-textPrimary transition">Home</a>
+        <a href="/support" class="hover:text-textPrimary transition">Support</a>
+        <a href="/privacy" class="hover:text-textPrimary transition">Privacy</a>
+        <a href="/terms" class="text-textPrimary font-medium">Terms</a>
       </nav>
     </div>
   </header>
@@ -73,18 +86,18 @@
       
       <!-- Page Header -->
       <div class="text-center mb-16">
-        <h1 class="text-4xl md:text-5xl font-extrabold mb-4">Terms of Service</h1>
-        <p class="text-gray-400 text-lg">Last Updated: January 10, 2026</p>
-        <p class="text-gray-500 mt-2">Effective Date: January 10, 2026</p>
+        <h1 class="text-4xl md:text-5xl font-extrabold mb-4 text-textPrimary">Terms of Service</h1>
+        <p class="text-textSecondary text-lg">Last Updated: January 10, 2026</p>
+        <p class="text-textTertiary mt-2">Effective Date: January 10, 2026</p>
       </div>
       
       <div class="grid lg:grid-cols-4 gap-12">
         
         <!-- Table of Contents (Sidebar) -->
         <aside class="lg:col-span-1">
-          <div class="sticky top-28 bg-white/5 rounded-2xl p-6 border border-white/10">
-            <h3 class="font-bold text-lg mb-4">Contents</h3>
-            <nav class="space-y-2 text-sm text-gray-400">
+          <div class="sticky top-28 bg-white rounded-2xl p-6 border border-border shadow-sm">
+            <h3 class="font-bold text-lg mb-4 text-textPrimary">Contents</h3>
+            <nav class="space-y-2 text-sm text-textSecondary">
               <a href="#acceptance" class="block toc-link">1. Acceptance of Terms</a>
               <a href="#description" class="block toc-link">2. Service Description</a>
               <a href="#eligibility" class="block toc-link">3. Eligibility</a>
@@ -110,13 +123,13 @@
           
           <!-- Acceptance of Terms -->
           <section id="acceptance" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">1. Acceptance of Terms</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">1. Acceptance of Terms</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 Welcome to Resulta! These Terms of Service ("Terms") constitute a legally binding agreement between you ("User," "you," or "your") and Resulta Inc. ("Resulta," "we," "us," or "our") governing your access to and use of the Resulta mobile application ("App") and website at resulta.app ("Website"), collectively referred to as the "Service."
               </p>
               <p>
-                <strong>By accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and our Privacy Policy.</strong> If you do not agree to these Terms, you may not access or use the Service.
+                <strong class="text-textPrimary">By accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms and our Privacy Policy.</strong> If you do not agree to these Terms, you may not access or use the Service.
               </p>
               <p>
                 We reserve the right to modify these Terms at any time. We will notify you of material changes by updating the "Last Updated" date and, where appropriate, providing additional notice (such as an in-app notification). Your continued use of the Service after such modifications constitutes acceptance of the updated Terms.
@@ -126,17 +139,17 @@
           
           <!-- Service Description -->
           <section id="description" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">2. Service Description</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">2. Service Description</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 Resulta is a mobile application designed for beauty professionals and content creators to create before-and-after comparison content. The Service provides:
               </p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Template Library:</strong> Professionally designed templates for creating before-and-after comparisons</li>
-                <li><strong>Image Capture:</strong> Tools to capture and arrange photos within templates</li>
-                <li><strong>Portfolio Management:</strong> Save and organize your created content</li>
-                <li><strong>Export & Sharing:</strong> Download and share your content to social media platforms</li>
-                <li><strong>Premium Features:</strong> Optional subscription for watermark-free exports and additional features</li>
+                <li><strong class="text-textPrimary">Template Library:</strong> Professionally designed templates for creating before-and-after comparisons</li>
+                <li><strong class="text-textPrimary">Image Capture:</strong> Tools to capture and arrange photos within templates</li>
+                <li><strong class="text-textPrimary">Portfolio Management:</strong> Save and organize your created content</li>
+                <li><strong class="text-textPrimary">Export & Sharing:</strong> Download and share your content to social media platforms</li>
+                <li><strong class="text-textPrimary">Premium Features:</strong> Optional subscription for watermark-free exports and additional features</li>
               </ul>
               <p>
                 We reserve the right to modify, suspend, or discontinue any aspect of the Service at any time, with or without notice.
@@ -146,8 +159,8 @@
           
           <!-- Eligibility -->
           <section id="eligibility" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">3. Eligibility</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">3. Eligibility</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>To use the Service, you must:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>Be at least 13 years old (or 16 years old in the European Economic Area)</li>
@@ -163,15 +176,15 @@
           
           <!-- User Accounts -->
           <section id="accounts" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">4. User Accounts</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">4. User Accounts</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">4.1 Account Creation</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.1 Account Creation</h3>
               <p>
                 To access certain features, you must create an account using email/password or sign in with Apple or Google. You agree to provide accurate, current, and complete information during registration.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">4.2 Account Security</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.2 Account Security</h3>
               <p>
                 You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. You agree to:
               </p>
@@ -182,7 +195,7 @@
                 <li>Not create multiple accounts for abusive purposes</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">4.3 Account Deletion</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">4.3 Account Deletion</h3>
               <p>
                 You may delete your account at any time through the app settings. Upon deletion, we will remove your personal data in accordance with our Privacy Policy. Some data may be retained as required by law or for legitimate business purposes.
               </p>
@@ -191,38 +204,38 @@
           
           <!-- Subscriptions -->
           <section id="subscriptions" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">5. Subscriptions and Payments</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">5. Subscriptions and Payments</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">5.1 Free and Premium Tiers</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.1 Free and Premium Tiers</h3>
               <p>
                 Resulta offers both free and premium subscription tiers. Free users may access basic features with watermarked exports. Premium subscribers ("Resulta Pro") receive additional benefits including watermark-free exports.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">5.2 Subscription Plans</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.2 Subscription Plans</h3>
               <p>Premium subscriptions are available as:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
-                <li><strong>Monthly:</strong> Billed monthly, auto-renews until cancelled</li>
-                <li><strong>Yearly:</strong> Billed annually, auto-renews until cancelled</li>
-                <li><strong>Lifetime:</strong> One-time purchase, no renewal</li>
+                <li><strong class="text-textPrimary">Monthly:</strong> Billed monthly, auto-renews until cancelled</li>
+                <li><strong class="text-textPrimary">Yearly:</strong> Billed annually, auto-renews until cancelled</li>
+                <li><strong class="text-textPrimary">Lifetime:</strong> One-time purchase, no renewal</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">5.3 Payment Processing</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.3 Payment Processing</h3>
               <p>
                 All payments are processed through the Apple App Store or Google Play Store. By purchasing a subscription, you agree to their respective terms and conditions. We do not directly collect or store your payment information.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">5.4 Auto-Renewal</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.4 Auto-Renewal</h3>
               <p>
                 Monthly and yearly subscriptions automatically renew unless cancelled at least 24 hours before the end of the current billing period. You can manage and cancel subscriptions through your device's app store settings.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">5.5 Refunds</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.5 Refunds</h3>
               <p>
                 Refund requests are subject to the policies of the Apple App Store or Google Play Store. We do not directly process refunds. Contact Apple or Google support for refund inquiries.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">5.6 Price Changes</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">5.6 Price Changes</h3>
               <p>
                 We may change subscription prices at any time. Price changes will apply to subsequent billing periods after notice is provided. Existing subscribers will be notified before any price increase takes effect.
               </p>
@@ -231,15 +244,15 @@
           
           <!-- User Content -->
           <section id="user-content" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">6. User Content</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">6. User Content</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">6.1 Your Content</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">6.1 Your Content</h3>
               <p>
                 "User Content" means any photos, images, text, or other materials you upload, create, or share through the Service. You retain all ownership rights to your User Content.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">6.2 License Grant</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">6.2 License Grant</h3>
               <p>
                 By uploading User Content, you grant Resulta a non-exclusive, worldwide, royalty-free license to:
               </p>
@@ -252,7 +265,7 @@
                 This license is limited to operating the Service and does not grant us rights to use your content for marketing or other purposes without your explicit consent.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">6.3 Content Responsibilities</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">6.3 Content Responsibilities</h3>
               <p>You represent and warrant that your User Content:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>Does not infringe any third-party intellectual property rights</li>
@@ -261,7 +274,7 @@
                 <li>Was obtained with proper consent from any individuals depicted</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">6.4 Content Removal</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">6.4 Content Removal</h3>
               <p>
                 We reserve the right to remove any User Content that violates these Terms or is otherwise objectionable, at our sole discretion and without prior notice.
               </p>
@@ -270,13 +283,13 @@
           
           <!-- Acceptable Use -->
           <section id="acceptable-use" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">7. Acceptable Use Policy</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">7. Acceptable Use Policy</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>You agree not to use the Service to:</p>
               
-              <div class="bg-red-500/10 border border-red-500/20 rounded-xl p-6">
-                <h4 class="font-semibold text-red-400 mb-3">Prohibited Activities</h4>
-                <ul class="list-disc list-inside space-y-2 text-gray-300">
+              <div class="bg-red-50 border border-red-200 rounded-xl p-6">
+                <h4 class="font-semibold text-red-700 mb-3">Prohibited Activities</h4>
+                <ul class="list-disc list-inside space-y-2 text-textSecondary">
                   <li>Violate any applicable laws, regulations, or third-party rights</li>
                   <li>Upload content depicting minors without parental consent</li>
                   <li>Share sexually explicit, violent, or harmful content</li>
@@ -300,10 +313,10 @@
           
           <!-- Intellectual Property -->
           <section id="intellectual-property" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">8. Intellectual Property</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">8. Intellectual Property</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">8.1 Our Intellectual Property</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">8.1 Our Intellectual Property</h3>
               <p>
                 The Service, including its design, templates, graphics, logos, icons, and software, is owned by Resulta Inc. and protected by copyright, trademark, and other intellectual property laws. You may not:
               </p>
@@ -314,7 +327,7 @@
                 <li>Remove any copyright or proprietary notices</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">8.2 Template License</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">8.2 Template License</h3>
               <p>
                 Templates provided within the Service are licensed, not sold, for your personal or commercial use in creating content. This license allows you to:
               </p>
@@ -327,7 +340,7 @@
                 This license does not permit redistribution of templates themselves or creation of derivative template products.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">8.3 Feedback</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">8.3 Feedback</h3>
               <p>
                 If you provide feedback, suggestions, or ideas about the Service, you grant us the right to use such feedback without compensation or attribution to you.
               </p>
@@ -336,8 +349,8 @@
           
           <!-- Third-Party Services -->
           <section id="third-party" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">9. Third-Party Services</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">9. Third-Party Services</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 The Service integrates with and may link to third-party services, including:
               </p>
@@ -354,15 +367,15 @@
           
           <!-- Termination -->
           <section id="termination" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">10. Termination</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">10. Termination</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">10.1 Termination by You</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">10.1 Termination by You</h3>
               <p>
                 You may stop using the Service and delete your account at any time through the app settings. Active subscriptions must be cancelled through your device's app store.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">10.2 Termination by Us</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">10.2 Termination by Us</h3>
               <p>We may suspend or terminate your access to the Service if:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>You violate these Terms or our policies</li>
@@ -371,7 +384,7 @@
                 <li>You engage in fraudulent or illegal activities</li>
               </ul>
               
-              <h3 class="text-xl font-semibold text-white">10.3 Effect of Termination</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">10.3 Effect of Termination</h3>
               <p>Upon termination:</p>
               <ul class="list-disc list-inside space-y-2 ml-4">
                 <li>Your right to use the Service immediately ceases</li>
@@ -384,14 +397,14 @@
           
           <!-- Disclaimers -->
           <section id="disclaimers" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">11. Disclaimers</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
-              <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-6">
-                <p class="uppercase text-sm font-semibold text-yellow-400 mb-3">Important Notice</p>
-                <p>
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">11. Disclaimers</h2>
+            <div class="prose text-textSecondary space-y-4">
+              <div class="bg-amber-50 border border-amber-200 rounded-xl p-6">
+                <p class="uppercase text-sm font-semibold text-amber-700 mb-3">Important Notice</p>
+                <p class="text-textSecondary">
                   THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO:
                 </p>
-                <ul class="list-disc list-inside space-y-2 mt-3">
+                <ul class="list-disc list-inside space-y-2 mt-3 text-textSecondary">
                   <li>MERCHANTABILITY</li>
                   <li>FITNESS FOR A PARTICULAR PURPOSE</li>
                   <li>NON-INFRINGEMENT</li>
@@ -416,9 +429,9 @@
           
           <!-- Limitation of Liability -->
           <section id="limitation" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">12. Limitation of Liability</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
-              <div class="bg-white/5 border border-white/10 rounded-xl p-6">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">12. Limitation of Liability</h2>
+            <div class="prose text-textSecondary space-y-4">
+              <div class="bg-surfaceSecondary border border-border rounded-xl p-6">
                 <p>
                   TO THE MAXIMUM EXTENT PERMITTED BY LAW, RESULTA INC. AND ITS OFFICERS, DIRECTORS, EMPLOYEES, AND AGENTS SHALL NOT BE LIABLE FOR:
                 </p>
@@ -439,8 +452,8 @@
           
           <!-- Indemnification -->
           <section id="indemnification" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">13. Indemnification</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">13. Indemnification</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>
                 You agree to indemnify, defend, and hold harmless Resulta Inc. and its officers, directors, employees, agents, and affiliates from and against any claims, liabilities, damages, losses, costs, or expenses (including reasonable attorneys' fees) arising out of or relating to:
               </p>
@@ -456,25 +469,25 @@
           
           <!-- Dispute Resolution -->
           <section id="disputes" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">14. Dispute Resolution</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">14. Dispute Resolution</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">14.1 Informal Resolution</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">14.1 Informal Resolution</h3>
               <p>
                 Before filing a formal dispute, you agree to contact us at <a href="mailto:legal@resulta.app" class="text-primary hover:underline">legal@resulta.app</a> to attempt to resolve the dispute informally. We will work in good faith to resolve any issues within 30 days.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">14.2 Arbitration Agreement</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">14.2 Arbitration Agreement</h3>
               <p>
                 If we cannot resolve a dispute informally, you and Resulta agree to resolve any disputes through binding arbitration rather than in court, except for disputes that qualify for small claims court. This arbitration agreement is governed by the Federal Arbitration Act.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">14.3 Class Action Waiver</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">14.3 Class Action Waiver</h3>
               <p>
                 YOU AND RESULTA AGREE THAT DISPUTES WILL BE RESOLVED ON AN INDIVIDUAL BASIS AND NOT IN A CLASS, CONSOLIDATED, OR REPRESENTATIVE ACTION. You waive any right to participate in class actions against Resulta.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">14.4 Exceptions</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">14.4 Exceptions</h3>
               <p>
                 Either party may seek injunctive relief in court for intellectual property infringement or unauthorized access to the Service.
               </p>
@@ -483,35 +496,35 @@
           
           <!-- General Provisions -->
           <section id="general" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">15. General Provisions</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">15. General Provisions</h2>
+            <div class="prose text-textSecondary space-y-4">
               
-              <h3 class="text-xl font-semibold text-white">15.1 Governing Law</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.1 Governing Law</h3>
               <p>
                 These Terms are governed by and construed in accordance with the laws of the State of Delaware, United States, without regard to its conflict of law principles.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">15.2 Entire Agreement</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.2 Entire Agreement</h3>
               <p>
                 These Terms, together with our Privacy Policy, constitute the entire agreement between you and Resulta regarding the Service and supersede all prior agreements.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">15.3 Severability</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.3 Severability</h3>
               <p>
                 If any provision of these Terms is found to be unenforceable, that provision will be limited or eliminated to the minimum extent necessary, and the remaining provisions will remain in full force and effect.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">15.4 Waiver</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.4 Waiver</h3>
               <p>
                 Our failure to enforce any right or provision of these Terms will not be considered a waiver of those rights.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">15.5 Assignment</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.5 Assignment</h3>
               <p>
                 You may not assign or transfer these Terms without our prior written consent. We may assign these Terms without restriction.
               </p>
               
-              <h3 class="text-xl font-semibold text-white">15.6 Force Majeure</h3>
+              <h3 class="text-xl font-semibold text-textPrimary">15.6 Force Majeure</h3>
               <p>
                 We shall not be liable for any failure or delay in performance due to circumstances beyond our reasonable control, including natural disasters, war, terrorism, labor disputes, or infrastructure failures.
               </p>
@@ -520,30 +533,30 @@
           
           <!-- Contact Us -->
           <section id="contact" class="legal-section">
-            <h2 class="text-2xl font-bold mb-4 text-white">16. Contact Us</h2>
-            <div class="prose prose-invert text-gray-300 space-y-4">
+            <h2 class="text-2xl font-bold mb-4 text-textPrimary">16. Contact Us</h2>
+            <div class="prose text-textSecondary space-y-4">
               <p>If you have any questions about these Terms of Service, please contact us:</p>
               
-              <div class="bg-white/5 rounded-xl p-6 border border-white/10 space-y-3">
+              <div class="bg-white rounded-xl p-6 border border-border shadow-sm space-y-3">
                 <div>
-                  <span class="text-gray-500 text-sm">Company</span>
-                  <p class="text-white font-medium">Resulta Inc.</p>
+                  <span class="text-textTertiary text-sm">Company</span>
+                  <p class="text-textPrimary font-medium">Resulta Inc.</p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">Legal Inquiries</span>
+                  <span class="text-textTertiary text-sm">Legal Inquiries</span>
                   <p><a href="mailto:legal@resulta.app" class="text-primary hover:underline">legal@resulta.app</a></p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">General Support</span>
+                  <span class="text-textTertiary text-sm">General Support</span>
                   <p><a href="mailto:support@resulta.app" class="text-primary hover:underline">support@resulta.app</a></p>
                 </div>
                 <div>
-                  <span class="text-gray-500 text-sm">Website</span>
+                  <span class="text-textTertiary text-sm">Website</span>
                   <p><a href="https://resulta.app" class="text-primary hover:underline">resulta.app</a></p>
                 </div>
               </div>
               
-              <p class="text-gray-500 text-sm mt-8">
+              <p class="text-textTertiary text-sm mt-8">
                 By using Resulta, you acknowledge that you have read and understood these Terms of Service and agree to be bound by them.
               </p>
             </div>
@@ -555,15 +568,16 @@
   </main>
   
   <!-- Footer -->
-  <footer class="py-12 px-6 border-t border-white/10">
+  <footer class="py-12 px-6 border-t border-border bg-white">
     <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
       <div class="text-2xl font-bold gradient-text">Resulta</div>
-      <div class="flex gap-8 text-gray-400">
-        <a href="/" class="hover:text-white transition">Home</a>
-        <a href="/privacy" class="hover:text-white transition">Privacy</a>
-        <a href="/terms" class="text-white">Terms</a>
+      <div class="flex gap-8 text-textSecondary">
+        <a href="/" class="hover:text-textPrimary transition">Home</a>
+        <a href="/support" class="hover:text-textPrimary transition">Support</a>
+        <a href="/privacy" class="hover:text-textPrimary transition">Privacy</a>
+        <a href="/terms" class="text-textPrimary font-medium">Terms</a>
       </div>
-      <div class="text-gray-500 text-sm">
+      <div class="text-textTertiary text-sm">
         © 2026 Resulta Inc. All rights reserved.
       </div>
     </div>
