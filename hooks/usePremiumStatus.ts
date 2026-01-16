@@ -1,15 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser, usePlacement } from 'expo-superwall';
+import { supabase } from '@/lib/supabase';
 
 /**
  * Premium Status Hook
  * 
- * Manages premium/subscription status for the app using Superwall.
+ * Manages premium/subscription status for the app using Superwall + Supabase.
+ * 
+ * Premium status is determined by:
+ * 1. Superwall subscription status (paid subscription via app store)
+ * 2. OR Complimentary pro flag in Supabase (admin-granted access)
+ * 
  * Superwall handles:
  * - Paywall presentation
  * - Subscription status tracking
  * - A/B testing for paywalls
+ * 
+ * Supabase handles:
+ * - Complimentary pro access (admin-granted)
  * 
  * Premium features:
  * - Remove watermark from rendered images
@@ -27,25 +36,83 @@ export interface PremiumStatus {
 }
 
 /**
- * Main premium status hook using Superwall
+ * Main premium status hook using Superwall + Supabase complimentary pro check
  * Use this throughout the app to check subscription status
  * 
  * subscriptionStatus.status can be:
  * - "ACTIVE" - User has an active subscription
  * - "INACTIVE" - User does not have a subscription
  * - "UNKNOWN" - Subscription status is being determined
+ * 
+ * Additionally checks is_complimentary_pro flag in Supabase profiles table
  */
 export function usePremiumStatus() {
   const { subscriptionStatus } = useUser();
+  const [isComplimentaryPro, setIsComplimentaryPro] = useState(false);
+  const [isCheckingComplimentary, setIsCheckingComplimentary] = useState(true);
   
-  // Determine if user is premium based on Superwall's subscription status
-  const isPremium = subscriptionStatus?.status === "ACTIVE";
-  const isLoading = subscriptionStatus?.status === "UNKNOWN" || subscriptionStatus === undefined;
+  // Check for complimentary pro status from Supabase
+  useEffect(() => {
+    const checkComplimentaryProStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('is_complimentary_pro')
+            .eq('id', user.id)
+            .single();
+          
+          if (!error && profile?.is_complimentary_pro) {
+            setIsComplimentaryPro(true);
+          } else {
+            setIsComplimentaryPro(false);
+          }
+        } else {
+          setIsComplimentaryPro(false);
+        }
+      } catch (error) {
+        console.error('[Premium] Failed to check complimentary pro status:', error);
+        setIsComplimentaryPro(false);
+      } finally {
+        setIsCheckingComplimentary(false);
+      }
+    };
+
+    checkComplimentaryProStatus();
+
+    // Subscribe to auth changes to re-check when user signs in/out
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      setIsCheckingComplimentary(true);
+      checkComplimentaryProStatus();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+  
+  // User is premium if they have active Superwall subscription OR complimentary pro access
+  const isPremiumFromSuperwall = subscriptionStatus?.status === "ACTIVE";
+  const isPremium = isPremiumFromSuperwall || isComplimentaryPro;
+  
+  // Still loading if either Superwall or complimentary check is pending
+  const superwallLoading = subscriptionStatus?.status === "UNKNOWN" || subscriptionStatus === undefined;
+  const isLoading = superwallLoading && isCheckingComplimentary;
+
+  // #region agent log
+  // Log premium status calculation for debugging (Hypothesis A & D)
+  useEffect(() => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumStatus',message:'Premium status calculated',data:{isPremium,isPremiumFromSuperwall,isComplimentaryPro,superwallStatus:subscriptionStatus?.status,isLoading},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
+  }, [isPremium, isPremiumFromSuperwall, isComplimentaryPro, subscriptionStatus?.status, isLoading]);
+  // #endregion
 
   return {
     isPremium,
     isLoading,
     subscriptionStatus,
+    isComplimentaryPro, // Expose for debugging/admin purposes
   };
 }
 
@@ -55,10 +122,30 @@ export function usePremiumStatus() {
  */
 export function usePremiumFeature() {
   const { registerPlacement, state: paywallState } = usePlacement({
-    onPresent: (info) => console.log('Paywall presented:', info.name),
-    onDismiss: (info, result) => console.log('Paywall dismissed:', result),
-    onSkip: (reason) => console.log('Paywall skipped:', reason),
-    onError: (error) => console.error('Paywall error:', error),
+    onPresent: (info) => {
+      console.log('Paywall presented:', info.name);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onPresent',message:'Paywall PRESENTED',data:{paywallName:info.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+    },
+    onDismiss: (info, result) => {
+      console.log('Paywall dismissed:', result);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onDismiss',message:'Paywall DISMISSED',data:{paywallName:info?.name,dismissResult:JSON.stringify(result)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+      // #endregion
+    },
+    onSkip: (reason) => {
+      console.log('Paywall skipped:', reason);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onSkip',message:'Paywall SKIPPED - feature will run',data:{skipReason:JSON.stringify(reason)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+    },
+    onError: (error) => {
+      console.error('Paywall error:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onError',message:'Paywall ERROR',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+    },
   });
 
   /**
@@ -73,10 +160,23 @@ export function usePremiumFeature() {
     placement: string,
     onFeatureAccess?: () => void
   ) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:before',message:'Calling registerPlacement',data:{placement,hasCallback:!!onFeatureAccess},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await registerPlacement({
       placement,
-      feature: onFeatureAccess,
+      feature: () => {
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:featureCallback',message:'FEATURE CALLBACK EXECUTED - Superwall granted access',data:{placement},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        if (onFeatureAccess) {
+          onFeatureAccess();
+        }
+      },
     });
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:after',message:'registerPlacement completed',data:{placement},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
   }, [registerPlacement]);
 
   return {

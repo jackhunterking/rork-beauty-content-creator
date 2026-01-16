@@ -622,6 +622,10 @@ export interface UserProfile {
   industry?: string;
   goal?: string;
   onboardingCompletedAt?: string;
+  // Complimentary pro access (admin-granted)
+  isComplimentaryPro?: boolean;
+  complimentaryProGrantedAt?: string;
+  complimentaryProNotes?: string;
 }
 
 /**
@@ -639,6 +643,10 @@ export interface ProfileRow {
   industry: string | null;
   goal: string | null;
   onboarding_completed_at: string | null;
+  // Complimentary pro access (admin-granted)
+  is_complimentary_pro: boolean | null;
+  complimentary_pro_granted_at: string | null;
+  complimentary_pro_notes: string | null;
 }
 
 /**

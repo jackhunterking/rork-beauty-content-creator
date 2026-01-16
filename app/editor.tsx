@@ -1039,6 +1039,9 @@ export default function EditorScreen() {
     type: OverlayType,
     imageData?: { uri: string; width: number; height: number }
   ) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor.tsx:handleAddOverlay',message:'OVERLAY BEING ADDED - This should only happen if premium',data:{type,hasImageData:!!imageData},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     let newOverlay: Overlay;
 
     switch (type) {
@@ -1106,7 +1109,13 @@ export default function EditorScreen() {
     featureName: string,
     onPremiumGranted?: () => void
   ) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor.tsx:handleRequestPremiumForOverlay:start',message:'Requesting premium access for overlay',data:{featureName,hasCallback:!!onPremiumGranted},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     await requestPremiumAccess(featureName, () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor.tsx:handleRequestPremiumForOverlay:callbackExecuted',message:'CALLBACK EXECUTED in editor - premium granted',data:{featureName},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+      // #endregion
       console.log(`[Editor] ${featureName} - premium access granted via Superwall`);
       // Execute the feature callback if provided
       // This allows the overlay to be added automatically after subscribing

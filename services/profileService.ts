@@ -29,6 +29,10 @@ function transformProfile(row: ProfileRow): UserProfile {
     industry: row.industry ?? undefined,
     goal: row.goal ?? undefined,
     onboardingCompletedAt: row.onboarding_completed_at ?? undefined,
+    // Complimentary pro access (admin-granted)
+    isComplimentaryPro: row.is_complimentary_pro ?? undefined,
+    complimentaryProGrantedAt: row.complimentary_pro_granted_at ?? undefined,
+    complimentaryProNotes: row.complimentary_pro_notes ?? undefined,
   };
 }
 
