@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useUser, usePlacement } from 'expo-superwall';
+import { useUser, usePlacement, useSuperwall } from 'expo-superwall';
 import { supabase } from '@/lib/supabase';
+import type { SubscriptionStatus, Entitlement, EntitlementsInfo } from 'expo-superwall';
 
 /**
  * Premium Status Hook
@@ -36,6 +37,20 @@ export interface PremiumStatus {
 }
 
 /**
+ * Subscription details exposed by the enhanced hook
+ */
+export interface SubscriptionDetails {
+  /** Current status: ACTIVE, INACTIVE, or UNKNOWN */
+  status: 'ACTIVE' | 'INACTIVE' | 'UNKNOWN';
+  /** List of active entitlements (when ACTIVE) */
+  entitlements: Entitlement[];
+  /** Whether subscription is from Superwall (app store) or complimentary */
+  source: 'superwall' | 'complimentary' | 'none';
+  /** Superwall user ID for debugging/dashboard lookup */
+  superwallUserId?: string;
+}
+
+/**
  * Main premium status hook using Superwall + Supabase complimentary pro check
  * Use this throughout the app to check subscription status
  * 
@@ -47,9 +62,17 @@ export interface PremiumStatus {
  * Additionally checks is_complimentary_pro flag in Supabase profiles table
  */
 export function usePremiumStatus() {
-  const { subscriptionStatus } = useUser();
+  const { subscriptionStatus, user: superwallUser } = useUser();
+  const { getEntitlements } = useSuperwall();
   const [isComplimentaryPro, setIsComplimentaryPro] = useState(false);
   const [isCheckingComplimentary, setIsCheckingComplimentary] = useState(true);
+  const [entitlementsInfo, setEntitlementsInfo] = useState<EntitlementsInfo | null>(null);
+  
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:hook',message:'Subscription status from Superwall',data:{status:subscriptionStatus?.status,entitlements:subscriptionStatus?.status==='ACTIVE'?(subscriptionStatus as any).entitlements:[],superwallUserId:superwallUser?.appUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  }, [subscriptionStatus, superwallUser]);
+  // #endregion
   
   // Check for complimentary pro status from Supabase
   useEffect(() => {
@@ -92,6 +115,25 @@ export function usePremiumStatus() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Fetch detailed entitlements info when subscription status is ACTIVE
+  useEffect(() => {
+    const fetchEntitlements = async () => {
+      if (subscriptionStatus?.status === 'ACTIVE') {
+        try {
+          const info = await getEntitlements();
+          setEntitlementsInfo(info);
+          console.log('[Premium] Fetched entitlements:', info);
+        } catch (error) {
+          console.error('[Premium] Failed to fetch entitlements:', error);
+        }
+      } else {
+        setEntitlementsInfo(null);
+      }
+    };
+
+    fetchEntitlements();
+  }, [subscriptionStatus?.status, getEntitlements]);
   
   // User is premium if they have active Superwall subscription OR complimentary pro access
   const isPremiumFromSuperwall = subscriptionStatus?.status === "ACTIVE";
@@ -101,18 +143,24 @@ export function usePremiumStatus() {
   const superwallLoading = subscriptionStatus?.status === "UNKNOWN" || subscriptionStatus === undefined;
   const isLoading = superwallLoading && isCheckingComplimentary;
 
-  // #region agent log
-  // Log premium status calculation for debugging (Hypothesis A & D)
-  useEffect(() => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumStatus',message:'Premium status calculated',data:{isPremium,isPremiumFromSuperwall,isComplimentaryPro,superwallStatus:subscriptionStatus?.status,isLoading},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-  }, [isPremium, isPremiumFromSuperwall, isComplimentaryPro, subscriptionStatus?.status, isLoading]);
-  // #endregion
+  // Build subscription details for UI display
+  const subscriptionDetails: SubscriptionDetails = {
+    status: subscriptionStatus?.status ?? 'UNKNOWN',
+    entitlements: subscriptionStatus?.status === 'ACTIVE' 
+      ? (subscriptionStatus as { status: 'ACTIVE'; entitlements: Entitlement[] }).entitlements || []
+      : [],
+    source: isPremiumFromSuperwall ? 'superwall' : (isComplimentaryPro ? 'complimentary' : 'none'),
+    superwallUserId: superwallUser?.appUserId,
+  };
 
   return {
     isPremium,
     isLoading,
     subscriptionStatus,
+    subscriptionDetails,
+    entitlementsInfo,
     isComplimentaryPro, // Expose for debugging/admin purposes
+    superwallUserId: superwallUser?.appUserId, // Useful for looking up user in Superwall dashboard
   };
 }
 
@@ -122,36 +170,20 @@ export function usePremiumStatus() {
  */
 export function usePremiumFeature() {
   const { registerPlacement, state: paywallState } = usePlacement({
-    onPresent: (info) => {
-      console.log('Paywall presented:', info.name);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onPresent',message:'Paywall PRESENTED',data:{paywallName:info.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-    },
-    onDismiss: (info, result) => {
-      console.log('Paywall dismissed:', result);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onDismiss',message:'Paywall DISMISSED',data:{paywallName:info?.name,dismissResult:JSON.stringify(result)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
-      // #endregion
-    },
-    onSkip: (reason) => {
-      console.log('Paywall skipped:', reason);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onSkip',message:'Paywall SKIPPED - feature will run',data:{skipReason:JSON.stringify(reason)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-    },
-    onError: (error) => {
-      console.error('Paywall error:', error);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:usePremiumFeature:onError',message:'Paywall ERROR',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-    },
+    onPresent: (info) => console.log('Paywall presented:', info.name),
+    onDismiss: (info, result) => console.log('Paywall dismissed:', result),
+    onSkip: (reason) => console.log('Paywall skipped:', reason),
+    onError: (error) => console.error('Paywall error:', error),
   });
 
   /**
    * Request access to a premium feature
    * If user is subscribed, the feature callback runs immediately
    * If not subscribed, a paywall is shown
+   * 
+   * IMPORTANT: Ensure Feature Gating is set to "Gated" in the Superwall Dashboard
+   * for proper behavior. If set to "Non-Gated", the feature will run on dismiss
+   * regardless of purchase status.
    * 
    * @param placement - The placement name configured in Superwall dashboard
    * @param onFeatureAccess - Callback when user gets access (subscribed or passes paywall)
@@ -160,28 +192,121 @@ export function usePremiumFeature() {
     placement: string,
     onFeatureAccess?: () => void
   ) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:before',message:'Calling registerPlacement',data:{placement,hasCallback:!!onFeatureAccess},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     await registerPlacement({
       placement,
-      feature: () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:featureCallback',message:'FEATURE CALLBACK EXECUTED - Superwall granted access',data:{placement},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        if (onFeatureAccess) {
-          onFeatureAccess();
-        }
-      },
+      feature: onFeatureAccess,
     });
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:requestPremiumAccess:after',message:'registerPlacement completed',data:{placement},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
   }, [registerPlacement]);
 
   return {
     requestPremiumAccess,
     paywallState,
+  };
+}
+
+/**
+ * Hook to restore purchases directly without showing a paywall
+ * Use this for the "Restore Purchases" button in Settings
+ * 
+ * This is critical for sandbox/TestFlight testing where reinstalls
+ * reset the user identity. Calling restore will sync the Apple receipt
+ * and update subscription status.
+ */
+export function useRestorePurchases() {
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoreSuccess, setRestoreSuccess] = useState(false);
+  
+  // Use the placement hook with a restore-specific placement
+  // This will attempt to restore without necessarily showing a paywall
+  const { registerPlacement } = usePlacement({
+    onSkip: (reason) => {
+      console.log('[Restore] Paywall skipped (user may already be subscribed):', reason);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onSkip',message:'Restore paywall SKIPPED',data:{reason:JSON.stringify(reason)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      // If skipped with userIsSubscribed reason, restoration worked
+      setRestoreSuccess(true);
+    },
+    onDismiss: (info, result) => {
+      console.log('[Restore] Dismissed with result:', result);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onDismiss',message:'Restore paywall DISMISSED',data:{paywallName:info?.name,result:JSON.stringify(result)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (result.type === 'restored' || result.type === 'purchased') {
+        setRestoreSuccess(true);
+      }
+    },
+    onError: (error) => {
+      console.error('[Restore] Error:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onError',message:'Restore ERROR',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      setRestoreError(error);
+    },
+  });
+
+  /**
+   * Attempt to restore purchases
+   * This triggers Superwall to check for existing subscriptions
+   * and update the subscription status accordingly
+   */
+  const restorePurchases = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:start',message:'Restore purchases INITIATED',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    setIsRestoring(true);
+    setRestoreError(null);
+    setRestoreSuccess(false);
+
+    try {
+      // Use a dedicated restore placement
+      // Configure this in Superwall dashboard to show restore UI or check status
+      await registerPlacement({
+        placement: 'restore_purchases',
+        feature: () => {
+          // Feature runs if user has active subscription
+          console.log('[Restore] Subscription verified - user is subscribed');
+          // #region agent log
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:featureCallback',message:'Feature callback EXECUTED - user IS subscribed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          setRestoreSuccess(true);
+        },
+      });
+
+      // Wait a moment for status to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:complete',message:'Restore purchases COMPLETED',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      return { success: true };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to restore purchases';
+      setRestoreError(errorMessage);
+      console.error('[Restore] Failed:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:error',message:'Restore purchases FAILED',data:{error:errorMessage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsRestoring(false);
+    }
+  }, [registerPlacement]);
+
+  // Reset success state after 3 seconds
+  useEffect(() => {
+    if (restoreSuccess) {
+      const timeout = setTimeout(() => setRestoreSuccess(false), 3000);
+      return () => clearTimeout(timeout);
+    }
+  }, [restoreSuccess]);
+
+  return {
+    restorePurchases,
+    isRestoring,
+    restoreError,
+    restoreSuccess,
   };
 }
 

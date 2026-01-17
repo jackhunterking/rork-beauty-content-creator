@@ -31,12 +31,15 @@ import {
   X,
   Cloud,
   CloudOff,
+  Info,
+  Gift,
+  Star,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
-import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
+import { usePremiumStatus, usePremiumFeature, useRestorePurchases } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { submitFeedback } from "@/services/feedbackService";
 import { 
@@ -71,12 +74,23 @@ export default function SettingsScreen() {
   } = useAuthContext();
   
   // Subscription status from Superwall
-  const { isPremium, isLoading: isSubscriptionLoading } = usePremiumStatus();
+  const { 
+    isPremium, 
+    isLoading: isSubscriptionLoading,
+    subscriptionDetails,
+    isComplimentaryPro,
+    superwallUserId,
+  } = usePremiumStatus();
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
+  const { 
+    restorePurchases, 
+    isRestoring: isRestoringPurchases, 
+    restoreSuccess,
+    restoreError,
+  } = useRestorePurchases();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
   
   // Feedback state
   const [feedbackMessage, setFeedbackMessage] = useState('');
@@ -88,6 +102,15 @@ export default function SettingsScreen() {
   const [isLoadingBrandKit, setIsLoadingBrandKit] = useState(true);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSyncingBrandKit, setIsSyncingBrandKit] = useState(false);
+  
+  // Debug section state (hidden by default, shown via long press on version)
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:render',message:'Settings screen subscription state',data:{isPremium,isSubscriptionLoading,subscriptionDetails,isComplimentaryPro,superwallUserId,isAuthenticated:isAuthenticated},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,E'})}).catch(()=>{});
+  }, [isPremium, isSubscriptionLoading, subscriptionDetails, isComplimentaryPro, superwallUserId, isAuthenticated]);
+  // #endregion
 
   // Load Brand Kit on mount and when auth changes
   useEffect(() => {
@@ -205,18 +228,36 @@ export default function SettingsScreen() {
     });
   };
 
-  // Handle Restore Purchases
+  // Handle Restore Purchases - uses direct restore without showing paywall
   const handleRestorePurchases = async () => {
-    setIsRestoringPurchases(true);
-    try {
-      // Superwall handles restore via the paywall
-      await requestPremiumAccess('settings_restore', () => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:handleRestorePurchases:start',message:'Restore button TAPPED',data:{currentIsPremium:isPremium,currentStatus:subscriptionDetails.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    const result = await restorePurchases();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:handleRestorePurchases:result',message:'Restore result received',data:{result,isPremiumAfter:isPremium,statusAfter:subscriptionDetails.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+    // #endregion
+    
+    if (result.success) {
+      // Show success or wait for restoreSuccess state to update
+      if (isPremium) {
         Alert.alert('Success', 'Your purchases have been restored!');
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Failed to restore purchases. Please try again.');
-    } finally {
-      setIsRestoringPurchases(false);
+      } else {
+        // Check again after a moment - subscription status may update
+        setTimeout(() => {
+          if (subscriptionDetails.status === 'ACTIVE') {
+            Alert.alert('Success', 'Your purchases have been restored!');
+          } else {
+            Alert.alert(
+              'No Purchases Found',
+              'We couldn\'t find any previous purchases to restore. If you believe this is an error, please contact support.'
+            );
+          }
+        }, 1000);
+      }
+    } else {
+      Alert.alert('Error', result.error || 'Failed to restore purchases. Please try again.');
     }
   };
 
@@ -370,7 +411,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Subscription</Text>
             <View style={styles.card}>
               {isSubscribed ? (
-                // Active subscription view
+                // Active subscription view with details
                 <>
                   <View style={styles.subscriptionActive}>
                     <View style={styles.subscriptionIcon}>
@@ -385,23 +426,67 @@ export default function SettingsScreen() {
                       <Text style={styles.activeBadgeText}>Active</Text>
                     </View>
                   </View>
-                  <View style={styles.divider} />
-                  <TouchableOpacity 
-                    style={styles.settingRow} 
-                    onPress={handleManageSubscription}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.settingLeft}>
-                      <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
-                        <ExternalLink size={18} color={Colors.light.success} />
-                      </View>
-                      <View>
-                        <Text style={styles.settingLabel}>Manage Subscription</Text>
-                        <Text style={styles.settingHint}>View in App Store</Text>
-                      </View>
+                  
+                  {/* Subscription Details */}
+                  <View style={styles.subscriptionDetailsSection}>
+                    {/* Subscription Source */}
+                    <View style={styles.subscriptionDetailRow}>
+                      {isComplimentaryPro ? (
+                        <>
+                          <Gift size={16} color={Colors.light.accent} />
+                          <Text style={styles.subscriptionDetailText}>Complimentary Pro Access</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Star size={16} color={Colors.light.accent} />
+                          <Text style={styles.subscriptionDetailText}>App Store Subscription</Text>
+                        </>
+                      )}
                     </View>
-                    <ChevronRight size={20} color={Colors.light.textTertiary} />
-                  </TouchableOpacity>
+                    
+                    {/* Entitlements */}
+                    {subscriptionDetails.entitlements.length > 0 && (
+                      <View style={styles.subscriptionDetailRow}>
+                        <Check size={16} color={Colors.light.success} />
+                        <Text style={styles.subscriptionDetailText}>
+                          {subscriptionDetails.entitlements.map(e => e.id).join(', ')} entitlement
+                          {subscriptionDetails.entitlements.length > 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  <View style={styles.divider} />
+                  
+                  {/* Only show manage subscription for App Store subscriptions */}
+                  {!isComplimentaryPro && (
+                    <TouchableOpacity 
+                      style={styles.settingRow} 
+                      onPress={handleManageSubscription}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.settingLeft}>
+                        <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
+                          <ExternalLink size={18} color={Colors.light.success} />
+                        </View>
+                        <View>
+                          <Text style={styles.settingLabel}>Manage Subscription</Text>
+                          <Text style={styles.settingHint}>View in App Store</Text>
+                        </View>
+                      </View>
+                      <ChevronRight size={20} color={Colors.light.textTertiary} />
+                    </TouchableOpacity>
+                  )}
+                  
+                  {/* For complimentary pro, show info instead */}
+                  {isComplimentaryPro && (
+                    <View style={styles.complimentaryInfoRow}>
+                      <Info size={16} color={Colors.light.textTertiary} />
+                      <Text style={styles.complimentaryInfoText}>
+                        Your pro access was granted by an admin and doesn't require a subscription.
+                      </Text>
+                    </View>
+                  )}
                 </>
               ) : (
                 // Upgrade prompt view
@@ -756,12 +841,111 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* App Version */}
-          <View style={styles.versionContainer}>
+          {/* App Version - Long press to show debug info */}
+          <TouchableOpacity 
+            style={styles.versionContainer}
+            onLongPress={() => setShowDebugInfo(!showDebugInfo)}
+            activeOpacity={0.7}
+          >
             <Text style={styles.versionText}>
               Version {appVersion} ({buildNumber})
             </Text>
-          </View>
+            {!showDebugInfo && (
+              <Text style={styles.versionHint}>Long press for debug info</Text>
+            )}
+          </TouchableOpacity>
+          
+          {/* Debug Section - Hidden by default */}
+          {showDebugInfo && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Debug Info</Text>
+              <View style={styles.card}>
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>Subscription Status</Text>
+                  <Text style={[
+                    styles.debugValue,
+                    subscriptionDetails.status === 'ACTIVE' && styles.debugValueSuccess,
+                    subscriptionDetails.status === 'INACTIVE' && styles.debugValueError,
+                    subscriptionDetails.status === 'UNKNOWN' && styles.debugValueWarning,
+                  ]}>
+                    {subscriptionDetails.status}
+                  </Text>
+                </View>
+                
+                <View style={styles.debugDivider} />
+                
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>Source</Text>
+                  <Text style={styles.debugValue}>
+                    {subscriptionDetails.source === 'superwall' ? 'App Store' : 
+                     subscriptionDetails.source === 'complimentary' ? 'Admin Granted' : 'None'}
+                  </Text>
+                </View>
+                
+                <View style={styles.debugDivider} />
+                
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>isPremium</Text>
+                  <Text style={[
+                    styles.debugValue, 
+                    isPremium ? styles.debugValueSuccess : styles.debugValueError
+                  ]}>
+                    {isPremium ? 'true' : 'false'}
+                  </Text>
+                </View>
+                
+                <View style={styles.debugDivider} />
+                
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>isComplimentaryPro</Text>
+                  <Text style={styles.debugValue}>{isComplimentaryPro ? 'true' : 'false'}</Text>
+                </View>
+                
+                <View style={styles.debugDivider} />
+                
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>Entitlements</Text>
+                  <Text style={styles.debugValue}>
+                    {subscriptionDetails.entitlements.length > 0 
+                      ? subscriptionDetails.entitlements.map(e => e.id).join(', ')
+                      : 'None'}
+                  </Text>
+                </View>
+                
+                {superwallUserId && (
+                  <>
+                    <View style={styles.debugDivider} />
+                    <View style={styles.debugRow}>
+                      <Text style={styles.debugLabel}>Superwall User ID</Text>
+                      <Text style={styles.debugValueSmall} numberOfLines={1} ellipsizeMode="middle">
+                        {superwallUserId}
+                      </Text>
+                    </View>
+                  </>
+                )}
+                
+                <View style={styles.debugDivider} />
+                
+                <View style={styles.debugRow}>
+                  <Text style={styles.debugLabel}>Auth Status</Text>
+                  <Text style={[
+                    styles.debugValue, 
+                    isAuthenticated ? styles.debugValueSuccess : styles.debugValueWarning
+                  ]}>
+                    {isAuthenticated ? 'Signed In' : 'Not Signed In'}
+                  </Text>
+                </View>
+                
+                <TouchableOpacity 
+                  style={styles.debugHideButton}
+                  onPress={() => setShowDebugInfo(false)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.debugHideButtonText}>Hide Debug Info</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -950,6 +1134,36 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.light.success,
   },
+  
+  // Subscription details styles
+  subscriptionDetailsSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  subscriptionDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subscriptionDetailText: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+  },
+  complimentaryInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  complimentaryInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.light.textTertiary,
+    lineHeight: 18,
+  },
+  
   featuresList: {
     paddingHorizontal: 16,
     paddingBottom: 12,
@@ -1080,6 +1294,62 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 13,
     color: Colors.light.textTertiary,
+  },
+  versionHint: {
+    fontSize: 11,
+    color: Colors.light.textTertiary,
+    marginTop: 4,
+    opacity: 0.6,
+  },
+  
+  // Debug section styles
+  debugRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  debugLabel: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  debugValue: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+  },
+  debugValueSmall: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+    maxWidth: 150,
+  },
+  debugValueSuccess: {
+    color: Colors.light.success,
+  },
+  debugValueError: {
+    color: Colors.light.error,
+  },
+  debugValueWarning: {
+    color: '#FF9800',
+  },
+  debugDivider: {
+    height: 1,
+    backgroundColor: Colors.light.borderLight,
+    marginHorizontal: 16,
+  },
+  debugHideButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.borderLight,
+  },
+  debugHideButtonText: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    fontWeight: '500' as const,
   },
   
   // Feedback styles

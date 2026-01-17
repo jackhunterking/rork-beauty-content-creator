@@ -72,9 +72,6 @@ export function OverlayActionBar({
 }: OverlayActionBarProps) {
   // Handle Date overlay button press
   const handleAddDate = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'OverlayActionBar.tsx:handleAddDate',message:'Date button pressed',data:{isPremium,willRequestPremium:!isPremium},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     if (!isPremium) {
       // Pass callback to add overlay after subscription is granted
       onRequestPremium('add_date_overlay', () => onAddOverlay('date'));
