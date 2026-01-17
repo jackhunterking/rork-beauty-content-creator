@@ -104,9 +104,16 @@ export async function signInWithApple(): Promise<AuthResult> {
     }
 
     // Track registration completion for Meta Ads attribution
+    console.log('[Auth] Checking if should track Meta registration:', { 
+      platform: Platform.OS, 
+      hasUser: !!data.user,
+      userId: data.user?.id 
+    });
     if (Platform.OS === 'ios' && data.user) {
+      console.log('[Auth] ✓ Calling Meta trackRegistrationComplete for Apple Sign In');
       trackRegistrationComplete('apple');
       setUserId(data.user.id);
+      console.log('[Auth] ✓ Meta user ID set:', data.user.id);
     }
 
     const profile = await getCurrentProfile();
@@ -157,9 +164,16 @@ export async function signInWithGoogle(): Promise<AuthResult> {
     
     // Track registration completion for Meta Ads attribution
     const { data: { user } } = await supabase.auth.getUser();
+    console.log('[Auth] Checking if should track Meta registration (Google):', { 
+      platform: Platform.OS, 
+      hasUser: !!user,
+      userId: user?.id 
+    });
     if (Platform.OS === 'ios' && user) {
+      console.log('[Auth] ✓ Calling Meta trackRegistrationComplete for Google Sign In');
       trackRegistrationComplete('google');
       setUserId(user.id);
+      console.log('[Auth] ✓ Meta user ID set:', user.id);
     }
     
     const profile = await getCurrentProfile();
@@ -234,9 +248,17 @@ export async function signUpWithEmail(
     }
 
     // Track registration completion for Meta Ads attribution (only if session created)
+    console.log('[Auth] Checking if should track Meta registration (Email):', { 
+      platform: Platform.OS, 
+      hasUser: !!data.user,
+      hasSession: !!data.session,
+      userId: data.user?.id 
+    });
     if (Platform.OS === 'ios' && data.user && data.session) {
+      console.log('[Auth] ✓ Calling Meta trackRegistrationComplete for Email Sign Up');
       trackRegistrationComplete('email');
       setUserId(data.user.id);
+      console.log('[Auth] ✓ Meta user ID set:', data.user.id);
     }
 
     const profile = await getCurrentProfile();

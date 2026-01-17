@@ -21,19 +21,64 @@ import { Platform } from 'react-native';
  */
 export async function initializeFacebookSDK(): Promise<void> {
   try {
+    console.log('[MetaAnalytics] === INITIALIZING FACEBOOK SDK ===');
+    
     // Initialize the SDK
     await Settings.initializeSDK();
+    console.log('[MetaAnalytics] SDK initialized');
     
     // Enable automatic logging of app events
     await Settings.setAutoLogAppEventsEnabled(true);
+    console.log('[MetaAnalytics] Auto log app events enabled');
     
     // Enable advertiser ID collection (works without ATT, but limited)
     // Note: For full tracking, ATT permission would be needed
     await Settings.setAdvertiserIDCollectionEnabled(true);
+    console.log('[MetaAnalytics] Advertiser ID collection enabled');
     
-    console.log('[MetaAnalytics] Facebook SDK initialized successfully');
+    // Log app activation - this sends the "app install" / "app open" event
+    AppEventsLogger.logEvent('fb_mobile_activate_app');
+    console.log('[MetaAnalytics] App activation event sent');
+    
+    // Flush to ensure events are sent immediately
+    AppEventsLogger.flush();
+    console.log('[MetaAnalytics] Events flushed');
+    
+    console.log('[MetaAnalytics] ✓ Facebook SDK initialized successfully');
+    console.log('[MetaAnalytics] === INITIALIZATION COMPLETE ===');
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to initialize Facebook SDK:', error);
+    console.error('[MetaAnalytics] ✗ Failed to initialize Facebook SDK:', error);
+    console.error('[MetaAnalytics] Error details:', JSON.stringify(error, null, 2));
+  }
+}
+
+/**
+ * Send a test event to verify SDK is working
+ * Use this to trigger events for Facebook Events Manager testing
+ */
+export function sendTestEvent(): void {
+  console.log('[MetaAnalytics] === SENDING TEST EVENT ===');
+  try {
+    // Send a ViewContent event as a test
+    AppEventsLogger.logEvent(
+      AppEventsLogger.AppEvents.ViewedContent,
+      {
+        [AppEventsLogger.AppEventParams.ContentType]: 'test',
+        [AppEventsLogger.AppEventParams.ContentID]: 'test_content_' + Date.now(),
+      }
+    );
+    console.log('[MetaAnalytics] ViewContent test event sent');
+    
+    // Also send app activation
+    AppEventsLogger.logEvent('fb_mobile_activate_app');
+    console.log('[MetaAnalytics] App activation event sent');
+    
+    // Flush immediately
+    AppEventsLogger.flush();
+    console.log('[MetaAnalytics] ✓ Test events flushed to Facebook');
+    console.log('[MetaAnalytics] === TEST EVENT COMPLETE ===');
+  } catch (error) {
+    console.error('[MetaAnalytics] ✗ Failed to send test event:', error);
   }
 }
 
@@ -45,18 +90,30 @@ export async function initializeFacebookSDK(): Promise<void> {
 export function trackRegistrationComplete(
   method: 'apple' | 'google' | 'email'
 ): void {
+  console.log('[MetaAnalytics] === REGISTRATION TRACKING START ===');
+  console.log('[MetaAnalytics] Attempting to track registration for method:', method);
+  
   try {
+    // Log the event name we're using
+    const eventName = AppEventsLogger.AppEvents.CompletedRegistration;
+    console.log('[MetaAnalytics] Using event name:', eventName);
+    
     // Use Facebook's standard event for registration
     AppEventsLogger.logEvent(
-      AppEventsLogger.AppEvents.CompletedRegistration,
+      eventName,
       {
         [AppEventsLogger.AppEventParams.RegistrationMethod]: method,
       }
     );
     
-    console.log('[MetaAnalytics] Registration event tracked:', method);
+    // Also flush events to ensure they're sent immediately
+    AppEventsLogger.flush();
+    
+    console.log('[MetaAnalytics] ✓ Registration event tracked successfully:', method);
+    console.log('[MetaAnalytics] === REGISTRATION TRACKING END ===');
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track registration:', error);
+    console.error('[MetaAnalytics] ✗ Failed to track registration:', error);
+    console.error('[MetaAnalytics] Error details:', JSON.stringify(error, null, 2));
   }
 }
 
@@ -184,6 +241,7 @@ export function clearUserId(): void {
 
 export default {
   initializeFacebookSDK,
+  sendTestEvent,
   trackRegistrationComplete,
   trackPurchase,
   trackSubscriptionStart,
