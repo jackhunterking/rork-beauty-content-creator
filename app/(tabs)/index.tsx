@@ -113,14 +113,14 @@ export default function CreateScreen() {
       await requestPremiumAccess('template_premium', () => {
         // User subscribed - proceed to editor
         selectTemplate(template);
-        router.push('/editor');
+        router.push('/editor-v2');
       });
       return;
     }
     
     // User is premium or template is free - proceed normally
     selectTemplate(template);
-    router.push('/editor');
+    router.push('/editor-v2');
   }, [selectTemplate, router, isPremium, requestPremiumAccess]);
 
   const handleToggleFavourite = useCallback((e: any, templateId: string) => {

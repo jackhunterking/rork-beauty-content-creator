@@ -2,7 +2,7 @@
  * Editor V2 - Professional Canvas Editor
  * 
  * Instagram/Photoshop-inspired canvas editor with:
- * - Direct manipulation (tap to select, pinch/pan to transform)
+ * - Uses TemplateCanvas with Templated.io rendering (like old editor)
  * - Bottom tool dock for adding elements
  * - Contextual toolbars based on selection
  * - AI enhancement panel (scaffolded for future)
@@ -16,35 +16,33 @@ import {
   View,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   Alert,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet from '@gorhom/bottom-sheet';
-import { Image } from 'expo-image';
 import { X, Check } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
-import { extractSlots, scaleSlots } from '@/utils/slotParser';
-import { processImageForAdjustment, DEFAULT_ADJUSTMENTS } from '@/utils/imageProcessing';
+import { TemplateCanvas } from '@/components/TemplateCanvas';
+import { extractSlots, getSlotById, allSlotsCaptured, hasValidCapturedImage, scaleSlots } from '@/utils/slotParser';
+import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
+import { renderPreview } from '@/services/renderService';
 import {
   ToolDock,
   ContextualToolbar,
   AIEnhancePanel,
-  CameraSheet,
-  EditableSlot,
+  CropOverlay,
+  CropToolbar,
 } from '@/components/editor-v2';
 import {
   ToolType,
   SelectionState,
-  TransformState,
-  SlotWithTransform,
   DEFAULT_SELECTION,
-  DEFAULT_TRANSFORM,
   AIEnhancementType,
 } from '@/components/editor-v2/types';
 import {
@@ -52,8 +50,6 @@ import {
   createDateOverlay,
   Overlay,
 } from '@/types/overlays';
-
-const CANVAS_PADDING = 16;
 
 export default function EditorV2Screen() {
   const router = useRouter();
@@ -64,69 +60,237 @@ export default function EditorV2Screen() {
   const template = currentProject.template;
   const capturedImages = currentProject.capturedImages;
 
-  // Window dimensions for canvas sizing
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-
   // Bottom sheet refs
-  const cameraSheetRef = useRef<BottomSheet>(null);
   const aiPanelRef = useRef<BottomSheet>(null);
+
+  // Preview rendering state (like old editor)
+  const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Editor state
   const [activeTool, setActiveTool] = useState<ToolType>('photo');
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
-  const [slotTransforms, setSlotTransforms] = useState<Record<string, TransformState>>({});
   const [overlays, setOverlays] = useState<Overlay[]>([]);
-  const [capturingSlotId, setCapturingSlotId] = useState<string | null>(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [aiProcessingType, setAIProcessingType] = useState<AIEnhancementType | null>(null);
 
-  // Calculate canvas dimensions
-  const canvasDimensions = useMemo(() => {
-    if (!template) return { width: 0, height: 0, scale: 1 };
+  // Crop mode state
+  const [isCropMode, setIsCropMode] = useState(false);
+  const [cropSlotId, setCropSlotId] = useState<string | null>(null);
+  const [pendingRotation, setPendingRotation] = useState(0);
+  const [pendingCropAdjustments, setPendingCropAdjustments] = useState<{
+    scale: number;
+    translateX: number;
+    translateY: number;
+    rotation: number;
+  } | null>(null);
 
-    const maxWidth = screenWidth - CANVAS_PADDING * 2;
-    const maxHeight = screenHeight * 0.6; // Leave room for toolbar
-    const aspectRatio = template.canvasWidth / template.canvasHeight;
+  // Track previous captured images to detect changes (URI and adjustments)
+  const prevCapturedImagesRef = useRef<Record<string, { uri: string; adjustments?: any } | null>>({});
 
-    let width = maxWidth;
-    let height = width / aspectRatio;
+  // Window dimensions for canvas sizing
+  const { width: screenWidth } = useWindowDimensions();
+  const CANVAS_PADDING = 20;
 
-    if (height > maxHeight) {
-      height = maxHeight;
-      width = height * aspectRatio;
-    }
-
-    const scale = width / template.canvasWidth;
-
-    return { width, height, scale };
-  }, [template, screenWidth, screenHeight]);
-
-  // Extract and scale slots
+  // Extract slots from template
   const slots = useMemo(() => {
     if (!template) return [];
     return extractSlots(template);
   }, [template]);
 
-  // Create SlotWithTransform objects
-  const slotsWithTransform = useMemo((): SlotWithTransform[] => {
-    return slots.map(slot => ({
-      ...slot,
-      media: capturedImages[slot.layerId] || null,
-      transform: slotTransforms[slot.layerId] || DEFAULT_TRANSFORM,
-      aiEnhanced: false, // TODO: Track AI enhancement state
-    }));
-  }, [slots, capturedImages, slotTransforms]);
+  // Calculate canvas display dimensions
+  const canvasDimensions = useMemo(() => {
+    if (!template) return { width: 0, height: 0 };
+    
+    const maxCanvasWidth = screenWidth - CANVAS_PADDING * 2;
+    const aspectRatio = template.canvasWidth / template.canvasHeight;
+    
+    let width = maxCanvasWidth;
+    let height = width / aspectRatio;
+    
+    // If too tall, constrain by height
+    const maxHeight = screenWidth * 1.2;
+    if (height > maxHeight) {
+      height = maxHeight;
+      width = height * aspectRatio;
+    }
+    
+    return { width, height };
+  }, [template, screenWidth]);
 
-  // Preview URL for the template background
-  const previewUrl = useMemo(() => {
-    if (!template) return null;
-    return template.templatedPreviewUrl || template.thumbnail;
-  }, [template]);
+  // Scale slots to display dimensions (for crop overlay)
+  const scaledSlots = useMemo(() => {
+    if (!template) return [];
+    return scaleSlots(
+      slots,
+      template.canvasWidth,
+      template.canvasHeight,
+      canvasDimensions.width,
+      canvasDimensions.height
+    );
+  }, [template, slots, canvasDimensions]);
+
+  // Get crop slot data
+  const cropSlotData = useMemo(() => {
+    if (!cropSlotId || !isCropMode) return null;
+    
+    const scaledSlot = scaledSlots.find(s => s.layerId === cropSlotId);
+    const image = capturedImages[cropSlotId];
+    
+    if (!scaledSlot || !image) return null;
+    
+    return {
+      slot: scaledSlot,
+      image,
+    };
+  }, [cropSlotId, isCropMode, scaledSlots, capturedImages]);
 
   // Check if all slots have images
   const allSlotsFilled = useMemo(() => {
-    return slots.every(slot => capturedImages[slot.layerId]?.uri);
+    return allSlotsCaptured(slots, capturedImages);
   }, [slots, capturedImages]);
+
+  // Trigger preview render when photos change (like old editor)
+  const triggerPreviewRender = useCallback(async () => {
+    if (!template?.templatedId) return;
+    
+    // Filter images that have URIs
+    const imagesToProcess = Object.entries(capturedImages).filter(
+      ([_, media]) => media?.uri
+    );
+    
+    if (imagesToProcess.length === 0) {
+      setRenderedPreviewUri(null);
+      setPreviewError(null);
+      return;
+    }
+    
+    setIsRendering(true);
+    setPreviewError(null);
+    
+    try {
+      // Apply adjustments to each image before uploading
+      const photosToRender: Record<string, string> = {};
+      
+      for (const [slotId, media] of imagesToProcess) {
+        if (!media) continue;
+        
+        const slot = getSlotById(slots, slotId);
+        if (!slot) {
+          photosToRender[slotId] = media.uri;
+          continue;
+        }
+        
+        // Check if image has adjustments that need to be applied
+        const adjustments = media.adjustments;
+        const hasNonDefaultAdjustments = adjustments && (
+          adjustments.translateX !== 0 ||
+          adjustments.translateY !== 0 ||
+          adjustments.scale !== 1.0 ||
+          (adjustments.rotation !== undefined && adjustments.rotation !== 0)
+        );
+        
+        if (hasNonDefaultAdjustments && adjustments) {
+          try {
+            const processed = await applyAdjustmentsAndCrop(
+              media.uri,
+              media.width,
+              media.height,
+              slot.width,
+              slot.height,
+              adjustments
+            );
+            photosToRender[slotId] = processed.uri;
+          } catch (adjustError) {
+            console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
+            photosToRender[slotId] = media.uri;
+          }
+        } else {
+          photosToRender[slotId] = media.uri;
+        }
+      }
+      
+      const result = await renderPreview({
+        templateId: template.templatedId,
+        slotImages: photosToRender,
+        hideWatermark: isPremium,
+      });
+      
+      if (result.success && result.renderUrl) {
+        setRenderedPreviewUri(result.renderUrl);
+        setPreviewError(null);
+      } else {
+        console.warn('[EditorV2] Preview render failed:', result.error);
+        setPreviewError(result.error || 'Could not generate preview');
+      }
+    } catch (error) {
+      console.error('[EditorV2] Preview render error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Something went wrong';
+      setPreviewError(errorMessage);
+    } finally {
+      setIsRendering(false);
+    }
+  }, [template?.templatedId, capturedImages, slots, isPremium]);
+
+  // Helper to serialize adjustments for comparison
+  const serializeAdjustments = useCallback((adj: any) => {
+    if (!adj) return '';
+    return `${adj.translateX || 0}_${adj.translateY || 0}_${adj.scale || 1}_${adj.rotation || 0}`;
+  }, []);
+
+  // Reactive preview rendering when images or adjustments change
+  useEffect(() => {
+    if (!template?.templatedId) return;
+    
+    const prevImages = prevCapturedImagesRef.current;
+    const currentImages = capturedImages;
+    
+    let hasNewOrChangedImage = false;
+    
+    for (const slotId of Object.keys(currentImages)) {
+      const current = currentImages[slotId];
+      const prev = prevImages[slotId];
+      const currentUri = current?.uri;
+      const prevUri = prev?.uri;
+      
+      // Check if URI changed (new image)
+      if (currentUri && currentUri !== prevUri) {
+        hasNewOrChangedImage = true;
+        break;
+      }
+      
+      // Check if adjustments changed (resize/rotate)
+      if (currentUri && current?.adjustments) {
+        const currentAdj = serializeAdjustments(current.adjustments);
+        const prevAdj = serializeAdjustments(prev?.adjustments);
+        if (currentAdj !== prevAdj) {
+          hasNewOrChangedImage = true;
+          break;
+        }
+      }
+    }
+    
+    // Update ref with both URI and adjustments
+    const newPrevImages: Record<string, { uri: string; adjustments?: any } | null> = {};
+    for (const [slotId, media] of Object.entries(currentImages)) {
+      newPrevImages[slotId] = media ? { uri: media.uri, adjustments: media.adjustments } : null;
+    }
+    prevCapturedImagesRef.current = newPrevImages;
+    
+    if (hasNewOrChangedImage) {
+      console.log('[EditorV2] Image or adjustment change detected, triggering preview render');
+      triggerPreviewRender();
+    }
+  }, [capturedImages, template?.templatedId, triggerPreviewRender, serializeAdjustments]);
+
+  // Handle preview error (trigger re-render)
+  const handlePreviewError = useCallback(() => {
+    console.log('[EditorV2] Preview failed to load, triggering re-render');
+    setRenderedPreviewUri(null);
+    setPreviewError('Preview expired');
+    triggerPreviewRender();
+  }, [triggerPreviewRender]);
 
   // Handle tool selection
   const handleToolSelect = useCallback((tool: ToolType) => {
@@ -170,23 +334,27 @@ export default function EditorV2Screen() {
     setActiveTool(tool);
   }, [isPremium, requestPremiumAccess]);
 
-  // Handle slot press
+  // Handle slot press (from TemplateCanvas)
   const handleSlotPress = useCallback((slotId: string) => {
-    const slot = slotsWithTransform.find(s => s.layerId === slotId);
+    // Always deselect overlay when interacting with slots
+    if (selection.id) {
+      setSelection(DEFAULT_SELECTION);
+    }
+
+    const hasImage = hasValidCapturedImage(slotId, capturedImages);
     
-    if (!slot?.media?.uri) {
-      // Empty slot - open camera
-      setCapturingSlotId(slotId);
-      cameraSheetRef.current?.snapToIndex(0);
+    if (!hasImage) {
+      // Empty slot - navigate to fullscreen capture screen
+      router.push(`/capture/${slotId}`);
     } else {
-      // Has image - select it
+      // Has image - select it for contextual actions
       setSelection({
         type: 'slot',
         id: slotId,
         isTransforming: false,
       });
     }
-  }, [slotsWithTransform]);
+  }, [capturedImages, selection.id, router]);
 
   // Handle canvas tap (deselect)
   const handleCanvasTap = useCallback(() => {
@@ -195,59 +363,6 @@ export default function EditorV2Screen() {
     }
   }, [selection]);
 
-  // Handle transform change
-  const handleTransformChange = useCallback((slotId: string, transform: Partial<TransformState>) => {
-    setSlotTransforms(prev => ({
-      ...prev,
-      [slotId]: {
-        ...(prev[slotId] || DEFAULT_TRANSFORM),
-        ...transform,
-      },
-    }));
-  }, []);
-
-  // Handle photo capture from camera sheet
-  const handlePhotoCapture = useCallback(async (uri: string, width: number, height: number) => {
-    if (!capturingSlotId || !template) return;
-
-    const slot = slots.find(s => s.layerId === capturingSlotId);
-    if (!slot) return;
-
-    try {
-      // Process image for the slot
-      const processed = await processImageForAdjustment(
-        uri,
-        width,
-        height,
-        slot.width,
-        slot.height
-      );
-
-      // Set the captured image
-      setCapturedImage(capturingSlotId, {
-        uri: processed.uri,
-        width: processed.width,
-        height: processed.height,
-        adjustments: DEFAULT_ADJUSTMENTS,
-      });
-
-      // Select the newly added image
-      setSelection({
-        type: 'slot',
-        id: capturingSlotId,
-        isTransforming: false,
-      });
-    } catch (error) {
-      console.error('Failed to process captured image:', error);
-    }
-
-    setCapturingSlotId(null);
-  }, [capturingSlotId, template, slots, setCapturedImage]);
-
-  // Handle camera sheet close
-  const handleCameraClose = useCallback(() => {
-    setCapturingSlotId(null);
-  }, []);
 
   // Handle AI enhancement selection
   const handleAIEnhancement = useCallback((type: AIEnhancementType) => {
@@ -273,27 +388,101 @@ export default function EditorV2Screen() {
     aiPanelRef.current?.close();
   }, []);
 
-  // Contextual toolbar actions
+  // Canva-style contextual toolbar actions
   const handlePhotoReplace = useCallback(() => {
     if (selection.id) {
-      setCapturingSlotId(selection.id);
-      cameraSheetRef.current?.snapToIndex(0);
+      // Navigate to fullscreen capture screen to replace the image
+      router.push(`/capture/${selection.id}`);
     }
-  }, [selection]);
+  }, [selection, router]);
 
-  const handlePhotoAdjust = useCallback(() => {
-    // Already in adjust mode when selected
-    Alert.alert('Adjust', 'Pinch to zoom, drag to pan, two-finger rotate');
+  const handlePhotoResize = useCallback(() => {
+    if (selection.id && capturedImages[selection.id]) {
+      // Enter inline resize mode (Canva-style crop + rotate)
+      const image = capturedImages[selection.id];
+      setCropSlotId(selection.id);
+      setIsCropMode(true);
+      // Initialize rotation from existing adjustments
+      setPendingRotation(image.adjustments?.rotation || 0);
+      // Clear selection while in resize mode
+      setSelection(DEFAULT_SELECTION);
+    }
+  }, [selection, capturedImages]);
+
+  // Resize mode handlers (crop + rotate)
+  const handleResizeCancel = useCallback(() => {
+    setIsCropMode(false);
+    setCropSlotId(null);
+    setPendingCropAdjustments(null);
+    setPendingRotation(0);
+  }, []);
+
+  const handleResizeDone = useCallback(() => {
+    if (cropSlotId) {
+      const currentImage = capturedImages[cropSlotId];
+      if (currentImage) {
+        // Merge pending adjustments with rotation
+        const newAdjustments = {
+          ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
+          ...(pendingCropAdjustments || {}),
+          rotation: pendingRotation,
+        };
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleResizeDone',message:'Saving adjustments',data:{imageWidth:currentImage.width,imageHeight:currentImage.height,newAdjustments,pendingCropAdjustments,pendingRotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        // Update the image with new adjustments
+        setCapturedImage(cropSlotId, {
+          ...currentImage,
+          adjustments: newAdjustments,
+        });
+      }
+    }
+    setIsCropMode(false);
+    setCropSlotId(null);
+    setPendingCropAdjustments(null);
+    setPendingRotation(0);
+    // Trigger re-render after resize
+    triggerPreviewRender();
+  }, [cropSlotId, pendingCropAdjustments, pendingRotation, capturedImages, setCapturedImage, triggerPreviewRender]);
+
+  const handleCropAdjustmentChange = useCallback((adjustments: {
+    scale: number;
+    translateX: number;
+    translateY: number;
+  }) => {
+    setPendingCropAdjustments({
+      ...adjustments,
+      rotation: pendingRotation,
+    });
+  }, [pendingRotation]);
+
+  const handleRotationChange = useCallback((rotation: number) => {
+    setPendingRotation(rotation);
   }, []);
 
   const handlePhotoAI = useCallback(() => {
     aiPanelRef.current?.snapToIndex(0);
   }, []);
 
-  const handlePhotoRemove = useCallback(() => {
+  const handlePhotoDelete = useCallback(() => {
     if (selection.id) {
-      setCapturedImage(selection.id, null);
-      setSelection(DEFAULT_SELECTION);
+      Alert.alert(
+        'Delete Photo',
+        'Are you sure you want to remove this photo?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => {
+              setCapturedImage(selection.id!, null);
+              setSelection(DEFAULT_SELECTION);
+            },
+          },
+        ]
+      );
     }
   }, [selection, setCapturedImage]);
 
@@ -323,26 +512,14 @@ export default function EditorV2Screen() {
       return;
     }
 
+    if (!renderedPreviewUri) {
+      Alert.alert('Processing', 'Please wait for the preview to finish rendering.');
+      return;
+    }
+
     // TODO: Navigate to export/publish
     Alert.alert('Success', 'Ready to export! (Coming soon)');
-  }, [allSlotsFilled]);
-
-  // Get selected slot for contextual toolbar positioning
-  const selectedSlot = useMemo(() => {
-    if (selection.type === 'slot' && selection.id) {
-      return slotsWithTransform.find(s => s.layerId === selection.id);
-    }
-    return null;
-  }, [selection, slotsWithTransform]);
-
-  // Calculate contextual toolbar anchor position
-  const contextualToolbarAnchorY = useMemo(() => {
-    if (!selectedSlot) return 0;
-    const scaledY = selectedSlot.y * canvasDimensions.scale;
-    const scaledHeight = selectedSlot.height * canvasDimensions.scale;
-    // Position below the slot + some margin for handles
-    return scaledY + scaledHeight + 80; // 80px = header + canvas padding + handle offset
-  }, [selectedSlot, canvasDimensions.scale]);
+  }, [allSlotsFilled, renderedPreviewUri]);
 
   // Redirect if no template
   useEffect(() => {
@@ -354,11 +531,6 @@ export default function EditorV2Screen() {
   if (!template) {
     return null;
   }
-
-  // Get label for capturing slot
-  const capturingSlotLabel = capturingSlotId
-    ? slots.find(s => s.layerId === capturingSlotId)?.label || 'Photo'
-    : 'Photo';
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -397,64 +569,74 @@ export default function EditorV2Screen() {
         </View>
 
         {/* Canvas Area */}
-        <Pressable style={styles.canvasArea} onPress={handleCanvasTap}>
-          <View
-            style={[
-              styles.canvas,
-              {
-                width: canvasDimensions.width,
-                height: canvasDimensions.height,
-              },
-            ]}
-          >
-            {/* Template Background */}
-            <Image
-              source={{ uri: previewUrl }}
-              style={styles.templateBackground}
-              contentFit="cover"
-            />
-
-            {/* Editable Slots */}
-            {slotsWithTransform.map(slot => (
-              <EditableSlot
-                key={slot.layerId}
-                slot={slot}
-                isSelected={selection.id === slot.layerId}
-                canvasScale={canvasDimensions.scale}
-                onPress={() => handleSlotPress(slot.layerId)}
-                onTransformChange={handleTransformChange}
-              />
-            ))}
-          </View>
-
-          {/* Contextual Toolbar */}
-          <ContextualToolbar
-            selectionType={selection.type}
-            visible={!!selection.id}
-            anchorY={contextualToolbarAnchorY}
+        <Pressable 
+          style={styles.canvasArea} 
+          onPress={isCropMode ? undefined : handleCanvasTap}
+          disabled={isCropMode}
+        >
+          {/* TemplateCanvas handles rendering, slot targets, selection, and crop mode */}
+          <TemplateCanvas
+            template={template}
+            onSlotPress={isCropMode ? () => {} : handleSlotPress}
+            renderedPreviewUri={renderedPreviewUri}
+            isRendering={isRendering}
+            onPreviewError={handlePreviewError}
             isPremium={isPremium}
-            onPhotoReplace={handlePhotoReplace}
-            onPhotoAdjust={handlePhotoAdjust}
-            onPhotoAI={handlePhotoAI}
-            onPhotoRemove={handlePhotoRemove}
+            selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
+            cropMode={isCropMode && cropSlotData ? {
+              slotId: cropSlotId!,
+              imageUri: cropSlotData.image.uri,
+              imageWidth: cropSlotData.image.width,
+              imageHeight: cropSlotData.image.height,
+              initialScale: cropSlotData.image.adjustments?.scale || 1,
+              initialTranslateX: cropSlotData.image.adjustments?.translateX || 0,
+              initialTranslateY: cropSlotData.image.adjustments?.translateY || 0,
+              rotation: pendingRotation,
+              onAdjustmentChange: handleCropAdjustmentChange,
+            } : null}
           />
+          
+          {/* Preview error indicator */}
+          {previewError && !isRendering && !isCropMode && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>Preview failed to load</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={triggerPreviewRender}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Pressable>
 
-        {/* Bottom Tool Dock */}
-        <ToolDock
-          activeTool={activeTool}
-          onToolSelect={handleToolSelect}
-          isPremium={isPremium}
-        />
+        {/* Bottom toolbar - changes based on mode */}
+        {isCropMode ? (
+          <CropToolbar
+            onCancel={handleResizeCancel}
+            onDone={handleResizeDone}
+            rotation={pendingRotation}
+            onRotationChange={handleRotationChange}
+          />
+        ) : selection.id ? (
+          <ContextualToolbar
+            selectionType={selection.type}
+            visible={true}
+            isPremium={isPremium}
+            onPhotoReplace={handlePhotoReplace}
+            onPhotoResize={handlePhotoResize}
+            onPhotoAI={handlePhotoAI}
+            onPhotoDelete={handlePhotoDelete}
+            onDeselect={() => setSelection(DEFAULT_SELECTION)}
+          />
+        ) : (
+          <ToolDock
+            activeTool={activeTool}
+            onToolSelect={handleToolSelect}
+            isPremium={isPremium}
+          />
+        )}
       </SafeAreaView>
-
-      {/* Camera Sheet */}
-      <CameraSheet
-        bottomSheetRef={cameraSheetRef}
-        slotLabel={capturingSlotLabel}
-        onCapture={handlePhotoCapture}
-        onClose={handleCameraClose}
-      />
 
       {/* AI Enhancement Panel */}
       <AIEnhancePanel
@@ -512,23 +694,38 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: CANVAS_PADDING,
+    paddingHorizontal: 20,
   },
-  canvas: {
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: Colors.light.surfaceSecondary,
-    // Shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
-    // Border
+  errorBanner: {
+    position: 'absolute',
+    bottom: 16,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.light.glassEdge,
+    borderColor: 'rgba(255, 59, 48, 0.2)',
   },
-  templateBackground: {
-    ...StyleSheet.absoluteFillObject,
+  errorText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgb(255, 59, 48)',
+  },
+  retryButton: {
+    backgroundColor: 'rgb(255, 59, 48)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

@@ -28,7 +28,80 @@ export const DEFAULT_ADJUSTMENTS = {
   translateX: 0,
   translateY: 0,
   scale: 1.0,
+  rotation: 0,
 };
+
+/**
+ * Calculate the minimum scale required to cover a slot when image is rotated.
+ * 
+ * When an image is rotated, its effective coverage area changes because the
+ * rotated rectangle's bounding box is larger but the actual image content
+ * that covers the slot is smaller. This ensures no empty corners appear.
+ * 
+ * @param imageAspectRatio - Aspect ratio of the base image (width/height)
+ * @param slotAspectRatio - Aspect ratio of the slot (width/height)
+ * @param rotationDegrees - Rotation angle in degrees
+ * @returns Minimum scale factor required
+ */
+export function calculateMinScaleForRotation(
+  imageAspectRatio: number,
+  slotAspectRatio: number,
+  rotationDegrees: number
+): number {
+  // Normalize rotation to 0-90 range (symmetrical for our purposes)
+  const normalizedRotation = Math.abs(rotationDegrees) % 180;
+  const effectiveRotation = normalizedRotation > 90 ? 180 - normalizedRotation : normalizedRotation;
+  
+  // No rotation means base scale is fine
+  if (effectiveRotation === 0) {
+    return MIN_ADJUSTMENT_SCALE;
+  }
+  
+  const radians = effectiveRotation * (Math.PI / 180);
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  
+  // When an image is rotated and we need to crop an axis-aligned rectangle from it,
+  // the minimum scale depends on ensuring the rotated content covers the slot.
+  //
+  // For a rectangle rotated by θ, the largest inscribed axis-aligned rectangle
+  // that fits entirely within the original bounds (not the expanded bounding box)
+  // has a coverage factor of approximately: cos(θ) + sin(θ) for the diagonal case.
+  //
+  // Simplified formula: at 45°, minScale ≈ √2 ≈ 1.414
+  // At 0°: minScale = 1.0
+  // Linear interpolation gives reasonable results for most cases.
+  
+  // The minimum scale is approximately 1 / cos(θ) for small angles,
+  // approaching √2 at 45° for square-ish images
+  const diagonalFactor = cos + sin; // Ranges from 1 (at 0°) to √2 (at 45°)
+  
+  // For the inscribed rectangle, the effective coverage is:
+  // coverage = 1 / (cos(θ) + sin(θ) * |tan(θ)|) simplified
+  // But a simpler approximation that works well:
+  const minScale = 1 / (cos * cos + sin * sin / Math.max(imageAspectRatio, 1/imageAspectRatio));
+  
+  // At 45° with square image: 1 / (0.5 + 0.5/1) = 1 / 1 = 1.0 (too low)
+  // Let's use a better formula: the scale needed to ensure rotated image covers slot
+  
+  // Actually, the correct minimum scale at angle θ is:
+  // minScale = 1 / (cos(θ) - sin(θ) * tan(θ)) for θ < 45°
+  // Which simplifies to: minScale = 1 / cos(θ) when considering the slot must be covered
+  
+  // Simple and effective formula:
+  // At θ degrees, the inscribed rectangle shrinks by factor cos(θ) in one direction
+  // minScale = 1 / cos(θ) ensures coverage
+  let finalMinScale = 1 / cos;
+  
+  // Cap at reasonable bounds (√2 at 45° is the theoretical max for square images)
+  finalMinScale = Math.max(MIN_ADJUSTMENT_SCALE, Math.min(1.5, finalMinScale));
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:calculateMinScaleForRotation',message:'Min scale calculation',data:{imageAspectRatio,slotAspectRatio,rotationDegrees,effectiveRotation,cos,sin,diagonalFactor,finalMinScale},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
+  
+  return finalMinScale;
+}
 
 /**
  * Calculate the visible region of the camera sensor that's shown in the preview.
@@ -447,15 +520,15 @@ export async function processImageForAdjustment(
 /**
  * Apply image adjustments and crop to final slot dimensions
  * 
- * This function takes an oversized image with adjustments (translateX, translateY, scale)
- * and produces the final slot-sized image by cropping the visible region.
+ * This function takes an oversized image with adjustments (translateX, translateY, scale, rotation)
+ * and produces the final slot-sized image by applying rotation and cropping the visible region.
  * 
  * @param uri - Source image URI (oversized)
  * @param imageWidth - Width of source image in pixels
  * @param imageHeight - Height of source image in pixels
  * @param targetWidth - Target slot width in pixels
  * @param targetHeight - Target slot height in pixels
- * @param adjustments - The adjustments to apply (translateX, translateY, scale)
+ * @param adjustments - The adjustments to apply (translateX, translateY, scale, rotation)
  * @returns Final image URI with exact slot dimensions
  */
 export async function applyAdjustmentsAndCrop(
@@ -464,9 +537,33 @@ export async function applyAdjustmentsAndCrop(
   imageHeight: number,
   targetWidth: number,
   targetHeight: number,
-  adjustments: { translateX: number; translateY: number; scale: number }
+  adjustments: { translateX: number; translateY: number; scale: number; rotation?: number }
 ): Promise<{ uri: string; width: number; height: number }> {
-  const { translateX, translateY, scale } = adjustments;
+  const { translateX, translateY, scale, rotation = 0 } = adjustments;
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:entry',message:'Function entry',data:{imageWidth,imageHeight,targetWidth,targetHeight,translateX,translateY,scale,rotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
+  // #endregion
+  
+  // First, apply rotation if needed
+  let currentUri = uri;
+  let currentWidth = imageWidth;
+  let currentHeight = imageHeight;
+  
+  if (rotation !== 0) {
+    const rotated = await ImageManipulator.manipulateAsync(
+      currentUri,
+      [{ rotate: rotation }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+    );
+    currentUri = rotated.uri;
+    currentWidth = rotated.width;
+    currentHeight = rotated.height;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:afterRotation',message:'After rotation dimensions',data:{originalWidth:imageWidth,originalHeight:imageHeight,rotatedWidth:currentWidth,rotatedHeight:currentHeight,rotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+  }
   
   // Calculate the visible region based on adjustments
   // The adjustments are relative to the display frame:
@@ -474,12 +571,12 @@ export async function applyAdjustmentsAndCrop(
   // - translateX/Y: offset from center (in frame-relative coordinates, -0.5 to 0.5)
   
   // The "virtual" size of the image as displayed (scaled)
-  const scaledWidth = imageWidth * scale;
-  const scaledHeight = imageHeight * scale;
+  const scaledWidth = currentWidth * scale;
+  const scaledHeight = currentHeight * scale;
   
   // The visible frame dimensions relative to the scaled image
-  const frameWidth = imageWidth / (scale * (imageWidth / targetWidth));
-  const frameHeight = imageHeight / (scale * (imageHeight / targetHeight));
+  const frameWidth = currentWidth / (scale * (currentWidth / targetWidth));
+  const frameHeight = currentHeight / (scale * (currentHeight / targetHeight));
   
   // Calculate the visible region's top-left corner
   // translateX/Y are relative offsets (-0.5 to 0.5 of the available movement range)
@@ -492,8 +589,8 @@ export async function applyAdjustmentsAndCrop(
   
   // Calculate crop region
   // Center of the image plus offset, then calculate top-left corner
-  const cropWidth = imageWidth / scale;
-  const cropHeight = imageHeight / scale;
+  const cropWidth = currentWidth / scale;
+  const cropHeight = currentHeight / scale;
   
   // Ensure crop dimensions match target aspect ratio
   const targetAspectRatio = targetWidth / targetHeight;
@@ -507,16 +604,24 @@ export async function applyAdjustmentsAndCrop(
   }
   
   // Calculate origin (top-left corner of crop region)
-  let originX = (imageWidth - finalCropWidth) / 2 - pixelOffsetX;
-  let originY = (imageHeight - finalCropHeight) / 2 - pixelOffsetY;
+  let originX = (currentWidth - finalCropWidth) / 2 - pixelOffsetX;
+  let originY = (currentHeight - finalCropHeight) / 2 - pixelOffsetY;
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:cropCalc',message:'Crop calculation',data:{currentWidth,currentHeight,cropWidth,cropHeight,finalCropWidth,finalCropHeight,targetAspectRatio,pixelOffsetX,pixelOffsetY,originXBeforeClamp:originX,originYBeforeClamp:originY,maxOffsetX,maxOffsetY},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,D'})}).catch(()=>{});
+  // #endregion
   
   // Clamp to valid bounds
-  originX = Math.max(0, Math.min(imageWidth - finalCropWidth, originX));
-  originY = Math.max(0, Math.min(imageHeight - finalCropHeight, originY));
+  originX = Math.max(0, Math.min(currentWidth - finalCropWidth, originX));
+  originY = Math.max(0, Math.min(currentHeight - finalCropHeight, originY));
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:finalCrop',message:'Final crop region',data:{originX,originY,finalCropWidth,finalCropHeight,targetWidth,targetHeight,coverageCheck:{cropCoversTarget:finalCropWidth>=targetWidth&&finalCropHeight>=targetHeight}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+  // #endregion
   
   // Apply crop
   const cropped = await ImageManipulator.manipulateAsync(
-    uri,
+    currentUri,
     [{
       crop: {
         originX: Math.floor(originX),
@@ -616,12 +721,13 @@ export function clampAdjustments(
 export function hasAdjustments(asset: MediaAsset): boolean {
   if (!asset.adjustments) return false;
   
-  const { translateX, translateY, scale } = asset.adjustments;
+  const { translateX, translateY, scale, rotation } = asset.adjustments;
   
   // Check if any adjustment differs from default
   return (
     translateX !== 0 ||
     translateY !== 0 ||
-    scale !== 1.0
+    scale !== 1.0 ||
+    (rotation !== undefined && rotation !== 0)
   );
 }

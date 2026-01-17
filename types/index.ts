@@ -521,6 +521,7 @@ export interface MediaAsset {
     translateX: number;
     translateY: number;
     scale: number;
+    rotation?: number;
   };
 }
 

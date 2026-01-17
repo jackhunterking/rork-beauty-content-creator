@@ -6,10 +6,11 @@
  */
 
 import React, { useCallback, useRef, useState, useMemo } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, useWindowDimensions } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   X, 
   Zap, 
@@ -41,8 +42,19 @@ export function CameraSheet({
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const snapPoints = useMemo(() => ['80%'], []);
+  
+  // Calculate camera container dimensions explicitly
+  // Sheet is 80% of screen, minus header (~64px) and controls (~120px)
+  const sheetContentHeight = screenHeight * 0.8;
+  const headerHeight = 64;
+  const controlsHeight = 120;
+  const cameraHeight = sheetContentHeight - headerHeight - controlsHeight - insets.bottom - 32; // 32 for margins
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
@@ -101,6 +113,8 @@ export function CameraSheet({
   const handleSheetChange = useCallback((index: number) => {
     if (index === -1) {
       onClose();
+      // Reset camera ready state when sheet closes
+      setIsCameraReady(false);
     }
   }, [onClose]);
 
@@ -167,13 +181,20 @@ export function CameraSheet({
         </View>
 
         {/* Camera Preview */}
-        <View style={styles.cameraContainer}>
+        <View style={[styles.cameraContainer, { height: Math.max(cameraHeight, 200) }]}>
           <CameraView
             ref={cameraRef}
-            style={styles.camera}
+            style={StyleSheet.absoluteFill}
             facing={cameraFacing}
             enableTorch={flashEnabled && cameraFacing === 'back'}
+            onCameraReady={() => setIsCameraReady(true)}
           />
+          {!isCameraReady && (
+            <View style={styles.cameraLoading}>
+              <ActivityIndicator size="large" color={Colors.light.surface} />
+              <Text style={styles.cameraLoadingText}>Starting camera...</Text>
+            </View>
+          )}
         </View>
 
         {/* Controls */}
@@ -254,14 +275,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cameraContainer: {
-    flex: 1,
     marginHorizontal: 16,
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',
+    position: 'relative',
   },
-  camera: {
-    flex: 1,
+  cameraLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+  },
+  cameraLoadingText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    marginTop: 12,
   },
   controls: {
     flexDirection: 'row',
