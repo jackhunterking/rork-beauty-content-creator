@@ -33,7 +33,6 @@ import {
   CloudOff,
   Info,
   Gift,
-  Star,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
@@ -82,11 +81,10 @@ export default function SettingsScreen() {
     superwallUserId,
   } = usePremiumStatus();
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
+  // Restore purchases only needed for free users
   const { 
     restorePurchases, 
     isRestoring: isRestoringPurchases, 
-    restoreSuccess,
-    restoreError,
   } = useRestorePurchases();
 
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -105,12 +103,6 @@ export default function SettingsScreen() {
   
   // Debug section state (hidden by default, shown via long press on version)
   const [showDebugInfo, setShowDebugInfo] = useState(false);
-
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:render',message:'Settings screen subscription state',data:{isPremium,isSubscriptionLoading,subscriptionDetails,isComplimentaryPro,superwallUserId,isAuthenticated:isAuthenticated},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,E'})}).catch(()=>{});
-  }, [isPremium, isSubscriptionLoading, subscriptionDetails, isComplimentaryPro, superwallUserId, isAuthenticated]);
-  // #endregion
 
   // Load Brand Kit on mount and when auth changes
   useEffect(() => {
@@ -230,14 +222,7 @@ export default function SettingsScreen() {
 
   // Handle Restore Purchases - uses direct restore without showing paywall
   const handleRestorePurchases = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:handleRestorePurchases:start',message:'Restore button TAPPED',data:{currentIsPremium:isPremium,currentStatus:subscriptionDetails.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     const result = await restorePurchases();
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings.tsx:handleRestorePurchases:result',message:'Restore result received',data:{result,isPremiumAfter:isPremium,statusAfter:subscriptionDetails.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
-    // #endregion
     
     if (result.success) {
       // Show success or wait for restoreSuccess state to update
@@ -259,11 +244,6 @@ export default function SettingsScreen() {
     } else {
       Alert.alert('Error', result.error || 'Failed to restore purchases. Please try again.');
     }
-  };
-
-  // Open App Store subscription management
-  const handleManageSubscription = () => {
-    Linking.openURL('https://apps.apple.com/account/subscriptions');
   };
 
   // Handle Sign In
@@ -411,7 +391,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Subscription</Text>
             <View style={styles.card}>
               {isSubscribed ? (
-                // Active subscription view with details
+                // Simplified Pro member view with single "Manage Membership" button
                 <>
                   <View style={styles.subscriptionActive}>
                     <View style={styles.subscriptionIcon}>
@@ -419,7 +399,7 @@ export default function SettingsScreen() {
                     </View>
                     <View style={styles.subscriptionInfo}>
                       <Text style={styles.subscriptionStatus}>Pro Member</Text>
-                      <Text style={styles.subscriptionDetail}>Unlimited access to all features</Text>
+                      <Text style={styles.subscriptionDetail}>All features unlocked</Text>
                     </View>
                     <View style={styles.activeBadge}>
                       <Check size={14} color={Colors.light.success} />
@@ -427,66 +407,15 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                   
-                  {/* Subscription Details */}
-                  <View style={styles.subscriptionDetailsSection}>
-                    {/* Subscription Source */}
-                    <View style={styles.subscriptionDetailRow}>
-                      {isComplimentaryPro ? (
-                        <>
-                          <Gift size={16} color={Colors.light.accent} />
-                          <Text style={styles.subscriptionDetailText}>Complimentary Pro Access</Text>
-                        </>
-                      ) : (
-                        <>
-                          <Star size={16} color={Colors.light.accent} />
-                          <Text style={styles.subscriptionDetailText}>App Store Subscription</Text>
-                        </>
-                      )}
-                    </View>
-                    
-                    {/* Entitlements */}
-                    {subscriptionDetails.entitlements.length > 0 && (
-                      <View style={styles.subscriptionDetailRow}>
-                        <Check size={16} color={Colors.light.success} />
-                        <Text style={styles.subscriptionDetailText}>
-                          {subscriptionDetails.entitlements.map(e => e.id).join(', ')} entitlement
-                          {subscriptionDetails.entitlements.length > 1 ? 's' : ''}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  
-                  <View style={styles.divider} />
-                  
-                  {/* Only show manage subscription for App Store subscriptions */}
-                  {!isComplimentaryPro && (
-                    <TouchableOpacity 
-                      style={styles.settingRow} 
-                      onPress={handleManageSubscription}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.settingLeft}>
-                        <View style={[styles.settingIcon, { backgroundColor: '#E8F4EC' }]}>
-                          <ExternalLink size={18} color={Colors.light.success} />
-                        </View>
-                        <View>
-                          <Text style={styles.settingLabel}>Manage Subscription</Text>
-                          <Text style={styles.settingHint}>View in App Store</Text>
-                        </View>
-                      </View>
-                      <ChevronRight size={20} color={Colors.light.textTertiary} />
-                    </TouchableOpacity>
-                  )}
-                  
-                  {/* For complimentary pro, show info instead */}
-                  {isComplimentaryPro && (
-                    <View style={styles.complimentaryInfoRow}>
-                      <Info size={16} color={Colors.light.textTertiary} />
-                      <Text style={styles.complimentaryInfoText}>
-                        Your pro access was granted by an admin and doesn't require a subscription.
-                      </Text>
-                    </View>
-                  )}
+                  {/* Single "Manage Membership" button */}
+                  <TouchableOpacity 
+                    style={styles.manageMembershipButton}
+                    onPress={() => router.push('/membership')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.manageMembershipText}>Manage Membership</Text>
+                    <ChevronRight size={18} color={Colors.light.surface} />
+                  </TouchableOpacity>
                 </>
               ) : (
                 // Upgrade prompt view
@@ -1092,6 +1021,23 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 14,
   },
+  manageMembershipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.accent,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  manageMembershipText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.surface,
+  },
   upgradePrompt: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1136,20 +1082,6 @@ const styles = StyleSheet.create({
   },
   
   // Subscription details styles
-  subscriptionDetailsSection: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
-  },
-  subscriptionDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  subscriptionDetailText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-  },
   complimentaryInfoRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

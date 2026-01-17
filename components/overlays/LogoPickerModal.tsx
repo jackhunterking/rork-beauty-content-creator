@@ -38,6 +38,10 @@ interface LogoPickerModalProps {
   onSelectLogo: (logoData: { uri: string; width: number; height: number }) => void;
   /** Called when modal should close */
   onClose: () => void;
+  /** Whether the user has premium status */
+  isPremium: boolean;
+  /** Called when premium feature is requested by free user */
+  onRequestPremium: (featureName: string, onPremiumGranted?: () => void) => void;
 }
 
 type ModalState = 'loading' | 'with-brand-logo' | 'no-brand-logo' | 'confirming-save';
@@ -52,6 +56,8 @@ export function LogoPickerModal({
   bottomSheetRef,
   onSelectLogo,
   onClose,
+  isPremium,
+  onRequestPremium,
 }: LogoPickerModalProps) {
   // State
   const [modalState, setModalState] = useState<ModalState>('loading');
@@ -89,8 +95,8 @@ export function LogoPickerModal({
     }
   }, [brandLogo, onSelectLogo, onClose]);
   
-  // Handle picking image from library
-  const handlePickImage = useCallback(async () => {
+  // Actual image picking logic (called after premium check)
+  const pickImageFromLibrary = useCallback(async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
@@ -121,6 +127,20 @@ export function LogoPickerModal({
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   }, [brandLogo, onSelectLogo, onClose]);
+
+  // Handle picking image from library - with premium gate
+  const handlePickImage = useCallback(async () => {
+    // Premium gate for logo upload (same as settings screen)
+    if (!isPremium) {
+      await onRequestPremium('brand_kit_logo', () => {
+        console.log('[LogoPickerModal] Brand kit logo callback triggered after premium granted');
+        pickImageFromLibrary();
+      });
+      return;
+    }
+    
+    pickImageFromLibrary();
+  }, [isPremium, onRequestPremium, pickImageFromLibrary]);
   
   // Handle confirming upload (with optional save to brand kit)
   const handleConfirmUpload = useCallback(async () => {

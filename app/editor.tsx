@@ -1734,6 +1734,8 @@ export default function EditorScreen() {
         bottomSheetRef={logoPickerRef}
         onSelectLogo={handleLogoSelected}
         onClose={handleLogoPickerClose}
+        isPremium={isPremium}
+        onRequestPremium={handleRequestPremiumForOverlay}
       />
 
       {/* Logo Action Sheet - for resizing and deleting logo overlays */}

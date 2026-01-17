@@ -48,6 +48,26 @@ export interface SubscriptionDetails {
   source: 'superwall' | 'complimentary' | 'none';
   /** Superwall user ID for debugging/dashboard lookup */
   superwallUserId?: string;
+  /** Current billing plan (detected from entitlements: weekly or monthly) */
+  currentPlan?: 'weekly' | 'monthly' | 'unknown';
+}
+
+/**
+ * Detect current plan from entitlements
+ * Maps entitlement IDs to plan types
+ */
+function detectCurrentPlan(entitlements: Entitlement[]): 'weekly' | 'monthly' | 'unknown' {
+  const entitlementIds = entitlements.map(e => e.id.toLowerCase());
+  
+  // Check for exact matches first (from Superwall dashboard config)
+  if (entitlementIds.includes('weekly')) return 'weekly';
+  if (entitlementIds.includes('monthly')) return 'monthly';
+  
+  // Fallback: check for common patterns in entitlement IDs
+  if (entitlementIds.some(id => id.includes('week'))) return 'weekly';
+  if (entitlementIds.some(id => id.includes('month'))) return 'monthly';
+  
+  return 'unknown';
 }
 
 /**
@@ -67,12 +87,6 @@ export function usePremiumStatus() {
   const [isComplimentaryPro, setIsComplimentaryPro] = useState(false);
   const [isCheckingComplimentary, setIsCheckingComplimentary] = useState(true);
   const [entitlementsInfo, setEntitlementsInfo] = useState<EntitlementsInfo | null>(null);
-  
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:hook',message:'Subscription status from Superwall',data:{status:subscriptionStatus?.status,entitlements:subscriptionStatus?.status==='ACTIVE'?(subscriptionStatus as any).entitlements:[],superwallUserId:superwallUser?.appUserId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-  }, [subscriptionStatus, superwallUser]);
-  // #endregion
   
   // Check for complimentary pro status from Supabase
   useEffect(() => {
@@ -144,13 +158,18 @@ export function usePremiumStatus() {
   const isLoading = superwallLoading && isCheckingComplimentary;
 
   // Build subscription details for UI display
+  const activeEntitlements = subscriptionStatus?.status === 'ACTIVE' 
+    ? (subscriptionStatus as { status: 'ACTIVE'; entitlements: Entitlement[] }).entitlements || []
+    : [];
+
   const subscriptionDetails: SubscriptionDetails = {
     status: subscriptionStatus?.status ?? 'UNKNOWN',
-    entitlements: subscriptionStatus?.status === 'ACTIVE' 
-      ? (subscriptionStatus as { status: 'ACTIVE'; entitlements: Entitlement[] }).entitlements || []
-      : [],
+    entitlements: activeEntitlements,
     source: isPremiumFromSuperwall ? 'superwall' : (isComplimentaryPro ? 'complimentary' : 'none'),
     superwallUserId: superwallUser?.appUserId,
+    currentPlan: subscriptionStatus?.status === 'ACTIVE' 
+      ? detectCurrentPlan(activeEntitlements)
+      : undefined,
   };
 
   return {
@@ -162,6 +181,17 @@ export function usePremiumStatus() {
     isComplimentaryPro, // Expose for debugging/admin purposes
     superwallUserId: superwallUser?.appUserId, // Useful for looking up user in Superwall dashboard
   };
+}
+
+/**
+ * Placement parameters that can be passed to the paywall
+ * These become available as {{ params.paramName }} in Superwall's paywall editor
+ */
+export interface PlacementParams {
+  /** Current subscription plan: 'weekly', 'monthly', or 'free' */
+  currentPlan?: 'weekly' | 'monthly' | 'free' | 'unknown';
+  /** Any additional custom parameters */
+  [key: string]: string | number | boolean | undefined;
 }
 
 /**
@@ -187,14 +217,17 @@ export function usePremiumFeature() {
    * 
    * @param placement - The placement name configured in Superwall dashboard
    * @param onFeatureAccess - Callback when user gets access (subscribed or passes paywall)
+   * @param params - Optional placement parameters (available as {{ params.paramName }} in paywall)
    */
   const requestPremiumAccess = useCallback(async (
     placement: string,
-    onFeatureAccess?: () => void
+    onFeatureAccess?: () => void,
+    params?: PlacementParams
   ) => {
     await registerPlacement({
       placement,
       feature: onFeatureAccess,
+      params,
     });
   }, [registerPlacement]);
 
@@ -222,26 +255,17 @@ export function useRestorePurchases() {
   const { registerPlacement } = usePlacement({
     onSkip: (reason) => {
       console.log('[Restore] Paywall skipped (user may already be subscribed):', reason);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onSkip',message:'Restore paywall SKIPPED',data:{reason:JSON.stringify(reason)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       // If skipped with userIsSubscribed reason, restoration worked
       setRestoreSuccess(true);
     },
     onDismiss: (info, result) => {
       console.log('[Restore] Dismissed with result:', result);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onDismiss',message:'Restore paywall DISMISSED',data:{paywallName:info?.name,result:JSON.stringify(result)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       if (result.type === 'restored' || result.type === 'purchased') {
         setRestoreSuccess(true);
       }
     },
     onError: (error) => {
       console.error('[Restore] Error:', error);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:useRestorePurchases:onError',message:'Restore ERROR',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       setRestoreError(error);
     },
   });
@@ -252,9 +276,6 @@ export function useRestorePurchases() {
    * and update the subscription status accordingly
    */
   const restorePurchases = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:start',message:'Restore purchases INITIATED',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     setIsRestoring(true);
     setRestoreError(null);
     setRestoreSuccess(false);
@@ -267,9 +288,6 @@ export function useRestorePurchases() {
         feature: () => {
           // Feature runs if user has active subscription
           console.log('[Restore] Subscription verified - user is subscribed');
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:featureCallback',message:'Feature callback EXECUTED - user IS subscribed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-          // #endregion
           setRestoreSuccess(true);
         },
       });
@@ -277,17 +295,11 @@ export function useRestorePurchases() {
       // Wait a moment for status to update
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:complete',message:'Restore purchases COMPLETED',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to restore purchases';
       setRestoreError(errorMessage);
       console.error('[Restore] Failed:', error);
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'usePremiumStatus.ts:restorePurchases:error',message:'Restore purchases FAILED',data:{error:errorMessage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       return { success: false, error: errorMessage };
     } finally {
       setIsRestoring(false);

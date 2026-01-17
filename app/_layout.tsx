@@ -101,6 +101,13 @@ function RootLayoutNav() {
           gestureEnabled: false, // Prevent swipe to dismiss
         }} 
       />
+      <Stack.Screen 
+        name="membership" 
+        options={{ 
+          headerShown: false,
+          presentation: 'card',
+        }} 
+      />
     </Stack>
   );
 }
