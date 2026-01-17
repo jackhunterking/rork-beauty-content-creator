@@ -46,18 +46,17 @@ export async function initializeFacebookSDK(): Promise<void> {
     await Settings.setAdvertiserIDCollectionEnabled(true);
     console.log('[MetaAnalytics] Advertiser ID collection enabled');
     
-    // Enable debug mode for Facebook SDK (shows more info in native logs)
-    // This helps identify if events are being sent correctly
-    if (__DEV__) {
-      try {
-        // @ts-ignore - setDebugMode might not be in types but exists in native
-        if (typeof Settings.setDebugMode === 'function') {
-          Settings.setDebugMode(true);
-          console.log('[MetaAnalytics] Debug mode enabled');
-        }
-      } catch (e) {
-        console.log('[MetaAnalytics] Debug mode not available');
-      }
+    // CRITICAL: Set Advertiser Tracking Enabled (ATE) flag for iOS 14.5+
+    // Facebook requires this flag to be explicitly set, even if false
+    // Without this, events may not be processed correctly
+    try {
+      // Set to false since we're not requesting ATT permission
+      // This tells Facebook the user hasn't granted tracking permission
+      // Events will still be sent but in a privacy-preserving way
+      await Settings.setAdvertiserTrackingEnabled(false);
+      console.log('[MetaAnalytics] Advertiser Tracking Enabled set to: false (no ATT permission requested)');
+    } catch (e) {
+      console.log('[MetaAnalytics] Could not set ATE flag:', e);
     }
     
     // Log app activation - this sends the "app install" / "app open" event
