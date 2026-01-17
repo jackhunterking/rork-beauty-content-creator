@@ -40,8 +40,8 @@ interface CropModeConfig {
   initialScale: number;
   initialTranslateX: number;
   initialTranslateY: number;
-  rotation: number;
-  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number }) => void;
+  initialRotation: number;
+  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
 }
 
 interface TemplateCanvasProps {
@@ -119,8 +119,8 @@ function SelectionOverlay({ slot }: { slot: Slot }) {
 }
 
 /**
- * CropOverlay - Canva-style inline crop with rotation
- * Rendered inside the canvas so coordinates align perfectly
+ * CropOverlay - Gesture-based resize with pinch, pan, and rotation
+ * All adjustments done via touch gestures with boundary constraints
  */
 function CropOverlay({
   slot,
@@ -130,7 +130,7 @@ function CropOverlay({
   initialScale,
   initialTranslateX,
   initialTranslateY,
-  rotation,
+  initialRotation,
   onAdjustmentChange,
 }: {
   slot: Slot;
@@ -140,8 +140,8 @@ function CropOverlay({
   initialScale: number;
   initialTranslateX: number;
   initialTranslateY: number;
-  rotation: number;
-  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number }) => void;
+  initialRotation: number;
+  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
 }) {
   const slotWidth = slot.width;
   const slotHeight = slot.height;
@@ -152,35 +152,19 @@ function CropOverlay({
   const scale = useSharedValue(initialScale);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const rotation = useSharedValue(initialRotation);
   
   const startScale = useSharedValue(initialScale);
   const startTranslateX = useSharedValue(0);
   const startTranslateY = useSharedValue(0);
+  const startRotation = useSharedValue(initialRotation);
 
-  // Calculate the rotated image dimensions
-  // When ImageManipulator rotates an image, it creates a new bounding box
-  // that encompasses the entire rotated image
-  const rotatedImageDimensions = useMemo(() => {
-    if (rotation === 0) {
-      return { width: imageWidth, height: imageHeight };
-    }
-    
-    const radians = Math.abs(rotation) * (Math.PI / 180);
-    const cos = Math.abs(Math.cos(radians));
-    const sin = Math.abs(Math.sin(radians));
-    
-    // The rotated bounding box dimensions
-    const rotatedWidth = imageWidth * cos + imageHeight * sin;
-    const rotatedHeight = imageWidth * sin + imageHeight * cos;
-    
-    return { width: rotatedWidth, height: rotatedHeight };
-  }, [imageWidth, imageHeight, rotation]);
+  // Image aspect ratio
+  const imageAspect = imageWidth / imageHeight;
+  const slotAspect = slotWidth / slotHeight;
 
-  // Calculate base image size using rotated dimensions (fills slot at scale 1.0)
+  // Calculate base image size (fills slot at scale 1.0, no rotation)
   const baseImageSize = useMemo(() => {
-    const imageAspect = rotatedImageDimensions.width / rotatedImageDimensions.height;
-    const slotAspect = slotWidth / slotHeight;
-
     if (imageAspect > slotAspect) {
       return {
         width: slotHeight * imageAspect,
@@ -192,19 +176,38 @@ function CropOverlay({
         height: slotWidth / imageAspect,
       };
     }
-  }, [rotatedImageDimensions, slotWidth, slotHeight]);
+  }, [imageAspect, slotAspect, slotWidth, slotHeight]);
 
-  // Minimum scale is always 1.0 - user has full control over zoom
-  // The final processing will handle any gaps from rotation
+  // Min/max constraints
   const minScale = MIN_ADJUSTMENT_SCALE; // 1.0
+  const maxRotation = 45; // degrees
 
-  // Initialize with saved adjustments (runs only once when entering resize mode)
+  // Calculate min scale needed to cover slot when rotated
+  const getMinScaleForRotation = useCallback((rotationDeg: number) => {
+    'worklet';
+    if (rotationDeg === 0) return minScale;
+    
+    const radians = (Math.abs(rotationDeg) % 90) * (Math.PI / 180);
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    
+    // When rotating, the effective coverage shrinks
+    // We need to scale up to maintain slot coverage
+    // Use the diagonal approach for simpler constraint
+    const diagonal = Math.sqrt(slotWidth * slotWidth + slotHeight * slotHeight);
+    const minCoverage = diagonal / Math.min(baseImageSize.width, baseImageSize.height);
+    
+    return Math.max(minScale, minCoverage * (1 + Math.abs(sin) * 0.3));
+  }, [slotWidth, slotHeight, baseImageSize, minScale]);
+
+  // Initialize with saved adjustments
   const hasInitialized = React.useRef(false);
   React.useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
     
-    const effectiveScale = Math.max(initialScale, minScale);
+    const minScaleNeeded = getMinScaleForRotation(initialRotation);
+    const effectiveScale = Math.max(initialScale, minScaleNeeded);
     const scaledWidth = baseImageSize.width * effectiveScale;
     const scaledHeight = baseImageSize.height * effectiveScale;
     const excessWidth = Math.max(0, scaledWidth - slotWidth);
@@ -213,6 +216,7 @@ function CropOverlay({
     translateX.value = initialTranslateX * excessWidth;
     translateY.value = initialTranslateY * excessHeight;
     scale.value = effectiveScale;
+    rotation.value = initialRotation;
   }, []);
 
   const getMaxTranslation = useCallback((currentScale: number) => {
@@ -236,6 +240,7 @@ function CropOverlay({
 
   const reportAdjustment = useCallback(() => {
     const currentScale = scale.value;
+    const currentRotation = rotation.value;
     const scaledWidth = baseImageSize.width * currentScale;
     const scaledHeight = baseImageSize.height * currentScale;
     const excessWidth = Math.max(0, scaledWidth - slotWidth);
@@ -245,9 +250,11 @@ function CropOverlay({
       scale: currentScale,
       translateX: excessWidth > 0 ? translateX.value / excessWidth : 0,
       translateY: excessHeight > 0 ? translateY.value / excessHeight : 0,
+      rotation: currentRotation,
     });
-  }, [baseImageSize, slotWidth, slotHeight, onAdjustmentChange, scale, translateX, translateY]);
+  }, [baseImageSize, slotWidth, slotHeight, onAdjustmentChange, scale, translateX, translateY, rotation]);
 
+  // Pan gesture
   const panGesture = useMemo(() =>
     Gesture.Pan()
       .onStart(() => {
@@ -275,6 +282,7 @@ function CropOverlay({
     [clampTranslation, reportAdjustment]
   );
 
+  // Pinch gesture
   const pinchGesture = useMemo(() =>
     Gesture.Pinch()
       .onStart(() => {
@@ -285,8 +293,8 @@ function CropOverlay({
       })
       .onUpdate((event) => {
         'worklet';
-        // Minimum scale is 1.0 - user has full control
-        const newScale = Math.max(minScale, Math.min(MAX_ADJUSTMENT_SCALE, startScale.value * event.scale));
+        const currentMinScale = getMinScaleForRotation(rotation.value);
+        const newScale = Math.max(currentMinScale, Math.min(MAX_ADJUSTMENT_SCALE, startScale.value * event.scale));
         scale.value = newScale;
         
         const scaleRatio = newScale / startScale.value;
@@ -305,12 +313,52 @@ function CropOverlay({
         translateY.value = withSpring(clamped.y, { damping: 20 });
         runOnJS(reportAdjustment)();
       }),
-    [clampTranslation, reportAdjustment, minScale]
+    [clampTranslation, reportAdjustment, getMinScaleForRotation]
   );
 
+  // Rotation gesture
+  const rotationGesture = useMemo(() =>
+    Gesture.Rotation()
+      .onStart(() => {
+        'worklet';
+        startRotation.value = rotation.value;
+        startScale.value = scale.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        // Convert radians to degrees and add to start rotation
+        const deltaDegrees = (event.rotation * 180) / Math.PI;
+        let newRotation = startRotation.value + deltaDegrees;
+        
+        // Clamp rotation to ±maxRotation degrees
+        newRotation = Math.max(-maxRotation, Math.min(maxRotation, newRotation));
+        rotation.value = newRotation;
+        
+        // When rotation changes, we may need to increase scale to cover slot
+        const minScaleNeeded = getMinScaleForRotation(newRotation);
+        if (scale.value < minScaleNeeded) {
+          scale.value = minScaleNeeded;
+          // Re-clamp translation after scale change
+          const clamped = clampTranslation(translateX.value, translateY.value, minScaleNeeded);
+          translateX.value = clamped.x;
+          translateY.value = clamped.y;
+        }
+      })
+      .onEnd(() => {
+        'worklet';
+        // Snap to 0 if close
+        if (Math.abs(rotation.value) < 2) {
+          rotation.value = withSpring(0, { damping: 15 });
+        }
+        runOnJS(reportAdjustment)();
+      }),
+    [getMinScaleForRotation, clampTranslation, reportAdjustment, maxRotation]
+  );
+
+  // Combine all gestures
   const composedGesture = useMemo(() =>
-    Gesture.Simultaneous(panGesture, pinchGesture),
-    [panGesture, pinchGesture]
+    Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture),
+    [panGesture, pinchGesture, rotationGesture]
   );
 
   // Image bounds calculation
@@ -323,43 +371,17 @@ function CropOverlay({
     return { left, top, width: scaledWidth, height: scaledHeight };
   }, [baseImageSize, slotX, slotY, slotWidth, slotHeight]);
 
-  // Calculate rotation compensation factor
-  // When we rotate via CSS, the image bounding box stays the same
-  // But ImageManipulator creates a larger bounding box
-  // We compensate by scaling up the image to simulate the larger bounds
-  const rotationCompensation = useMemo(() => {
-    if (rotation === 0) return 1;
-    
-    const radians = Math.abs(rotation) * (Math.PI / 180);
-    const cos = Math.abs(Math.cos(radians));
-    const sin = Math.abs(Math.sin(radians));
-    
-    // The rotated bounding box is larger by this factor (approximately)
-    const expansionFactor = Math.max(
-      (imageWidth * cos + imageHeight * sin) / imageWidth,
-      (imageWidth * sin + imageHeight * cos) / imageHeight
-    );
-    
-    return expansionFactor;
-  }, [rotation, imageWidth, imageHeight]);
-
   // Overflow image style (reduced opacity, with rotation)
   const overflowImageStyle = useAnimatedStyle(() => {
     const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
     
-    // Apply rotation compensation to make preview match final output
-    const compensatedWidth = bounds.width * rotationCompensation;
-    const compensatedHeight = bounds.height * rotationCompensation;
-    const compensatedLeft = bounds.left - (compensatedWidth - bounds.width) / 2;
-    const compensatedTop = bounds.top - (compensatedHeight - bounds.height) / 2;
-    
     return {
       position: 'absolute' as const,
-      left: compensatedLeft,
-      top: compensatedTop,
-      width: compensatedWidth,
-      height: compensatedHeight,
-      transform: [{ rotate: `${rotation}deg` }],
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+      transform: [{ rotate: `${rotation.value}deg` }],
     };
   });
 
@@ -367,39 +389,27 @@ function CropOverlay({
   const slotImageStyle = useAnimatedStyle(() => {
     const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
     
-    // Apply rotation compensation
-    const compensatedWidth = bounds.width * rotationCompensation;
-    const compensatedHeight = bounds.height * rotationCompensation;
-    const compensatedLeft = (bounds.left - slotX) - (compensatedWidth - bounds.width) / 2;
-    const compensatedTop = (bounds.top - slotY) - (compensatedHeight - bounds.height) / 2;
-    
     return {
       position: 'absolute' as const,
-      left: compensatedLeft,
-      top: compensatedTop,
-      width: compensatedWidth,
-      height: compensatedHeight,
-      transform: [{ rotate: `${rotation}deg` }],
+      left: bounds.left - slotX,
+      top: bounds.top - slotY,
+      width: bounds.width,
+      height: bounds.height,
+      transform: [{ rotate: `${rotation.value}deg` }],
     };
   });
 
-  // Border around full image (follows compensated dimensions)
+  // Border around full image
   const borderStyle = useAnimatedStyle(() => {
     const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
     
-    // Apply rotation compensation
-    const compensatedWidth = bounds.width * rotationCompensation;
-    const compensatedHeight = bounds.height * rotationCompensation;
-    const compensatedLeft = bounds.left - (compensatedWidth - bounds.width) / 2;
-    const compensatedTop = bounds.top - (compensatedHeight - bounds.height) / 2;
-    
     return {
       position: 'absolute' as const,
-      left: compensatedLeft - 2,
-      top: compensatedTop - 2,
-      width: compensatedWidth + 4,
-      height: compensatedHeight + 4,
-      transform: [{ rotate: `${rotation}deg` }],
+      left: bounds.left - 2,
+      top: bounds.top - 2,
+      width: bounds.width + 4,
+      height: bounds.height + 4,
+      transform: [{ rotate: `${rotation.value}deg` }],
     };
   });
 
@@ -599,7 +609,7 @@ export function TemplateCanvas({
             initialScale={cropMode.initialScale}
             initialTranslateX={cropMode.initialTranslateX}
             initialTranslateY={cropMode.initialTranslateY}
-            rotation={cropMode.rotation}
+            initialRotation={cropMode.initialRotation}
             onAdjustmentChange={cropMode.onAdjustmentChange}
           />
         )}

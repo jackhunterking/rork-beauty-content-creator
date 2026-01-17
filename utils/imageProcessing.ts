@@ -96,10 +96,6 @@ export function calculateMinScaleForRotation(
   // Cap at reasonable bounds (√2 at 45° is the theoretical max for square images)
   finalMinScale = Math.max(MIN_ADJUSTMENT_SCALE, Math.min(1.5, finalMinScale));
   
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:calculateMinScaleForRotation',message:'Min scale calculation',data:{imageAspectRatio,slotAspectRatio,rotationDegrees,effectiveRotation,cos,sin,diagonalFactor,finalMinScale},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'F'})}).catch(()=>{});
-  // #endregion
-  
   return finalMinScale;
 }
 
@@ -541,10 +537,6 @@ export async function applyAdjustmentsAndCrop(
 ): Promise<{ uri: string; width: number; height: number }> {
   const { translateX, translateY, scale, rotation = 0 } = adjustments;
   
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:entry',message:'Function entry',data:{imageWidth,imageHeight,targetWidth,targetHeight,translateX,translateY,scale,rotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
-  // #endregion
-  
   // First, apply rotation if needed
   let currentUri = uri;
   let currentWidth = imageWidth;
@@ -560,9 +552,6 @@ export async function applyAdjustmentsAndCrop(
     currentWidth = rotated.width;
     currentHeight = rotated.height;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:afterRotation',message:'After rotation dimensions',data:{originalWidth:imageWidth,originalHeight:imageHeight,rotatedWidth:currentWidth,rotatedHeight:currentHeight,rotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
   }
   
   // Calculate the visible region based on adjustments
@@ -607,17 +596,9 @@ export async function applyAdjustmentsAndCrop(
   let originX = (currentWidth - finalCropWidth) / 2 - pixelOffsetX;
   let originY = (currentHeight - finalCropHeight) / 2 - pixelOffsetY;
   
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:cropCalc',message:'Crop calculation',data:{currentWidth,currentHeight,cropWidth,cropHeight,finalCropWidth,finalCropHeight,targetAspectRatio,pixelOffsetX,pixelOffsetY,originXBeforeClamp:originX,originYBeforeClamp:originY,maxOffsetX,maxOffsetY},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,D'})}).catch(()=>{});
-  // #endregion
-  
   // Clamp to valid bounds
   originX = Math.max(0, Math.min(currentWidth - finalCropWidth, originX));
   originY = Math.max(0, Math.min(currentHeight - finalCropHeight, originY));
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'imageProcessing.ts:applyAdjustmentsAndCrop:finalCrop',message:'Final crop region',data:{originX,originY,finalCropWidth,finalCropHeight,targetWidth,targetHeight,coverageCheck:{cropCoversTarget:finalCropWidth>=targetWidth&&finalCropHeight>=targetHeight}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
-  // #endregion
   
   // Apply crop
   const cropped = await ImageManipulator.manipulateAsync(

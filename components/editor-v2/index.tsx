@@ -11,7 +11,6 @@ export { ContextualToolbar } from './ContextualToolbar';
 export { AIEnhancePanel } from './AIEnhancePanel';
 export { CameraSheet } from './CameraSheet';
 export { EditableSlot } from './EditableSlot';
-export { CropOverlay } from './CropOverlay';
 export { CropToolbar } from './CropToolbar';
 
 // Types - re-export everything from types

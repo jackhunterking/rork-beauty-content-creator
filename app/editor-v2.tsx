@@ -36,7 +36,6 @@ import {
   ToolDock,
   ContextualToolbar,
   AIEnhancePanel,
-  CropOverlay,
   CropToolbar,
 } from '@/components/editor-v2';
 import {
@@ -75,10 +74,9 @@ export default function EditorV2Screen() {
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [aiProcessingType, setAIProcessingType] = useState<AIEnhancementType | null>(null);
 
-  // Crop mode state
+  // Crop/Resize mode state
   const [isCropMode, setIsCropMode] = useState(false);
   const [cropSlotId, setCropSlotId] = useState<string | null>(null);
-  const [pendingRotation, setPendingRotation] = useState(0);
   const [pendingCropAdjustments, setPendingCropAdjustments] = useState<{
     scale: number;
     translateX: number;
@@ -398,68 +396,47 @@ export default function EditorV2Screen() {
 
   const handlePhotoResize = useCallback(() => {
     if (selection.id && capturedImages[selection.id]) {
-      // Enter inline resize mode (Canva-style crop + rotate)
-      const image = capturedImages[selection.id];
+      // Enter inline resize mode (gesture-based)
       setCropSlotId(selection.id);
       setIsCropMode(true);
-      // Initialize rotation from existing adjustments
-      setPendingRotation(image.adjustments?.rotation || 0);
       // Clear selection while in resize mode
       setSelection(DEFAULT_SELECTION);
     }
   }, [selection, capturedImages]);
 
-  // Resize mode handlers (crop + rotate)
+  // Resize mode handlers
   const handleResizeCancel = useCallback(() => {
     setIsCropMode(false);
     setCropSlotId(null);
     setPendingCropAdjustments(null);
-    setPendingRotation(0);
   }, []);
 
   const handleResizeDone = useCallback(() => {
-    if (cropSlotId) {
+    if (cropSlotId && pendingCropAdjustments) {
       const currentImage = capturedImages[cropSlotId];
       if (currentImage) {
-        // Merge pending adjustments with rotation
-        const newAdjustments = {
-          ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
-          ...(pendingCropAdjustments || {}),
-          rotation: pendingRotation,
-        };
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleResizeDone',message:'Saving adjustments',data:{imageWidth:currentImage.width,imageHeight:currentImage.height,newAdjustments,pendingCropAdjustments,pendingRotation},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        
-        // Update the image with new adjustments
+        // Update the image with new adjustments (includes rotation from gestures)
         setCapturedImage(cropSlotId, {
           ...currentImage,
-          adjustments: newAdjustments,
+          adjustments: pendingCropAdjustments,
         });
       }
     }
     setIsCropMode(false);
     setCropSlotId(null);
     setPendingCropAdjustments(null);
-    setPendingRotation(0);
     // Trigger re-render after resize
     triggerPreviewRender();
-  }, [cropSlotId, pendingCropAdjustments, pendingRotation, capturedImages, setCapturedImage, triggerPreviewRender]);
+  }, [cropSlotId, pendingCropAdjustments, capturedImages, setCapturedImage, triggerPreviewRender]);
 
+  // Handle adjustment changes from CropOverlay (includes rotation from gestures)
   const handleCropAdjustmentChange = useCallback((adjustments: {
     scale: number;
     translateX: number;
     translateY: number;
+    rotation: number;
   }) => {
-    setPendingCropAdjustments({
-      ...adjustments,
-      rotation: pendingRotation,
-    });
-  }, [pendingRotation]);
-
-  const handleRotationChange = useCallback((rotation: number) => {
-    setPendingRotation(rotation);
+    setPendingCropAdjustments(adjustments);
   }, []);
 
   const handlePhotoAI = useCallback(() => {
@@ -591,7 +568,7 @@ export default function EditorV2Screen() {
               initialScale: cropSlotData.image.adjustments?.scale || 1,
               initialTranslateX: cropSlotData.image.adjustments?.translateX || 0,
               initialTranslateY: cropSlotData.image.adjustments?.translateY || 0,
-              rotation: pendingRotation,
+              initialRotation: cropSlotData.image.adjustments?.rotation || 0,
               onAdjustmentChange: handleCropAdjustmentChange,
             } : null}
           />
@@ -615,8 +592,6 @@ export default function EditorV2Screen() {
           <CropToolbar
             onCancel={handleResizeCancel}
             onDone={handleResizeDone}
-            rotation={pendingRotation}
-            onRotationChange={handleRotationChange}
           />
         ) : selection.id ? (
           <ContextualToolbar
