@@ -74,7 +74,14 @@ export default function MembershipScreen() {
       ? 'free' // Complimentary users see "free" in the paywall
       : subscriptionDetails.currentPlan || 'unknown';
     
-    await requestPremiumAccess('change_plan', undefined, { currentPlan });
+    console.log('[Membership] Opening Change Plan paywall with currentPlan:', currentPlan);
+    
+    try {
+      await requestPremiumAccess('change_plan', undefined, { currentPlan });
+      console.log('[Membership] Change Plan paywall request completed');
+    } catch (error) {
+      console.error('[Membership] Error opening Change Plan paywall:', error);
+    }
     // Custom actions like "downgrade_to_free" are handled by useSuperwallEvents above
   };
 
@@ -235,18 +242,6 @@ export default function MembershipScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={dynamicStyles.contentContainer}>
-          {/* Pro Member Badge */}
-          <View style={styles.memberBadge}>
-            <View style={styles.crownContainer}>
-              <Crown size={40} color={Colors.light.accent} />
-            </View>
-            <Text style={styles.memberTitle}>PRO MEMBER</Text>
-            <View style={styles.activeBadge}>
-              <Check size={14} color={Colors.light.success} />
-              <Text style={styles.activeBadgeText}>Active</Text>
-            </View>
-          </View>
-
           {/* Current Plan Card */}
           <View style={styles.card}>
             <Text style={styles.cardLabel}>Current Plan</Text>
@@ -406,45 +401,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    paddingTop: 16,
     paddingBottom: 20,
   },
   
-  // Member Badge
-  memberBadge: {
-    alignItems: 'center',
-    paddingVertical: 32,
-  },
-  crownContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(201, 168, 124, 0.2)', // Light golden
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  memberTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.text,
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  activeBadgeText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.light.success,
-  },
-
   // Card
   card: {
     backgroundColor: Colors.light.surface,
