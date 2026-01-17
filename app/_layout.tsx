@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SuperwallProvider, useSuperwallEvents, usePlacement } from "expo-superwall";
 import { AppProvider } from "@/contexts/AppContext";
@@ -16,6 +17,9 @@ import {
   storePendingSurveyData,
   parseSuperWallSurveyData,
 } from "@/services/onboardingService";
+import { initializeFacebookSDK } from "@/services/metaAnalyticsService";
+// Note: In-app purchase tracking is handled automatically by Facebook SDK
+// Enable "Log In-App Purchases Automatically" in Facebook Developer Dashboard
 
 // Superwall API keys - replace with your actual keys from Superwall dashboard
 const SUPERWALL_API_KEYS = {
@@ -216,9 +220,9 @@ function OnboardingFlowHandler({
     onSuperwallEvent: async (eventInfo) => {
       const eventName = eventInfo.event?.event || eventInfo.event;
       console.log('[Superwall] Event:', eventName);
-      // #region agent log - Hypothesis A, E - Log ALL events to find custom action
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:onSuperwallEvent',message:'GLOBAL Superwall event',data:{eventName,hasParams:!!eventInfo.params,params:JSON.stringify(eventInfo.params||{}).slice(0,300),fullEventKeys:Object.keys(eventInfo||{}),isCustomAction:eventName==='customAction'||eventName==='custom_action'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
-      // #endregion
+      
+      // Note: In-app purchase events are tracked automatically by Facebook SDK
+      // when "Log In-App Purchases Automatically" is enabled in Facebook Dashboard
       
       // Capture survey response events and user attribute changes
       // Superwall sets attributes when user selects industry/goal options
@@ -366,6 +370,11 @@ export default function RootLayout() {
   useEffect(() => {
     // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
+    
+    // Initialize Facebook SDK for Meta Ads attribution (iOS only)
+    if (Platform.OS === 'ios') {
+      initializeFacebookSDK().catch(console.error);
+    }
   }, []);
 
   return (

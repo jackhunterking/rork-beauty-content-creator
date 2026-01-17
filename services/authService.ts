@@ -3,6 +3,7 @@ import { AuthResult, UserProfile, ProfileRow } from '@/types';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
+import { trackRegistrationComplete, setUserId, clearUserId } from '@/services/metaAnalyticsService';
 
 /**
  * Auth Service
@@ -102,6 +103,12 @@ export async function signInWithApple(): Promise<AuthResult> {
       }
     }
 
+    // Track registration completion for Meta Ads attribution
+    if (Platform.OS === 'ios' && data.user) {
+      trackRegistrationComplete('apple');
+      setUserId(data.user.id);
+    }
+
     const profile = await getCurrentProfile();
     return { success: true, user: profile ?? undefined };
   } catch (error: any) {
@@ -147,6 +154,13 @@ export async function signInWithGoogle(): Promise<AuthResult> {
 
     // Wait a moment for session to be established
     await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Track registration completion for Meta Ads attribution
+    const { data: { user } } = await supabase.auth.getUser();
+    if (Platform.OS === 'ios' && user) {
+      trackRegistrationComplete('google');
+      setUserId(user.id);
+    }
     
     const profile = await getCurrentProfile();
     return { success: true, user: profile ?? undefined };
@@ -219,6 +233,12 @@ export async function signUpWithEmail(
         .eq('id', data.user.id);
     }
 
+    // Track registration completion for Meta Ads attribution (only if session created)
+    if (Platform.OS === 'ios' && data.user && data.session) {
+      trackRegistrationComplete('email');
+      setUserId(data.user.id);
+    }
+
     const profile = await getCurrentProfile();
     return { success: true, user: profile ?? undefined };
   } catch (error: any) {
@@ -237,6 +257,11 @@ export async function signOut(): Promise<{ success: boolean; error?: string }> {
     if (error) {
       console.error('[Auth] Sign out error:', error);
       return { success: false, error: error.message };
+    }
+
+    // Clear Meta Analytics user ID on sign out
+    if (Platform.OS === 'ios') {
+      clearUserId();
     }
 
     return { success: true };
