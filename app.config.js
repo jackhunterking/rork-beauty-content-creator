@@ -71,6 +71,9 @@ export default {
           clientToken: "ef9324eb6436b29a84d6009d346c8b6e",
           displayName: "Resulta",
           scheme: "fb664828860049907",
+          autoInitEnabled: true,
+          autoLogAppEventsEnabled: true,
+          advertiserIdCollectionEnabled: true,
         },
       ],
       [
