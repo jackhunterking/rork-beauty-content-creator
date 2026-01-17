@@ -1,22 +1,26 @@
 /**
  * ResizeToolbar Component
  * 
- * Simple bottom toolbar for resize mode with Cancel and Done buttons.
- * All adjustments (pan, zoom, rotate) are done via gestures on the canvas.
+ * Bottom toolbar for resize mode with Cancel/Done buttons and rotation slider.
+ * Pinch to zoom and drag to position are done via gestures on the canvas.
  */
 
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import Slider from '@react-native-community/slider';
+import { RotateCw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 interface CropToolbarProps {
   onCancel: () => void;
   onDone: () => void;
+  rotation: number;
+  onRotationChange: (rotation: number) => void;
 }
 
-export function CropToolbar({ onCancel, onDone }: CropToolbarProps) {
+export function CropToolbar({ onCancel, onDone, rotation, onRotationChange }: CropToolbarProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -47,10 +51,29 @@ export function CropToolbar({ onCancel, onDone }: CropToolbarProps) {
       </View>
 
       {/* Hint */}
-      <View style={styles.hintContainer}>
-        <Text style={styles.hintText}>
-          Pinch to zoom • Two fingers to rotate • Drag to position
-        </Text>
+      <Text style={styles.hintText}>
+        Pinch to zoom • Drag to position
+      </Text>
+
+      {/* Rotation Slider */}
+      <View style={styles.rotationContainer}>
+        <View style={styles.rotationHeader}>
+          <RotateCw size={18} color={Colors.light.textSecondary} strokeWidth={2} />
+          <Text style={styles.rotationLabel}>Rotation</Text>
+          <Text style={styles.rotationValue}>{Math.round(rotation)}°</Text>
+        </View>
+        
+        <Slider
+          style={styles.slider}
+          minimumValue={-180}
+          maximumValue={180}
+          step={1}
+          value={rotation}
+          onValueChange={onRotationChange}
+          minimumTrackTintColor={Colors.light.accent}
+          maximumTrackTintColor={Colors.light.border}
+          thumbTintColor={Colors.light.accent}
+        />
       </View>
     </Animated.View>
   );
@@ -105,14 +128,38 @@ const styles = StyleSheet.create({
     color: Colors.light.accent,
     letterSpacing: -0.4,
   },
-  hintContainer: {
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
   hintText: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.light.textTertiary,
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  rotationContainer: {
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  rotationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  rotationLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.light.text,
+    marginLeft: 8,
+    flex: 1,
+  },
+  rotationValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.light.accent,
+    minWidth: 50,
+    textAlign: 'right',
+  },
+  slider: {
+    width: '100%',
+    height: 40,
   },
 });
 
