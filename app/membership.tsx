@@ -58,14 +58,29 @@ export default function MembershipScreen() {
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
 
   // Listen for custom paywall actions (like "downgrade_to_free" from Superwall)
+  // #region agent log - Hypothesis B, C, D, E
   useSuperwallEvents({
     onCustomAction: (name) => {
+      // Hypothesis B & D - Check if onCustomAction is called and what name it receives
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'membership.tsx:onCustomAction',message:'onCustomAction CALLED',data:{actionName:name,expectedName:'downgrade_to_free',isMatch:name==='downgrade_to_free'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-D'})}).catch(()=>{});
       console.log('[Membership] Custom paywall action:', name);
       if (name === 'downgrade_to_free') {
         handleDowngradeConfirmation();
       }
     },
+    // Hypothesis E - Check if custom action comes through onSuperwallEvent instead
+    onSuperwallEvent: (eventInfo) => {
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'membership.tsx:onSuperwallEvent',message:'Superwall event received',data:{eventType:eventInfo?.event?.event||eventInfo?.event,fullEvent:JSON.stringify(eventInfo).slice(0,500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    },
+    // Hypothesis C - Check all paywall callbacks
+    onPaywallPresent: (info) => {
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'membership.tsx:onPaywallPresent',message:'Paywall presented in membership',data:{paywallName:info?.name},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    },
+    onPaywallDismiss: (info, result) => {
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'membership.tsx:onPaywallDismiss',message:'Paywall dismissed in membership',data:{paywallName:info?.name,result:JSON.stringify(result)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    },
   });
+  // #endregion
 
   // Handle Change Plan - opens Superwall paywall with Free/Paid options
   // Passes currentPlan as a placement parameter so the paywall can show "Current" indicator

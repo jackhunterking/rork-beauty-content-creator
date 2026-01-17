@@ -216,6 +216,9 @@ function OnboardingFlowHandler({
     onSuperwallEvent: async (eventInfo) => {
       const eventName = eventInfo.event?.event || eventInfo.event;
       console.log('[Superwall] Event:', eventName);
+      // #region agent log - Hypothesis A, E - Log ALL events to find custom action
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:onSuperwallEvent',message:'GLOBAL Superwall event',data:{eventName,hasParams:!!eventInfo.params,params:JSON.stringify(eventInfo.params||{}).slice(0,300),fullEventKeys:Object.keys(eventInfo||{}),isCustomAction:eventName==='customAction'||eventName==='custom_action'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-E'})}).catch(()=>{});
+      // #endregion
       
       // Capture survey response events and user attribute changes
       // Superwall sets attributes when user selects industry/goal options
