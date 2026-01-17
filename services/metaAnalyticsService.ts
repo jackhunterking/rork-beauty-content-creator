@@ -13,11 +13,6 @@
  */
 
 import { AppEventsLogger, Settings } from 'react-native-fbsdk-next';
-import { Platform } from 'react-native';
-
-// Only log in development mode
-const log = __DEV__ ? console.log : () => {};
-const logError = console.error; // Always log errors
 
 /**
  * Initialize Facebook SDK
@@ -25,54 +20,27 @@ const logError = console.error; // Always log errors
  */
 export async function initializeFacebookSDK(): Promise<void> {
   try {
-    log('[MetaAnalytics] Initializing Facebook SDK...');
-    
-    // Initialize the SDK
+    // Initialize the SDK - this must be called first
     await Settings.initializeSDK();
     
-    // Enable automatic logging of app events
+    // Enable automatic logging of app events (includes app open/install)
     await Settings.setAutoLogAppEventsEnabled(true);
     
-    // Enable advertiser ID collection
+    // Enable advertiser ID collection for attribution
     await Settings.setAdvertiserIDCollectionEnabled(true);
     
     // Set Advertiser Tracking Enabled (ATE) flag for iOS 14.5+
-    // Set to false since we're not requesting ATT permission
+    // Enables full tracking capabilities for ad attribution
     try {
-      await Settings.setAdvertiserTrackingEnabled(false);
+      await Settings.setAdvertiserTrackingEnabled(true);
     } catch {
       // ATE flag not critical - continue initialization
     }
     
-    // Log app activation - sends "app install" / "app open" event
-    AppEventsLogger.logEvent('fb_mobile_activate_app');
+    // Flush any pending events
     AppEventsLogger.flush();
-    
-    log('[MetaAnalytics] ✓ Facebook SDK initialized successfully');
   } catch (error) {
-    logError('[MetaAnalytics] Failed to initialize Facebook SDK:', error);
-  }
-}
-
-/**
- * Send a test event to verify SDK is working
- * Use this to trigger events for Facebook Events Manager testing
- */
-export function sendTestEvent(): void {
-  try {
-    const eventName = AppEventsLogger.AppEvents?.ViewedContent || 'fb_mobile_content_view';
-    const contentTypeKey = AppEventsLogger.AppEventParams?.ContentType || 'fb_content_type';
-    const contentIdKey = AppEventsLogger.AppEventParams?.ContentID || 'fb_content_id';
-    
-    AppEventsLogger.logEvent(eventName, {
-      [contentTypeKey]: 'test',
-      [contentIdKey]: `test_content_${Date.now()}`,
-    });
-    
-    AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Test event sent');
-  } catch (error) {
-    logError('[MetaAnalytics] Failed to send test event:', error);
+    console.error('[MetaAnalytics] Failed to initialize Facebook SDK:', error);
   }
 }
 
@@ -93,9 +61,8 @@ export function trackRegistrationComplete(
     });
     
     AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Registration tracked:', method);
   } catch (error) {
-    logError('[MetaAnalytics] Failed to track registration:', error);
+    console.error('[MetaAnalytics] Failed to track registration:', error);
   }
 }
 
@@ -118,9 +85,8 @@ export function trackPurchase(
     });
     
     AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Purchase tracked:', { price, currency, subscriptionType });
   } catch (error) {
-    logError('[MetaAnalytics] Failed to track purchase:', error);
+    console.error('[MetaAnalytics] Failed to track purchase:', error);
   }
 }
 
@@ -153,9 +119,8 @@ export function trackSubscriptionStart(
     });
     
     AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Subscription start tracked:', { productId, price, currency });
   } catch (error) {
-    logError('[MetaAnalytics] Failed to track subscription start:', error);
+    console.error('[MetaAnalytics] Failed to track subscription start:', error);
   }
 }
 
@@ -172,9 +137,8 @@ export function trackTrialStarted(productId?: string): void {
     });
     
     AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Trial started tracked:', productId);
   } catch (error) {
-    logError('[MetaAnalytics] Failed to track trial start:', error);
+    console.error('[MetaAnalytics] Failed to track trial start:', error);
   }
 }
 
@@ -191,9 +155,8 @@ export function trackCustomEvent(
   try {
     AppEventsLogger.logEvent(eventName, params);
     AppEventsLogger.flush();
-    log('[MetaAnalytics] ✓ Custom event tracked:', eventName);
   } catch (error) {
-    logError('[MetaAnalytics] Failed to track custom event:', error);
+    console.error('[MetaAnalytics] Failed to track custom event:', error);
   }
 }
 
@@ -206,9 +169,8 @@ export function trackCustomEvent(
 export function setUserId(userId: string): void {
   try {
     AppEventsLogger.setUserID(userId);
-    log('[MetaAnalytics] User ID set');
   } catch (error) {
-    logError('[MetaAnalytics] Failed to set user ID:', error);
+    console.error('[MetaAnalytics] Failed to set user ID:', error);
   }
 }
 
@@ -218,15 +180,13 @@ export function setUserId(userId: string): void {
 export function clearUserId(): void {
   try {
     AppEventsLogger.setUserID(null);
-    log('[MetaAnalytics] User ID cleared');
   } catch (error) {
-    logError('[MetaAnalytics] Failed to clear user ID:', error);
+    console.error('[MetaAnalytics] Failed to clear user ID:', error);
   }
 }
 
 export default {
   initializeFacebookSDK,
-  sendTestEvent,
   trackRegistrationComplete,
   trackPurchase,
   trackSubscriptionStart,

@@ -865,6 +865,18 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 
+                <View style={styles.debugDivider} />
+                
+                {/* Editor V2 Prototype Access */}
+                <TouchableOpacity 
+                  style={styles.debugPrototypeButton}
+                  onPress={() => router.push('/editor-v2')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.debugPrototypeButtonText}>🧪 Test Editor V2 Prototype</Text>
+                  <Text style={styles.debugPrototypeHint}>Instagram-style canvas editor</Text>
+                </TouchableOpacity>
+                
                 <TouchableOpacity 
                   style={styles.debugHideButton}
                   onPress={() => setShowDebugInfo(false)}
@@ -1282,6 +1294,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     fontWeight: '500' as const,
+  },
+  debugPrototypeButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.3)',
+  },
+  debugPrototypeButtonText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#8B5CF6',
+  },
+  debugPrototypeHint: {
+    fontSize: 12,
+    color: '#8B5CF6',
+    opacity: 0.7,
+    marginTop: 4,
   },
   
   // Feedback styles

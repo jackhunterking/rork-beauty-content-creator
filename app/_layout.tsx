@@ -17,7 +17,7 @@ import {
   storePendingSurveyData,
   parseSuperWallSurveyData,
 } from "@/services/onboardingService";
-import { initializeFacebookSDK, sendTestEvent } from "@/services/metaAnalyticsService";
+import { initializeFacebookSDK } from "@/services/metaAnalyticsService";
 // Note: In-app purchase tracking is handled automatically by Facebook SDK
 // Enable "Log In-App Purchases Automatically" in Facebook Developer Dashboard
 
@@ -373,13 +373,7 @@ export default function RootLayout() {
     
     // Initialize Facebook SDK for Meta Ads attribution (iOS only)
     if (Platform.OS === 'ios') {
-      initializeFacebookSDK()
-        .then(() => {
-          // Send a test event to verify SDK is working with Facebook Events Manager
-          console.log('[RootLayout] Sending test event after SDK init...');
-          sendTestEvent();
-        })
-        .catch(console.error);
+      initializeFacebookSDK().catch(console.error);
     }
   }, []);
 
