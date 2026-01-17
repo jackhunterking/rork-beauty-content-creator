@@ -23,9 +23,19 @@ export async function initializeFacebookSDK(): Promise<void> {
   try {
     console.log('[MetaAnalytics] === INITIALIZING FACEBOOK SDK ===');
     
+    console.log('[MetaAnalytics] Platform:', Platform.OS);
+    
     // Initialize the SDK
     await Settings.initializeSDK();
     console.log('[MetaAnalytics] SDK initialized');
+    
+    // Log the app ID to verify it's set correctly
+    try {
+      const appId = await Settings.getAppID();
+      console.log('[MetaAnalytics] Facebook App ID from SDK:', appId || 'NOT SET');
+    } catch (e) {
+      console.log('[MetaAnalytics] Could not get App ID:', e);
+    }
     
     // Enable automatic logging of app events
     await Settings.setAutoLogAppEventsEnabled(true);
@@ -35,6 +45,20 @@ export async function initializeFacebookSDK(): Promise<void> {
     // Note: For full tracking, ATT permission would be needed
     await Settings.setAdvertiserIDCollectionEnabled(true);
     console.log('[MetaAnalytics] Advertiser ID collection enabled');
+    
+    // Enable debug mode for Facebook SDK (shows more info in native logs)
+    // This helps identify if events are being sent correctly
+    if (__DEV__) {
+      try {
+        // @ts-ignore - setDebugMode might not be in types but exists in native
+        if (typeof Settings.setDebugMode === 'function') {
+          Settings.setDebugMode(true);
+          console.log('[MetaAnalytics] Debug mode enabled');
+        }
+      } catch (e) {
+        console.log('[MetaAnalytics] Debug mode not available');
+      }
+    }
     
     // Log app activation - this sends the "app install" / "app open" event
     AppEventsLogger.logEvent('fb_mobile_activate_app');
@@ -59,14 +83,39 @@ export async function initializeFacebookSDK(): Promise<void> {
 export function sendTestEvent(): void {
   console.log('[MetaAnalytics] === SENDING TEST EVENT ===');
   try {
-    // Send a ViewContent event as a test
-    AppEventsLogger.logEvent(
-      AppEventsLogger.AppEvents.ViewedContent,
-      {
-        [AppEventsLogger.AppEventParams.ContentType]: 'test',
-        [AppEventsLogger.AppEventParams.ContentID]: 'test_content_' + Date.now(),
-      }
-    );
+    // Log the constants to verify they're not null
+    const eventName = AppEventsLogger.AppEvents?.ViewedContent;
+    const contentTypeKey = AppEventsLogger.AppEventParams?.ContentType;
+    const contentIdKey = AppEventsLogger.AppEventParams?.ContentID;
+    
+    console.log('[MetaAnalytics] Event constants:', {
+      eventName: eventName || 'NULL',
+      contentTypeKey: contentTypeKey || 'NULL',
+      contentIdKey: contentIdKey || 'NULL',
+      hasAppEvents: !!AppEventsLogger.AppEvents,
+      hasAppEventParams: !!AppEventsLogger.AppEventParams,
+    });
+    
+    // Use string literals as fallback if constants are undefined
+    const safeEventName = eventName || 'fb_mobile_content_view';
+    const safeParams: Record<string, string> = {};
+    
+    if (contentTypeKey) {
+      safeParams[contentTypeKey] = 'test';
+    } else {
+      safeParams['fb_content_type'] = 'test';
+    }
+    
+    if (contentIdKey) {
+      safeParams[contentIdKey] = 'test_content_' + Date.now();
+    } else {
+      safeParams['fb_content_id'] = 'test_content_' + Date.now();
+    }
+    
+    console.log('[MetaAnalytics] Sending event with params:', { eventName: safeEventName, params: safeParams });
+    
+    // Send a ViewContent event as a test with safe values
+    AppEventsLogger.logEvent(safeEventName, safeParams);
     console.log('[MetaAnalytics] ViewContent test event sent');
     
     // Also send app activation
@@ -79,6 +128,7 @@ export function sendTestEvent(): void {
     console.log('[MetaAnalytics] === TEST EVENT COMPLETE ===');
   } catch (error) {
     console.error('[MetaAnalytics] ✗ Failed to send test event:', error);
+    console.error('[MetaAnalytics] Error details:', JSON.stringify(error));
   }
 }
 

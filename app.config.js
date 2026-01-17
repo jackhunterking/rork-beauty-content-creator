@@ -29,6 +29,11 @@ export default {
         NSPhotoLibraryUsageDescription: "Allow $(PRODUCT_NAME) to access your photos",
         NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access your camera",
         NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone",
+        // Facebook SDK Configuration
+        FacebookAppID: "664828860049907",
+        FacebookClientToken: "ef9324eb6436b29a84d6009d346c8b6e",
+        FacebookDisplayName: "Resulta",
+        LSApplicationQueriesSchemes: ["fbapi", "fb-messenger-share-api", "fbauth2", "fbshareextension"],
       },
     },
     android: {
@@ -59,6 +64,15 @@ export default {
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication",
+      [
+        "react-native-fbsdk-next",
+        {
+          appID: "664828860049907",
+          clientToken: "ef9324eb6436b29a84d6009d346c8b6e",
+          displayName: "Resulta",
+          scheme: "fb664828860049907",
+        },
+      ],
       [
         "expo-image-picker",
         {
