@@ -120,7 +120,7 @@ async function uploadToCloud(localPath: string, width: number, height: number): 
       .createSignedUrl(filePath, 60 * 60 * 24 * 365);
     
     if (urlData?.signedUrl) {
-      // Save metadata to database
+      // Save metadata to database (FIX: add .select() to get a Promise)
       await supabase
         .from('brand_kits')
         .upsert({
@@ -129,7 +129,8 @@ async function uploadToCloud(localPath: string, width: number, height: number): 
           logo_width: width,
           logo_height: height,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' });
+        }, { onConflict: 'user_id' })
+        .select();
     }
   } catch (error) {
     // Cloud upload failed - logo is still saved locally
@@ -238,8 +239,10 @@ export async function deleteBrandLogo(): Promise<BrandKit> {
       supabase.storage
         .from(STORAGE_BUCKET)
         .remove([`${userId}/logo.jpg`])
+        .then(() => {})
         .catch(() => {});
       
+      // Use .select() to convert to Promise before .then()/.catch()
       supabase
         .from('brand_kits')
         .upsert({
@@ -249,6 +252,8 @@ export async function deleteBrandLogo(): Promise<BrandKit> {
           logo_height: null,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id' })
+        .select()
+        .then(() => {})
         .catch(() => {});
     }
     
@@ -293,7 +298,7 @@ export async function updateBrandKitSettings(
   
   await saveToLocalCache(updated);
   
-  // Sync to cloud in background
+  // Sync to cloud in background (FIX: add .select() then .catch())
   const userId = await getCurrentUserId();
   if (userId) {
     supabase
@@ -305,6 +310,8 @@ export async function updateBrandKitSettings(
         add_disclaimer: settings.addDisclaimer ?? false,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id' })
+      .select()
+      .then(() => {})
       .catch(() => {});
   }
   

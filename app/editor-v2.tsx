@@ -42,6 +42,12 @@ import {
   ContextualToolbar,
   AIEnhancePanel,
   CropToolbar,
+  // New Canva-style components
+  EditorMainToolbar,
+  ElementContextBar,
+  FloatingElementToolbar,
+  TextStylePanel,
+  LogoPanel,
 } from '@/components/editor-v2';
 import {
   ToolType,
@@ -49,6 +55,14 @@ import {
   DEFAULT_SELECTION,
   AIEnhancementType,
 } from '@/components/editor-v2/types';
+import type { 
+  MainToolbarItem, 
+  TextStylePanelRef, 
+  LogoPanelRef,
+  FloatingToolbarElementType,
+  ElementPosition,
+  ContextBarElementType,
+} from '@/components/editor-v2';
 import {
   createTextOverlay,
   createDateOverlay,
@@ -80,11 +94,18 @@ export default function EditorV2Screen() {
   const template = currentProject.template;
   const capturedImages = currentProject.capturedImages;
 
-  // Bottom sheet refs
+  // Bottom sheet refs (legacy)
   const aiPanelRef = useRef<BottomSheet>(null);
   const styleSheetRef = useRef<BottomSheet>(null);
   const logoPickerRef = useRef<BottomSheet>(null);
   const logoActionSheetRef = useRef<BottomSheet>(null);
+  
+  // New Canva-style panel refs
+  const textStylePanelRef = useRef<TextStylePanelRef>(null);
+  const logoPanelRef = useRef<LogoPanelRef>(null);
+  
+  // Track if using new Canva-style UI (feature flag for gradual rollout)
+  const useCanvaStyleUI = true;
 
   // ViewShot ref for capturing canvas with overlays
   const viewShotRef = useRef<ViewShot>(null);
@@ -108,6 +129,10 @@ export default function EditorV2Screen() {
 
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);
+  
+  // Canva-style UI state
+  const [activeMainTool, setActiveMainTool] = useState<MainToolbarItem | null>(null);
+  const [selectedElementPosition, setSelectedElementPosition] = useState<ElementPosition | null>(null);
 
   // Track initial state for change detection
   const initialCapturedImagesRef = useRef<Record<string, string | null>>({});
@@ -642,6 +667,206 @@ export default function EditorV2Screen() {
   // Handle AI panel close
   const handleAIPanelClose = useCallback(() => {
     aiPanelRef.current?.close();
+  }, []);
+
+  // ============================================
+  // Canva-style Main Toolbar Handlers
+  // ============================================
+  
+  // Handle main toolbar tool selection (Canva-style)
+  const handleMainToolbarSelect = useCallback((tool: MainToolbarItem) => {
+    // Close any open panels first
+    setActiveMainTool(tool === activeMainTool ? null : tool);
+    
+    if (tool === 'photo') {
+      // Photo tool - find first empty slot or navigate to capture
+      const firstEmptySlot = slots.find(slot => !hasValidCapturedImage(slot.layerId, capturedImages));
+      if (firstEmptySlot) {
+        router.push(`/capture/${firstEmptySlot.layerId}`);
+      } else if (slots.length > 0) {
+        // All slots filled - select first slot for editing
+        setSelection({
+          type: 'slot',
+          id: slots[0].layerId,
+          isTransforming: false,
+        });
+      }
+    } else if (tool === 'text') {
+      // Add text overlay
+      const newOverlay = createTextOverlay();
+      setOverlays(prev => [...prev, newOverlay]);
+      setSelectedOverlayId(newOverlay.id);
+      // Open text style panel
+      setTimeout(() => {
+        if (useCanvaStyleUI) {
+          textStylePanelRef.current?.open();
+        } else {
+          styleSheetRef.current?.snapToIndex(0);
+        }
+      }, 100);
+    } else if (tool === 'date') {
+      // Add date overlay
+      const newOverlay = createDateOverlay();
+      setOverlays(prev => [...prev, newOverlay]);
+      setSelectedOverlayId(newOverlay.id);
+      // Open text style panel (handles both text and date)
+      setTimeout(() => {
+        if (useCanvaStyleUI) {
+          textStylePanelRef.current?.open();
+        } else {
+          styleSheetRef.current?.snapToIndex(0);
+        }
+      }, 100);
+    } else if (tool === 'logo') {
+      // Open logo picker panel
+      if (useCanvaStyleUI) {
+        logoPanelRef.current?.openPicker();
+      } else {
+        logoPickerRef.current?.snapToIndex(0);
+      }
+    } else if (tool === 'ai') {
+      // Open AI panel
+      aiPanelRef.current?.snapToIndex(0);
+    }
+  }, [activeMainTool, slots, capturedImages, router, useCanvaStyleUI]);
+
+  // Get element type for context bar based on selection
+  const contextBarElementType = useMemo((): ContextBarElementType | null => {
+    if (selection.type === 'slot') return 'photo';
+    if (selectedOverlayId) {
+      const overlay = overlays.find(o => o.id === selectedOverlayId);
+      if (overlay) {
+        if (overlay.type === 'text') return 'text';
+        if (overlay.type === 'date') return 'date';
+        if (overlay.type === 'logo') return 'logo';
+      }
+    }
+    return null;
+  }, [selection.type, selectedOverlayId, overlays]);
+
+  // Get floating toolbar element type
+  const floatingToolbarElementType = useMemo((): FloatingToolbarElementType | null => {
+    if (selection.type === 'slot') return 'photo';
+    if (selectedOverlayId) {
+      const overlay = overlays.find(o => o.id === selectedOverlayId);
+      if (overlay) {
+        if (overlay.type === 'text') return 'text';
+        if (overlay.type === 'date') return 'date';
+        if (overlay.type === 'logo') return 'logo';
+      }
+    }
+    return null;
+  }, [selection.type, selectedOverlayId, overlays]);
+
+  // Check if something is selected (for showing context bar vs main toolbar)
+  const hasSelection = selection.id !== null || selectedOverlayId !== null;
+
+  // Handle confirm/done from context bar
+  const handleContextBarConfirm = useCallback(() => {
+    // Save any pending manipulation adjustments before deselecting
+    if (pendingManipulationAdjustments) {
+      saveManipulationAdjustments();
+    }
+    setSelection(DEFAULT_SELECTION);
+    setPendingManipulationAdjustments(null);
+    setSelectedOverlayId(null);
+    setActiveMainTool(null);
+    
+    // Close panels
+    if (useCanvaStyleUI) {
+      textStylePanelRef.current?.close();
+      logoPanelRef.current?.close();
+    } else {
+      styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
+    }
+  }, [pendingManipulationAdjustments, saveManipulationAdjustments, useCanvaStyleUI]);
+
+  // Handle text font action from context bar
+  const handleTextFontAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      textStylePanelRef.current?.open();
+    } else {
+      styleSheetRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle text color action from context bar
+  const handleTextColorAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      textStylePanelRef.current?.open();
+    } else {
+      styleSheetRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle text size action from context bar
+  const handleTextSizeAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      textStylePanelRef.current?.open();
+    } else {
+      styleSheetRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle logo replace action from context bar
+  const handleLogoReplaceAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      logoPanelRef.current?.openPicker();
+    } else {
+      logoPickerRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle logo opacity action from context bar  
+  const handleLogoOpacityAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      logoPanelRef.current?.openEditor();
+    } else {
+      logoActionSheetRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle logo size action from context bar
+  const handleLogoSizeAction = useCallback(() => {
+    if (useCanvaStyleUI) {
+      logoPanelRef.current?.openEditor();
+    } else {
+      logoActionSheetRef.current?.snapToIndex(0);
+    }
+  }, [useCanvaStyleUI]);
+
+  // Handle logo selected from new LogoPanel
+  const handleLogoPanelSelect = useCallback((logoData: { uri: string; width: number; height: number }) => {
+    const newOverlay = createLogoOverlay(
+      logoData.uri,
+      logoData.width,
+      logoData.height,
+      false
+    );
+    setOverlays(prev => [...prev, newOverlay]);
+    setSelectedOverlayId(newOverlay.id);
+    
+    // Open logo editor panel for the newly added logo
+    setTimeout(() => {
+      if (useCanvaStyleUI) {
+        logoPanelRef.current?.openEditor();
+      } else {
+        logoActionSheetRef.current?.snapToIndex(0);
+      }
+    }, 100);
+    
+    console.log('[EditorV2] Added logo overlay from panel:', newOverlay.id);
+  }, [useCanvaStyleUI]);
+
+  // Handle logo panel close
+  const handleLogoPanelClose = useCallback(() => {
+    setActiveMainTool(null);
+  }, []);
+
+  // Handle text style panel close
+  const handleTextStylePanelClose = useCallback(() => {
+    setActiveMainTool(null);
   }, []);
 
   // ============================================
@@ -1384,6 +1609,21 @@ export default function EditorV2Screen() {
             </ViewShot>
           </View>
           
+          {/* Floating Element Toolbar (Canva-style) - positioned above selected elements */}
+          {useCanvaStyleUI && hasSelection && !isCropMode && (
+            <FloatingElementToolbar
+              elementType={floatingToolbarElementType}
+              visible={true}
+              elementPosition={selectedElementPosition || undefined}
+              canvasTop={100} // Approximate header height
+              onReplace={selection.type === 'slot' ? handlePhotoReplace : handleLogoReplaceAction}
+              onCrop={selection.type === 'slot' ? handlePhotoResize : undefined}
+              onDuplicate={undefined} // TODO: Implement duplicate
+              onDelete={selection.type === 'slot' ? handlePhotoDelete : handleDeleteSelectedOverlay}
+              onMore={undefined}
+            />
+          )}
+          
           {/* Preview error indicator */}
           {previewError && !isRendering && !isCropMode && (
             <View style={styles.errorBanner}>
@@ -1406,28 +1646,57 @@ export default function EditorV2Screen() {
             rotation={pendingRotation}
             onRotationChange={handleRotationChange}
           />
-        ) : selection.id ? (
-          <ContextualToolbar
-            selectionType={selection.type}
-            visible={true}
-            onPhotoReplace={handlePhotoReplace}
-            onPhotoResize={handlePhotoResize}
-            onPhotoAI={handlePhotoAI}
-            onPhotoDelete={handlePhotoDelete}
-            onDeselect={() => {
-              // Save any pending manipulation adjustments before deselecting
-              if (pendingManipulationAdjustments) {
-                saveManipulationAdjustments();
-              }
-              setSelection(DEFAULT_SELECTION);
-              setPendingManipulationAdjustments(null);
-            }}
-          />
+        ) : useCanvaStyleUI ? (
+          // New Canva-style UI
+          hasSelection ? (
+            <ElementContextBar
+              elementType={contextBarElementType}
+              visible={true}
+              onPhotoReplace={handlePhotoReplace}
+              onPhotoAdjust={handlePhotoResize}
+              onPhotoAI={handlePhotoAI}
+              onPhotoResize={handlePhotoResize}
+              onTextFont={handleTextFontAction}
+              onTextColor={handleTextColorAction}
+              onTextSize={handleTextSizeAction}
+              onTextAlign={handleTextFontAction}
+              onLogoReplace={handleLogoReplaceAction}
+              onLogoOpacity={handleLogoOpacityAction}
+              onLogoSize={handleLogoSizeAction}
+              onConfirm={handleContextBarConfirm}
+            />
+          ) : (
+            <EditorMainToolbar
+              activeTool={activeMainTool}
+              onToolSelect={handleMainToolbarSelect}
+              visible={true}
+            />
+          )
         ) : (
-          <ToolDock
-            activeTool={activeTool}
-            onToolSelect={handleToolSelect}
-          />
+          // Legacy UI (fallback)
+          selection.id ? (
+            <ContextualToolbar
+              selectionType={selection.type}
+              visible={true}
+              onPhotoReplace={handlePhotoReplace}
+              onPhotoResize={handlePhotoResize}
+              onPhotoAI={handlePhotoAI}
+              onPhotoDelete={handlePhotoDelete}
+              onDeselect={() => {
+                // Save any pending manipulation adjustments before deselecting
+                if (pendingManipulationAdjustments) {
+                  saveManipulationAdjustments();
+                }
+                setSelection(DEFAULT_SELECTION);
+                setPendingManipulationAdjustments(null);
+              }}
+            />
+          ) : (
+            <ToolDock
+              activeTool={activeTool}
+              onToolSelect={handleToolSelect}
+            />
+          )
         )}
       </SafeAreaView>
 
@@ -1466,6 +1735,31 @@ export default function EditorV2Screen() {
         onScaleChange={handleScaleSliderChange}
         onDeleteOverlay={handleDeleteSelectedOverlay}
       />
+
+      {/* New Canva-style Panels */}
+      {useCanvaStyleUI && (
+        <>
+          {/* Text Style Panel - compact panel for text/date overlays */}
+          <TextStylePanel
+            ref={textStylePanelRef}
+            overlay={selectedOverlay}
+            onUpdateOverlay={handleUpdateOverlayProperties}
+            onDeleteOverlay={handleDeleteSelectedOverlay}
+            onClose={handleTextStylePanelClose}
+          />
+
+          {/* Logo Panel - compact panel for logo overlays */}
+          <LogoPanel
+            ref={logoPanelRef}
+            selectedLogo={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
+            currentScale={selectedOverlay?.transform.scale ?? 1}
+            onSelectLogo={handleLogoPanelSelect}
+            onScaleChange={handleScaleSliderChange}
+            onDeleteLogo={handleDeleteSelectedOverlay}
+            onClose={handleLogoPanelClose}
+          />
+        </>
+      )}
     </GestureHandlerRootView>
   );
 }
