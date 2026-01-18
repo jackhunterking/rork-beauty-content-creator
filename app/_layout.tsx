@@ -414,6 +414,10 @@ export default function RootLayout() {
   const [posthogReady, setPosthogReady] = useState(false);
 
   useEffect(() => {
+    // #region agent log - Hypothesis C: RootLayout mount
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:RootLayout:mount',message:'RootLayout useEffect running',data:{hasApiKey:!!POSTHOG_API_KEY,apiKeyLength:POSTHOG_API_KEY?.length,host:POSTHOG_HOST},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+
     // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
     
@@ -422,12 +426,24 @@ export default function RootLayout() {
     const initAnalytics = async () => {
       try {
         if (POSTHOG_API_KEY) {
+          // #region agent log - Hypothesis C: Calling initializePostHog
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:before',message:'About to call initializePostHog',data:{apiKeyPrefix:POSTHOG_API_KEY?.substring(0,15)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           await initializePostHog(POSTHOG_API_KEY, POSTHOG_HOST);
+          // #region agent log - Hypothesis C: initializePostHog completed
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:after',message:'initializePostHog completed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
           console.log('[Analytics] PostHog initialized');
         } else {
+          // #region agent log - Hypothesis A: No API key in layout
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:noKey',message:'NO API KEY in RootLayout',data:{POSTHOG_API_KEY},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           console.warn('[Analytics] PostHog API key not configured');
         }
       } catch (error) {
+        // #region agent log - Hypothesis D: Init error in layout
+        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:error',message:'PostHog init error in layout',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         console.error('[Analytics] Failed to initialize PostHog:', error);
       } finally {
         setPosthogReady(true);
@@ -444,7 +460,6 @@ export default function RootLayout() {
 
   // PostHog client configuration for the provider
   const posthogClientConfig = {
-    apiKey: POSTHOG_API_KEY,
     host: POSTHOG_HOST,
     // Enable session replay for mobile
     enableSessionReplay: true,
@@ -471,6 +486,10 @@ export default function RootLayout() {
     // Enable debug logging in development
     debug: __DEV__,
   };
+
+  // #region agent log - Hypothesis E: PostHogProvider config
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:RootLayout:render',message:'PostHogProvider about to render',data:{apiKeyProvided:!!POSTHOG_API_KEY,apiKeyLength:POSTHOG_API_KEY?.length,host:POSTHOG_HOST,enableSessionReplay:posthogClientConfig.enableSessionReplay,hasSessionReplayConfig:!!posthogClientConfig.sessionReplayConfig},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
 
   return (
     <PostHogProvider 

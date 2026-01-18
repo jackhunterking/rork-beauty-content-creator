@@ -118,17 +118,28 @@ export async function initializePostHog(
   apiKey: string,
   host: string = 'https://us.i.posthog.com'
 ): Promise<PostHog | null> {
+  // #region agent log - Hypothesis A: Check if already initialized
+  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:entry',message:'PostHog init called',data:{apiKeyProvided:!!apiKey,apiKeyPrefix:apiKey?.substring(0,10),host,isAlreadyInitialized:isInitialized,hasClient:!!posthogClient},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+
   if (isInitialized && posthogClient) {
     console.log('[PostHog] Already initialized');
     return posthogClient;
   }
 
   if (!apiKey) {
+    // #region agent log - Hypothesis A: No API key
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:noApiKey',message:'PostHog NO API KEY',data:{apiKey},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     console.warn('[PostHog] No API key provided, analytics disabled');
     return null;
   }
 
   try {
+    // #region agent log - Hypothesis B: Creating PostHog instance
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:creating',message:'Creating PostHog instance',data:{host,enableSessionReplay:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+
     posthogClient = new PostHog(apiKey, {
       host,
       // Enable session replay for mobile
@@ -167,8 +178,15 @@ export async function initializePostHog(
     isInitialized = true;
     console.log('[PostHog] Initialized successfully');
     
+    // #region agent log - Hypothesis B: PostHog client created successfully
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:success',message:'PostHog initialized successfully',data:{isInitialized:true,hasClient:!!posthogClient,platform:Platform.OS,platformVersion:Platform.Version},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
     return posthogClient;
   } catch (error) {
+    // #region agent log - Hypothesis B: PostHog initialization failed
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:error',message:'PostHog initialization FAILED',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.error('[PostHog] Failed to initialize:', error);
     return null;
   }
