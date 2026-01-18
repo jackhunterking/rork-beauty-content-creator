@@ -57,6 +57,9 @@ export interface TextOverlay extends BaseOverlay {
   fontSize: number;        // In points, relative to canvas
   color: string;           // Hex color
   textShadow?: boolean;    // Add shadow for visibility
+  backgroundColor?: string; // Background color (hex or 'transparent')
+  backgroundPadding?: number; // Padding around text when background is set
+  backgroundBorderRadius?: number; // Border radius for background
 }
 
 /**
@@ -70,6 +73,9 @@ export interface DateOverlay extends BaseOverlay {
   fontSize: number;
   color: string;
   textShadow?: boolean;
+  backgroundColor?: string; // Background color (hex or 'transparent')
+  backgroundPadding?: number; // Padding around text when background is set
+  backgroundBorderRadius?: number; // Border radius for background
 }
 
 /**
@@ -213,6 +219,41 @@ export const COLOR_PRESETS: string[] = [
   '#9E9E9E',  // Grey
 ];
 
+/**
+ * Preset colors for background (includes transparent option)
+ * Ordered by most useful: none, then solids with good contrast, then semi-transparent
+ */
+export const BACKGROUND_COLOR_PRESETS: (string | null)[] = [
+  null,       // Transparent/None
+  '#000000',  // Black (high contrast, most popular)
+  '#FFFFFF',  // White (high contrast, most popular)
+  '#1A1A1A',  // Near Black (elegant dark)
+  '#F5F5F5',  // Off White (soft light)
+  '#00000099', // Semi-transparent black (90% opacity - readable)
+  '#FFFFFFCC', // Semi-transparent white (80% opacity - readable)
+  '#E74C3C',  // Red
+  '#FF9800',  // Orange
+  '#FFEB3B',  // Yellow
+  '#4CAF50',  // Green
+  '#2196F3',  // Blue
+  '#9C27B0',  // Purple
+  '#E91E63',  // Pink
+  '#795548',  // Brown (earthy tone)
+  '#607D8B',  // Blue Grey (professional)
+];
+
+/**
+ * Background styling constraints
+ */
+export const BACKGROUND_CONSTRAINTS = {
+  minPadding: 4,
+  maxPadding: 24,
+  defaultPadding: 8,
+  minBorderRadius: 0,
+  maxBorderRadius: 20,
+  defaultBorderRadius: 6,
+};
+
 // ============================================
 // Size Constraints
 // ============================================
@@ -250,6 +291,9 @@ export const DEFAULT_TEXT_OVERLAY: Omit<TextOverlay, 'id' | 'createdAt' | 'updat
   fontSize: 32,
   color: '#FFFFFF',
   textShadow: true,
+  backgroundColor: undefined, // No background by default
+  backgroundPadding: BACKGROUND_CONSTRAINTS.defaultPadding,
+  backgroundBorderRadius: BACKGROUND_CONSTRAINTS.defaultBorderRadius,
   transform: { ...DEFAULT_TRANSFORM, y: 0.8 }, // Bottom area
 };
 
@@ -264,6 +308,9 @@ export const DEFAULT_DATE_OVERLAY: Omit<DateOverlay, 'id' | 'createdAt' | 'updat
   fontSize: 24,
   color: '#FFFFFF',
   textShadow: true,
+  backgroundColor: undefined, // No background by default
+  backgroundPadding: BACKGROUND_CONSTRAINTS.defaultPadding,
+  backgroundBorderRadius: BACKGROUND_CONSTRAINTS.defaultBorderRadius,
   transform: { ...DEFAULT_TRANSFORM, x: 0.15, y: 0.9 }, // Bottom left
 };
 

@@ -5,7 +5,7 @@
  * Includes a scale slider for resizing and a delete button.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,8 +13,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import { Trash2, ZoomIn, ZoomOut } from 'lucide-react-native';
+import { Trash2, ZoomIn, ZoomOut, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { LogoOverlay, LOGO_SIZE_CONSTRAINTS } from '@/types/overlays';
 
@@ -38,8 +39,8 @@ export function LogoActionSheet({
   onScaleChange,
   onDeleteOverlay,
 }: LogoActionSheetProps) {
-  // Snap points for bottom sheet - compact height for simple controls
-  const snapPoints = useMemo(() => ['25%'], []);
+  const insets = useSafeAreaInsets();
+  
 
   // Render backdrop
   const renderBackdrop = useCallback(
@@ -69,7 +70,7 @@ export function LogoActionSheet({
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
-        snapPoints={snapPoints}
+        enableDynamicSizing
         enablePanDownToClose
         backdropComponent={renderBackdrop}
       >
@@ -84,14 +85,21 @@ export function LogoActionSheet({
     <BottomSheet
       ref={bottomSheetRef}
       index={-1}
-      snapPoints={snapPoints}
+      enableDynamicSizing
       enablePanDownToClose
       backdropComponent={renderBackdrop}
     >
-      <BottomSheetView style={styles.content}>
+      <BottomSheetView style={[styles.content, { paddingBottom: insets.bottom + 12 }]}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Logo Settings</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => bottomSheetRef.current?.close()}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={Colors.light.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         {/* Scale Slider Section */}
@@ -125,12 +133,9 @@ export function LogoActionSheet({
           onPress={onDeleteOverlay}
           activeOpacity={0.7}
         >
-          <Trash2 size={20} color={Colors.light.surface} />
+          <Trash2 size={20} color={Colors.light.error} />
           <Text style={styles.deleteButtonText}>Delete Logo</Text>
         </TouchableOpacity>
-
-        {/* Bottom safe area padding */}
-        <View style={styles.bottomPadding} />
       </BottomSheetView>
     </BottomSheet>
   );
@@ -138,12 +143,9 @@ export function LogoActionSheet({
 
 const styles = StyleSheet.create({
   content: {
-    flex: 1,
     paddingHorizontal: 20,
-    paddingBottom: 20,
   },
   emptyContent: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 40,
@@ -153,14 +155,28 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 8,
     marginBottom: 8,
+    position: 'relative',
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.light.text,
     textAlign: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 0,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
   },
   section: {
     marginBottom: 16,
@@ -200,17 +216,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: Colors.light.error,
+    backgroundColor: 'rgba(214, 69, 69, 0.1)',
     paddingVertical: 14,
     borderRadius: 12,
   },
   deleteButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: Colors.light.surface,
-  },
-  bottomPadding: {
-    height: 24,
+    color: Colors.light.error,
   },
 });
 

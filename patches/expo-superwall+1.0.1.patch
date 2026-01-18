@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-superwall/ios/SuperwallExpo.podspec b/node_modules/expo-superwall/ios/SuperwallExpo.podspec
+index 888c6fb..66ae684 100644
+--- a/node_modules/expo-superwall/ios/SuperwallExpo.podspec
++++ b/node_modules/expo-superwall/ios/SuperwallExpo.podspec
+@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
+   s.static_framework = true
+ 
+   s.dependency 'ExpoModulesCore'
+-  s.dependency "SuperwallKit", '4.12.3'
++  s.dependency "SuperwallKit", '4.12.5'
+ 
+ 
+   # Swift/Objective-C compatibility

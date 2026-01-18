@@ -464,6 +464,9 @@ export interface Draft {
   id: string;
   userId: string;  // Owner of the draft - links to auth.users
   templateId: string;
+  // User-editable project name for personal reference
+  // If null, UI shows formatted date as placeholder
+  projectName?: string | null;
   // Legacy fields - kept for backwards compatibility
   beforeImageUrl: string | null;  // Supabase Storage URL
   afterImageUrl: string | null;   // Supabase Storage URL
@@ -488,6 +491,8 @@ export interface DraftRow {
   id: string;
   user_id: string;  // Owner of the draft - links to auth.users
   template_id: string;
+  // User-editable project name for personal reference
+  project_name: string | null;
   // Legacy fields - kept for backwards compatibility
   before_image_url: string | null;
   after_image_url: string | null;

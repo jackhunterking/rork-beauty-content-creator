@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SuperwallProvider, useSuperwallEvents, usePlacement } from "expo-superwall";
+import { PostHogProvider } from "posthog-react-native";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import AnimatedSplash from "@/components/AnimatedSplash";
@@ -18,6 +19,13 @@ import {
   parseSuperWallSurveyData,
 } from "@/services/onboardingService";
 import { initializeFacebookSDK } from "@/services/metaAnalyticsService";
+import { 
+  initializePostHog,
+  forwardSuperwallEvent,
+  captureEvent,
+  POSTHOG_EVENTS,
+} from "@/services/posthogService";
+import { useScreenTracking } from "@/hooks/useScreenTracking";
 // Note: In-app purchase tracking is handled automatically by Facebook SDK
 // Enable "Log In-App Purchases Automatically" in Facebook Developer Dashboard
 
@@ -26,6 +34,10 @@ const SUPERWALL_API_KEYS = {
   ios: process.env.EXPO_PUBLIC_SUPERWALL_IOS_KEY || "",
   android: process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY || "",
 };
+
+// PostHog configuration - get from PostHog dashboard (Project Settings → Project API Key)
+const POSTHOG_API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY || "";
+const POSTHOG_HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -193,6 +205,12 @@ function OnboardingFlowHandler({
     // Called when paywall is presented - for logging/analytics only
     onPaywallPresent: (info) => {
       console.log('[Superwall] Paywall presented:', info.name);
+      // Forward to PostHog for unified analytics
+      captureEvent(POSTHOG_EVENTS.PAYWALL_PRESENTED, {
+        paywall_name: info.name,
+        paywall_identifier: info.identifier,
+        source: 'superwall',
+      });
     },
     
     // Called when paywall is dismissed - for logging/analytics only
@@ -200,11 +218,23 @@ function OnboardingFlowHandler({
     // Navigation for onboarding is handled by usePlacement.onDismiss above
     onPaywallDismiss: (info, result) => {
       console.log('[Superwall] Paywall dismissed:', info.name, 'Result:', result);
+      // Forward to PostHog for unified analytics
+      captureEvent(POSTHOG_EVENTS.PAYWALL_DISMISSED, {
+        paywall_name: info.name,
+        paywall_identifier: info.identifier,
+        result_type: result?.type || 'unknown',
+        source: 'superwall',
+      });
     },
     
     // Called when paywall is skipped (user already completed onboarding or has subscription)
     onPaywallSkip: (reason) => {
       console.log('[Superwall] Paywall skipped:', reason);
+      // Forward to PostHog for unified analytics
+      captureEvent(POSTHOG_EVENTS.PAYWALL_SKIPPED, {
+        skip_reason: reason,
+        source: 'superwall',
+      });
       // Mark as complete since Superwall determined they don't need to see it
       setOnboardingComplete(true);
       onOnboardingComplete();
@@ -214,12 +244,21 @@ function OnboardingFlowHandler({
     // DO NOT navigate here - this fires for ALL paywalls
     onPaywallError: (error) => {
       console.error('[Superwall] Paywall error:', error);
+      // Forward to PostHog for unified analytics
+      captureEvent(POSTHOG_EVENTS.PAYWALL_ERROR, {
+        error: String(error),
+        source: 'superwall',
+      });
     },
     
     // Capture all Superwall events including survey responses - for analytics
     onSuperwallEvent: async (eventInfo) => {
       const eventName = eventInfo.event?.event || eventInfo.event;
       console.log('[Superwall] Event:', eventName);
+      
+      // Forward ALL Superwall events to PostHog for comprehensive tracking
+      // This includes transaction events, subscription events, etc.
+      forwardSuperwallEvent(String(eventName), eventInfo.params || {});
       
       // Note: In-app purchase events are tracked automatically by Facebook SDK
       // when "Log In-App Purchases Automatically" is enabled in Facebook Dashboard
@@ -318,6 +357,11 @@ function RootLayoutInner() {
   const [splashComplete, setSplashComplete] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
+  // Track screen views for PostHog analytics
+  useScreenTracking({
+    enabled: splashComplete, // Only track after splash is complete
+  });
+
   // Force update check - runs after splash completes
   const {
     isUpdateRequired,
@@ -367,9 +411,30 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
+  const [posthogReady, setPosthogReady] = useState(false);
+
   useEffect(() => {
     // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
+    
+    // Initialize PostHog analytics (before other SDKs)
+    // PostHog should be initialized first to capture all events
+    const initAnalytics = async () => {
+      try {
+        if (POSTHOG_API_KEY) {
+          await initializePostHog(POSTHOG_API_KEY, POSTHOG_HOST);
+          console.log('[Analytics] PostHog initialized');
+        } else {
+          console.warn('[Analytics] PostHog API key not configured');
+        }
+      } catch (error) {
+        console.error('[Analytics] Failed to initialize PostHog:', error);
+      } finally {
+        setPosthogReady(true);
+      }
+    };
+
+    initAnalytics();
     
     // Initialize Facebook SDK for Meta Ads attribution (iOS only)
     if (Platform.OS === 'ios') {
@@ -377,15 +442,55 @@ export default function RootLayout() {
     }
   }, []);
 
+  // PostHog client configuration for the provider
+  const posthogClientConfig = {
+    apiKey: POSTHOG_API_KEY,
+    host: POSTHOG_HOST,
+    // Enable session replay for mobile
+    enableSessionReplay: true,
+    // Automatically capture app lifecycle events
+    captureApplicationLifecycleEvents: true,
+    // Automatically capture deep links
+    captureDeepLinks: true,
+    // Flush events every 30 seconds
+    flushInterval: 30,
+    // Queue up to 20 events before forcing flush
+    flushAt: 20,
+    // Session replay configuration
+    sessionReplayConfig: {
+      // Mask all text inputs for privacy (passwords, emails, etc.)
+      maskAllTextInputs: true,
+      // Don't mask images - we want to see template/content UI
+      maskAllImages: false,
+      // Capture network requests for debugging
+      captureNetworkTelemetry: true,
+      // Debounce screenshots for performance
+      androidDebouncerDelayMs: 500,
+      iOSdebouncerDelayMs: 500,
+    },
+    // Enable debug logging in development
+    debug: __DEV__,
+  };
+
   return (
-    <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>
-      <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <AuthProvider>
-            <RootLayoutInner />
-          </AuthProvider>
-        </GestureHandlerRootView>
-      </QueryClientProvider>
-    </SuperwallProvider>
+    <PostHogProvider 
+      apiKey={POSTHOG_API_KEY} 
+      options={posthogClientConfig}
+      autocapture={{
+        captureLifecycleEvents: true,
+        captureScreens: true,
+        captureTouches: true,
+      }}
+    >
+      <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>
+        <QueryClientProvider client={queryClient}>
+          <GestureHandlerRootView style={{ flex: 1 }}>
+            <AuthProvider>
+              <RootLayoutInner />
+            </AuthProvider>
+          </GestureHandlerRootView>
+        </QueryClientProvider>
+      </SuperwallProvider>
+    </PostHogProvider>
   );
 }

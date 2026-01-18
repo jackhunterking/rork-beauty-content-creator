@@ -3,6 +3,7 @@ import { Draft, DraftRow } from '@/types';
 import { uploadDraftImage, deleteDraftImages, copyDraftImages } from './storageService';
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory, copyFile, getCachedRenderPath, createDraftDirectories } from './localStorageService';
 import { copyOverlays } from './overlayPersistenceService';
+import { getDuplicateProjectName } from '@/utils/projectName';
 
 /**
  * Helper to get the current authenticated user ID
@@ -52,6 +53,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     id: row.id,
     userId: row.user_id,
     templateId: row.template_id,
+    // User-editable project name for personal reference
+    projectName: row.project_name || undefined,
     // Legacy fields for backwards compatibility
     beforeImageUrl: row.before_image_url,
     afterImageUrl: row.after_image_url,
@@ -179,7 +182,8 @@ export async function createDraft(
   templateId: string,
   beforeImageUrl: string | null = null,
   afterImageUrl: string | null = null,
-  capturedImageUrls: Record<string, string> | null = null
+  capturedImageUrls: Record<string, string> | null = null,
+  projectName: string | null = null
 ): Promise<Draft> {
   // Get current user ID to associate with the draft
   const userId = await getCurrentUserId();
@@ -192,6 +196,7 @@ export async function createDraft(
       before_image_url: beforeImageUrl,
       after_image_url: afterImageUrl,
       captured_image_urls: capturedImageUrls,
+      project_name: projectName,
     })
     .select()
     .single();
@@ -216,6 +221,7 @@ export async function updateDraft(
     capturedImageUrls?: Record<string, string> | null;
     renderedPreviewUrl?: string | null;
     wasRenderedAsPremium?: boolean | null;
+    projectName?: string | null;
   }
 ): Promise<Draft> {
   // Ensure user is authenticated (RLS will handle authorization)
@@ -239,6 +245,9 @@ export async function updateDraft(
   }
   if (updates.wasRenderedAsPremium !== undefined) {
     updateData.was_rendered_as_premium = updates.wasRenderedAsPremium;
+  }
+  if (updates.projectName !== undefined) {
+    updateData.project_name = updates.projectName;
   }
 
   const { data, error } = await supabase
@@ -267,6 +276,7 @@ export async function updateDraft(
  * @param renderedPreviewUrl - Optional cached Templated.io preview URL
  * @param wasRenderedAsPremium - Optional premium status when preview was rendered
  * @param localPreviewPath - Optional local file path for cached preview (client-side only, not stored in DB)
+ * @param projectName - Optional user-editable project name for personal reference
  */
 export async function saveDraftWithImages(
   templateId: string,
@@ -276,7 +286,8 @@ export async function saveDraftWithImages(
   capturedImageUris?: Record<string, string>,
   renderedPreviewUrl?: string | null,
   wasRenderedAsPremium?: boolean,
-  localPreviewPath?: string | null
+  localPreviewPath?: string | null,
+  projectName?: string | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -292,7 +303,7 @@ export async function saveDraftWithImages(
     } else {
       // Always create a new draft when no existingDraftId is provided
       // This allows multiple drafts per template and prevents overwriting old drafts
-      draft = await createDraft(templateId);
+      draft = await createDraft(templateId, null, null, null, projectName);
     }
 
     // Upload images if they are local URIs (not already Supabase URLs)
@@ -345,6 +356,7 @@ export async function saveDraftWithImages(
       capturedImageUrls: Object.keys(capturedImageUrls).length > 0 ? capturedImageUrls : null,
       renderedPreviewUrl: renderedPreviewUrl ?? draft.renderedPreviewUrl,
       wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
+      projectName: projectName !== undefined ? projectName : draft.projectName,
     });
 
     // Return draft with localPreviewPath appended (client-side only, not in DB)
@@ -396,6 +408,37 @@ export async function deleteDraft(id: string): Promise<void> {
 }
 
 /**
+ * Rename a draft
+ * Updates only the project_name field for the specified draft
+ * Note: RLS policies ensure only the user's own draft can be renamed
+ * 
+ * @param draftId - The ID of the draft to rename
+ * @param projectName - The new project name (or null to clear)
+ * @returns The updated draft
+ */
+export async function renameDraft(draftId: string, projectName: string | null): Promise<Draft> {
+  // Ensure user is authenticated (RLS will handle authorization)
+  await getCurrentUserId();
+  
+  const { data, error } = await supabase
+    .from('drafts')
+    .update({
+      project_name: projectName,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', draftId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error renaming draft:', error);
+    throw error;
+  }
+
+  return mapRowToDraft(data as DraftRow);
+}
+
+/**
  * Get draft count for the current user
  * Note: RLS policies ensure only the user's own drafts are counted
  */
@@ -433,6 +476,9 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
       throw new Error('Source draft not found');
     }
     
+    // Generate project name for the duplicate
+    const duplicateProjectName = getDuplicateProjectName(sourceDraft.projectName, sourceDraft.createdAt);
+    
     // Create a new draft record with the same template
     // IMPORTANT: Copy the rendered preview URL so thumbnails work immediately
     const { data: newDraftData, error: createError } = await supabase
@@ -447,6 +493,8 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
         // Copy the rendered preview URL (Templated.io URL still valid for duplicate)
         rendered_preview_url: sourceDraft.renderedPreviewUrl || null,
         was_rendered_as_premium: sourceDraft.wasRenderedAsPremium ?? null,
+        // Copy project name with (Copy) suffix
+        project_name: duplicateProjectName,
       })
       .select()
       .single();

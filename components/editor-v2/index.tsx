@@ -15,6 +15,8 @@ export { FloatingElementToolbar } from './FloatingElementToolbar';
 export { EditorSubPanel, CategoryTab, CategoryTabs } from './EditorSubPanel';
 export { TextStylePanel } from './TextStylePanel';
 export { LogoPanel } from './LogoPanel';
+export { TextEditToolbar } from './TextEditToolbar';
+export { ColorPickerModal } from './ColorPickerModal';
 
 // Existing components
 export { SelectionHandles } from './SelectionHandles';
@@ -33,4 +35,4 @@ export type { MainToolbarItem } from './EditorMainToolbar';
 export type { TextStylePanelRef, TextStylePanelProps } from './TextStylePanel';
 export type { LogoPanelRef, LogoPanelProps } from './LogoPanel';
 export type { FloatingToolbarElementType, ElementPosition } from './FloatingElementToolbar';
-export type { ContextBarElementType } from './ElementContextBar';
+export type { ContextBarElementType, TextFormatOptions } from './ElementContextBar';

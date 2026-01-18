@@ -21,16 +21,18 @@ import {
   useWindowDimensions,
   ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import BottomSheet from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import ViewShot from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Image as ExpoImage } from 'expo-image';
-import { X, Save, Download } from 'lucide-react-native';
+import { Home, Save, Download, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { getProjectDisplayName } from '@/utils/projectName';
+import RenameProjectModal from '@/components/RenameProjectModal';
 import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -38,19 +40,15 @@ import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCaptur
 import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
 import {
-  ToolDock,
-  ContextualToolbar,
   AIEnhancePanel,
   CropToolbar,
-  // New Canva-style components
   EditorMainToolbar,
   ElementContextBar,
-  FloatingElementToolbar,
   TextStylePanel,
   LogoPanel,
+  TextEditToolbar,
 } from '@/components/editor-v2';
 import {
-  ToolType,
   SelectionState,
   DEFAULT_SELECTION,
   AIEnhancementType,
@@ -59,8 +57,6 @@ import type {
   MainToolbarItem, 
   TextStylePanelRef, 
   LogoPanelRef,
-  FloatingToolbarElementType,
-  ElementPosition,
   ContextBarElementType,
 } from '@/components/editor-v2';
 import {
@@ -72,41 +68,38 @@ import {
   TextOverlay,
   DateOverlay,
   LogoOverlay,
+  DateFormat,
   isTextBasedOverlay,
   isLogoOverlay,
   LOGO_SIZE_CONSTRAINTS,
 } from '@/types/overlays';
 import {
   OverlayLayer,
-  OverlayStyleSheet,
-  LogoPickerModal,
-  LogoActionSheet,
 } from '@/components/overlays';
 import { saveOverlays, loadOverlays } from '@/services/overlayPersistenceService';
 import { saveLocalPreviewFile, createDraftDirectories } from '@/services/localStorageService';
 
 export default function EditorV2Screen() {
   const router = useRouter();
-  const { currentProject, setCapturedImage, resetProject, saveDraft, isSavingDraft, refreshDrafts } = useApp();
+  const insets = useSafeAreaInsets();
+  const { currentProject, setCapturedImage, resetProject, saveDraft, isSavingDraft, refreshDrafts, renameDraft, isRenamingDraft, deleteDraft } = useApp();
   const { isPremium } = usePremiumStatus();
   const { requestPremiumAccess } = usePremiumFeature();
+  
+  
+  // Rename modal state
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
   
   const template = currentProject.template;
   const capturedImages = currentProject.capturedImages;
 
-  // Bottom sheet refs (legacy)
+  // Bottom sheet refs
   const aiPanelRef = useRef<BottomSheet>(null);
-  const styleSheetRef = useRef<BottomSheet>(null);
-  const logoPickerRef = useRef<BottomSheet>(null);
-  const logoActionSheetRef = useRef<BottomSheet>(null);
+  const projectActionsRef = useRef<BottomSheet>(null);
   
-  // New Canva-style panel refs
+  // Canva-style panel refs
   const textStylePanelRef = useRef<TextStylePanelRef>(null);
   const logoPanelRef = useRef<LogoPanelRef>(null);
-  
-  // Track if using new Canva-style UI (feature flag for gradual rollout)
-  const useCanvaStyleUI = true;
-
   // ViewShot ref for capturing canvas with overlays
   const viewShotRef = useRef<ViewShot>(null);
   
@@ -120,19 +113,39 @@ export default function EditorV2Screen() {
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Editor state
-  const [activeTool, setActiveTool] = useState<ToolType>('photo');
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [aiProcessingType, setAIProcessingType] = useState<AIEnhancementType | null>(null);
+  
+  // Ref to track overlay interaction - prevents canvas tap from deselecting during overlay tap
+  const overlayInteractionRef = useRef<boolean>(false);
+  
+  // Track if a date overlay was just added (to auto-expand format picker)
+  const [justAddedDateId, setJustAddedDateId] = useState<string | null>(null);
 
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);
   
+  // Project display name for header
+  const projectDisplayName = useMemo(() => {
+    if (currentProject.projectName) {
+      return currentProject.projectName;
+    }
+    // If no name and no draftId, it's a new project - show "New Project"
+    if (!currentProject.draftId) {
+      return 'New Project';
+    }
+    // Otherwise, format the date as fallback
+    // Note: For loaded drafts, createdAt would be ideal but we don't store it in currentProject
+    // We use a placeholder that will be updated once saved
+    return 'Untitled';
+  }, [currentProject.projectName, currentProject.draftId]);
+  
   // Canva-style UI state
   const [activeMainTool, setActiveMainTool] = useState<MainToolbarItem | null>(null);
-  const [selectedElementPosition, setSelectedElementPosition] = useState<ElementPosition | null>(null);
 
   // Track initial state for change detection
   const initialCapturedImagesRef = useRef<Record<string, string | null>>({});
@@ -557,40 +570,6 @@ export default function EditorV2Screen() {
     setIsPreviewImageLoaded(true);
   }, []);
 
-  // Handle tool selection
-  const handleToolSelect = useCallback((tool: ToolType) => {
-    // Deselect current selection when changing tools
-    setSelection(DEFAULT_SELECTION);
-
-    if (tool === 'enhance') {
-      // Open AI panel (AI features remain premium-gated)
-      aiPanelRef.current?.snapToIndex(0);
-    } else if (tool === 'text') {
-      // Add text overlay (free for all users)
-      const newOverlay = createTextOverlay();
-      setOverlays(prev => [...prev, newOverlay]);
-      setSelectedOverlayId(newOverlay.id);
-      // Open style sheet for text customization
-      setTimeout(() => {
-        styleSheetRef.current?.snapToIndex(0);
-      }, 100);
-    } else if (tool === 'date') {
-      // Add date overlay (free for all users)
-      const newOverlay = createDateOverlay();
-      setOverlays(prev => [...prev, newOverlay]);
-      setSelectedOverlayId(newOverlay.id);
-      // Open style sheet for date customization
-      setTimeout(() => {
-        styleSheetRef.current?.snapToIndex(0);
-      }, 100);
-    } else if (tool === 'logo') {
-      // Open logo picker modal (free for all users)
-      logoPickerRef.current?.snapToIndex(0);
-    }
-
-    setActiveTool(tool);
-  }, []);
-
   // Handle slot press (from TemplateCanvas)
   const handleSlotPress = useCallback((slotId: string) => {
     // Save pending manipulation adjustments if selecting a different slot
@@ -606,8 +585,6 @@ export default function EditorV2Screen() {
     // Also deselect any selected overlay
     if (selectedOverlayId) {
       setSelectedOverlayId(null);
-      styleSheetRef.current?.close();
-      logoActionSheetRef.current?.close();
     }
 
     const hasImage = hasValidCapturedImage(slotId, capturedImages);
@@ -627,6 +604,11 @@ export default function EditorV2Screen() {
 
   // Handle canvas tap (deselect)
   const handleCanvasTap = useCallback(() => {
+    // Skip if an overlay interaction is in progress (prevents race condition with overlay tap)
+    if (overlayInteractionRef.current) {
+      return;
+    }
+    
     // Save any pending manipulation adjustments before deselecting
     if (selection.id && selection.type === 'slot' && pendingManipulationAdjustments) {
       saveManipulationAdjustments();
@@ -639,10 +621,12 @@ export default function EditorV2Screen() {
     // Also deselect any selected overlay
     if (selectedOverlayId) {
       setSelectedOverlayId(null);
-      styleSheetRef.current?.close();
-      logoActionSheetRef.current?.close();
     }
-  }, [selection, selectedOverlayId, pendingManipulationAdjustments, saveManipulationAdjustments]);
+    // Exit editing mode
+    if (editingOverlayId) {
+      setEditingOverlayId(null);
+    }
+  }, [selection, selectedOverlayId, editingOverlayId, pendingManipulationAdjustments, saveManipulationAdjustments]);
 
 
   // Handle AI enhancement selection
@@ -692,60 +676,44 @@ export default function EditorV2Screen() {
         });
       }
     } else if (tool === 'text') {
-      // Add text overlay
-      const newOverlay = createTextOverlay();
+      // Add text overlay at top of canvas (visible above keyboard)
+      const newOverlay = createTextOverlay({
+        transform: { x: 0.5, y: 0.2, scale: 1, rotation: 0 }, // Top center
+      });
+      // Set interaction flag to prevent canvas tap from dismissing keyboard
+      overlayInteractionRef.current = true;
+      setTimeout(() => { overlayInteractionRef.current = false; }, 300);
+      
       setOverlays(prev => [...prev, newOverlay]);
       setSelectedOverlayId(newOverlay.id);
-      // Open text style panel
-      setTimeout(() => {
-        if (useCanvaStyleUI) {
-          textStylePanelRef.current?.open();
-        } else {
-          styleSheetRef.current?.snapToIndex(0);
-        }
-      }, 100);
+      // Enter editing mode immediately for new text
+      setEditingOverlayId(newOverlay.id);
     } else if (tool === 'date') {
-      // Add date overlay
-      const newOverlay = createDateOverlay();
+      // Add date overlay at top of canvas (visible above keyboard)
+      const newOverlay = createDateOverlay({
+        transform: { x: 0.5, y: 0.25, scale: 1, rotation: 0 }, // Top center
+      });
+      // Set interaction flag to prevent canvas tap from deselecting
+      overlayInteractionRef.current = true;
+      setTimeout(() => { overlayInteractionRef.current = false; }, 300);
+      
       setOverlays(prev => [...prev, newOverlay]);
       setSelectedOverlayId(newOverlay.id);
-      // Open text style panel (handles both text and date)
-      setTimeout(() => {
-        if (useCanvaStyleUI) {
-          textStylePanelRef.current?.open();
-        } else {
-          styleSheetRef.current?.snapToIndex(0);
-        }
-      }, 100);
+      // Track that we just added this date (for auto-expanding format picker)
+      setJustAddedDateId(newOverlay.id);
+      // Clear after a moment so it doesn't keep expanding on re-selection
+      setTimeout(() => setJustAddedDateId(null), 500);
     } else if (tool === 'logo') {
       // Open logo picker panel
-      if (useCanvaStyleUI) {
-        logoPanelRef.current?.openPicker();
-      } else {
-        logoPickerRef.current?.snapToIndex(0);
-      }
+      logoPanelRef.current?.openPicker();
     } else if (tool === 'ai') {
       // Open AI panel
       aiPanelRef.current?.snapToIndex(0);
     }
-  }, [activeMainTool, slots, capturedImages, router, useCanvaStyleUI]);
+  }, [activeMainTool, slots, capturedImages, router]);
 
   // Get element type for context bar based on selection
   const contextBarElementType = useMemo((): ContextBarElementType | null => {
-    if (selection.type === 'slot') return 'photo';
-    if (selectedOverlayId) {
-      const overlay = overlays.find(o => o.id === selectedOverlayId);
-      if (overlay) {
-        if (overlay.type === 'text') return 'text';
-        if (overlay.type === 'date') return 'date';
-        if (overlay.type === 'logo') return 'logo';
-      }
-    }
-    return null;
-  }, [selection.type, selectedOverlayId, overlays]);
-
-  // Get floating toolbar element type
-  const floatingToolbarElementType = useMemo((): FloatingToolbarElementType | null => {
     if (selection.type === 'slot') return 'photo';
     if (selectedOverlayId) {
       const overlay = overlays.find(o => o.id === selectedOverlayId);
@@ -773,70 +741,93 @@ export default function EditorV2Screen() {
     setActiveMainTool(null);
     
     // Close panels
-    if (useCanvaStyleUI) {
-      textStylePanelRef.current?.close();
-      logoPanelRef.current?.close();
-    } else {
-      styleSheetRef.current?.close();
-      logoActionSheetRef.current?.close();
-    }
-  }, [pendingManipulationAdjustments, saveManipulationAdjustments, useCanvaStyleUI]);
+    textStylePanelRef.current?.close();
+    logoPanelRef.current?.close();
+  }, [pendingManipulationAdjustments, saveManipulationAdjustments]);
 
-  // Handle text font action from context bar
-  const handleTextFontAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      textStylePanelRef.current?.open();
-    } else {
-      styleSheetRef.current?.snapToIndex(0);
+  // Handle text edit action - enters editing mode with keyboard
+  const handleTextEditAction = useCallback(() => {
+    if (selectedOverlayId) {
+      setEditingOverlayId(selectedOverlayId);
     }
-  }, [useCanvaStyleUI]);
+  }, [selectedOverlayId]);
 
-  // Handle text color action from context bar
-  const handleTextColorAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      textStylePanelRef.current?.open();
-    } else {
-      styleSheetRef.current?.snapToIndex(0);
-    }
-  }, [useCanvaStyleUI]);
+  // Handle text edit done - exits editing mode
+  const handleTextEditDone = useCallback(() => {
+    setEditingOverlayId(null);
+  }, []);
 
-  // Handle text size action from context bar
-  const handleTextSizeAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      textStylePanelRef.current?.open();
-    } else {
-      styleSheetRef.current?.snapToIndex(0);
+  // Handle text content change during editing
+  const handleTextContentChange = useCallback((content: string) => {
+    if (editingOverlayId) {
+      setOverlays(prev => prev.map(overlay => 
+        overlay.id === editingOverlayId && overlay.type === 'text'
+          ? { ...overlay, content, updatedAt: new Date().toISOString() }
+          : overlay
+      ));
     }
-  }, [useCanvaStyleUI]);
+  }, [editingOverlayId]);
+
+  // Handle editing overlay color change from TextEditToolbar
+  const handleEditingColorChange = useCallback((color: string) => {
+    if (editingOverlayId) {
+      setOverlays(prev => prev.map(overlay => 
+        overlay.id === editingOverlayId && isTextBasedOverlay(overlay)
+          ? { ...overlay, color, updatedAt: new Date().toISOString() }
+          : overlay
+      ));
+    }
+  }, [editingOverlayId]);
+
+  // Handle editing overlay font change from TextEditToolbar
+  const handleEditingFontChange = useCallback((fontFamily: string) => {
+    if (editingOverlayId) {
+      setOverlays(prev => prev.map(overlay => 
+        overlay.id === editingOverlayId && isTextBasedOverlay(overlay)
+          ? { ...overlay, fontFamily, updatedAt: new Date().toISOString() }
+          : overlay
+      ));
+    }
+  }, [editingOverlayId]);
+
+  // Handle editing overlay font size change from TextEditToolbar
+  const handleEditingFontSizeChange = useCallback((fontSize: number) => {
+    if (editingOverlayId) {
+      setOverlays(prev => prev.map(overlay => 
+        overlay.id === editingOverlayId && isTextBasedOverlay(overlay)
+          ? { ...overlay, fontSize, updatedAt: new Date().toISOString() }
+          : overlay
+      ));
+    }
+  }, [editingOverlayId]);
+
+  // Handle editing overlay format change from TextEditToolbar
+  const handleEditingFormatChange = useCallback((format: { bold?: boolean; italic?: boolean; underline?: boolean; strikethrough?: boolean }) => {
+    if (editingOverlayId) {
+      setOverlays(prev => prev.map(overlay => 
+        overlay.id === editingOverlayId && isTextBasedOverlay(overlay)
+          ? { ...overlay, ...format, updatedAt: new Date().toISOString() }
+          : overlay
+      ));
+    }
+  }, [editingOverlayId]);
 
   // Handle logo replace action from context bar
   const handleLogoReplaceAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      logoPanelRef.current?.openPicker();
-    } else {
-      logoPickerRef.current?.snapToIndex(0);
-    }
-  }, [useCanvaStyleUI]);
+    logoPanelRef.current?.openPicker();
+  }, []);
 
   // Handle logo opacity action from context bar  
   const handleLogoOpacityAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      logoPanelRef.current?.openEditor();
-    } else {
-      logoActionSheetRef.current?.snapToIndex(0);
-    }
-  }, [useCanvaStyleUI]);
+    logoPanelRef.current?.openEditor();
+  }, []);
 
   // Handle logo size action from context bar
   const handleLogoSizeAction = useCallback(() => {
-    if (useCanvaStyleUI) {
-      logoPanelRef.current?.openEditor();
-    } else {
-      logoActionSheetRef.current?.snapToIndex(0);
-    }
-  }, [useCanvaStyleUI]);
+    logoPanelRef.current?.openEditor();
+  }, []);
 
-  // Handle logo selected from new LogoPanel
+  // Handle logo selected from LogoPanel
   const handleLogoPanelSelect = useCallback((logoData: { uri: string; width: number; height: number }) => {
     const newOverlay = createLogoOverlay(
       logoData.uri,
@@ -844,20 +835,20 @@ export default function EditorV2Screen() {
       logoData.height,
       false
     );
+    // Set interaction flag to prevent canvas tap from deselecting
+    overlayInteractionRef.current = true;
+    setTimeout(() => { overlayInteractionRef.current = false; }, 300);
+    
     setOverlays(prev => [...prev, newOverlay]);
     setSelectedOverlayId(newOverlay.id);
     
     // Open logo editor panel for the newly added logo
     setTimeout(() => {
-      if (useCanvaStyleUI) {
-        logoPanelRef.current?.openEditor();
-      } else {
-        logoActionSheetRef.current?.snapToIndex(0);
-      }
+      logoPanelRef.current?.openEditor();
     }, 100);
     
     console.log('[EditorV2] Added logo overlay from panel:', newOverlay.id);
-  }, [useCanvaStyleUI]);
+  }, []);
 
   // Handle logo panel close
   const handleLogoPanelClose = useCallback(() => {
@@ -869,6 +860,135 @@ export default function EditorV2Screen() {
     setActiveMainTool(null);
   }, []);
 
+  // Handle inline color change from ElementContextBar
+  const handleInlineColorChange = useCallback((color: string) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ color });
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle inline font size change from ElementContextBar
+  const handleInlineFontSizeChange = useCallback((fontSize: number) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ fontSize });
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle inline font change from ElementContextBar
+  const handleInlineFontChange = useCallback((fontFamily: string) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ fontFamily });
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle inline format change from ElementContextBar
+  const handleInlineFormatChange = useCallback((format: { bold?: boolean; italic?: boolean; underline?: boolean; strikethrough?: boolean; textAlign?: string }) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties(format as any);
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle inline background color change from ElementContextBar
+  const handleInlineBackgroundChange = useCallback((backgroundColor: string | undefined) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ backgroundColor } as any);
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle date format change from ElementContextBar
+  const handleDateFormatChange = useCallback((format: DateFormat) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ format } as any);
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Handle date change from ElementContextBar
+  const handleDateChange = useCallback((date: Date) => {
+    if (selectedOverlayId) {
+      handleUpdateOverlayProperties({ date: date.toISOString() } as any);
+    }
+  }, [selectedOverlayId, handleUpdateOverlayProperties]);
+
+  // Get current color from selected text overlay
+  const currentOverlayColor = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && isTextBasedOverlay(overlay)) {
+      return (overlay as any).color || '#FFFFFF';
+    }
+    return '#FFFFFF';
+  }, [overlays, selectedOverlayId]);
+
+  // Get current font size from selected text overlay
+  // Note: Direct dependency on overlays ensures re-computation when any overlay changes
+  const currentOverlayFontSize = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && isTextBasedOverlay(overlay)) {
+      return (overlay as any).fontSize || 24;
+    }
+    return 24;
+  }, [overlays, selectedOverlayId]);
+
+  // Get current font from selected text overlay
+  const currentOverlayFont = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && isTextBasedOverlay(overlay)) {
+      return (overlay as any).fontFamily || 'System';
+    }
+    return 'System';
+  }, [overlays, selectedOverlayId]);
+
+  // Get current format from selected text overlay
+  const currentOverlayFormat = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && isTextBasedOverlay(overlay)) {
+      const typedOverlay = overlay as any;
+      return {
+        bold: typedOverlay.bold || false,
+        italic: typedOverlay.italic || false,
+        underline: typedOverlay.underline || false,
+        strikethrough: typedOverlay.strikethrough || false,
+        textAlign: typedOverlay.textAlign || 'center',
+      };
+    }
+    return {};
+  }, [overlays, selectedOverlayId]);
+
+  // Get current background color from selected text/date overlay
+  const currentOverlayBackgroundColor = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && isTextBasedOverlay(overlay)) {
+      return (overlay as any).backgroundColor || undefined;
+    }
+    return undefined;
+  }, [overlays, selectedOverlayId]);
+
+  // Get current date format from selected date overlay
+  const currentOverlayDateFormat = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && overlay.type === 'date') {
+      return (overlay as DateOverlay).format || 'medium';
+    }
+    return 'medium';
+  }, [overlays, selectedOverlayId]);
+
+  // Get current date from selected date overlay
+  const currentOverlayDate = useMemo(() => {
+    const overlay = overlays.find(o => o.id === selectedOverlayId);
+    if (overlay && overlay.type === 'date') {
+      return new Date((overlay as DateOverlay).date);
+    }
+    return new Date();
+  }, [overlays, selectedOverlayId]);
+
+  // Compute auto-expand option for context bar
+  const contextBarAutoExpandOption = useMemo(() => {
+    // Auto-expand date format picker when a date was just added
+    if (justAddedDateId && selectedOverlayId === justAddedDateId) {
+      return 'dateFormat' as const;
+    }
+    return undefined;
+  }, [justAddedDateId, selectedOverlayId]);
+
   // ============================================
   // Overlay Handlers
   // ============================================
@@ -878,6 +998,82 @@ export default function EditorV2Screen() {
     overlays.find(o => o.id === selectedOverlayId) || null,
     [overlays, selectedOverlayId]
   );
+
+  // Handle duplicate overlay (by ID - for OverlayLayer)
+  const handleDuplicateOverlayById = useCallback((id: string) => {
+    const overlayToDuplicate = overlays.find(o => o.id === id);
+    if (!overlayToDuplicate) return;
+    
+    // Create a copy with a new ID and slightly offset position
+    const now = new Date().toISOString();
+    const duplicatedOverlay: Overlay = {
+      ...overlayToDuplicate,
+      id: `overlay_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      transform: {
+        ...overlayToDuplicate.transform,
+        x: Math.min(0.9, overlayToDuplicate.transform.x + 0.05), // Offset slightly
+        y: Math.min(0.9, overlayToDuplicate.transform.y + 0.05),
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    setOverlays(prev => [...prev, duplicatedOverlay]);
+    setSelectedOverlayId(duplicatedOverlay.id);
+  }, [overlays]);
+
+  // Get the overlay being edited
+  const editingOverlay = useMemo(() => 
+    overlays.find(o => o.id === editingOverlayId) || null,
+    [overlays, editingOverlayId]
+  );
+
+  // Get editing overlay content (for text overlays)
+  const editingOverlayContent = useMemo(() => {
+    if (editingOverlay && editingOverlay.type === 'text') {
+      return (editingOverlay as TextOverlay).content || '';
+    }
+    return '';
+  }, [editingOverlay]);
+
+  // Get editing overlay color
+  const editingOverlayColor = useMemo(() => {
+    if (editingOverlay && isTextBasedOverlay(editingOverlay)) {
+      return (editingOverlay as any).color || '#FFFFFF';
+    }
+    return '#FFFFFF';
+  }, [editingOverlay]);
+
+  // Get editing overlay font
+  const editingOverlayFont = useMemo(() => {
+    if (editingOverlay && isTextBasedOverlay(editingOverlay)) {
+      return (editingOverlay as any).fontFamily || 'System';
+    }
+    return 'System';
+  }, [editingOverlay]);
+
+  // Get editing overlay font size
+  const editingOverlayFontSize = useMemo(() => {
+    if (editingOverlay && isTextBasedOverlay(editingOverlay)) {
+      return (editingOverlay as any).fontSize || 24;
+    }
+    return 24;
+  }, [editingOverlay]);
+
+  // Get editing overlay format
+  const editingOverlayFormat = useMemo(() => {
+    if (editingOverlay && isTextBasedOverlay(editingOverlay)) {
+      const overlay = editingOverlay as any;
+      return {
+        bold: overlay.bold || false,
+        italic: overlay.italic || false,
+        underline: overlay.underline || false,
+        strikethrough: overlay.strikethrough || false,
+        textAlign: overlay.textAlign || 'center',
+      };
+    }
+    return { bold: false, italic: false, underline: false, strikethrough: false, textAlign: 'center' };
+  }, [editingOverlay]);
 
   // Get scale constraints for selected overlay
   const selectedOverlayScaleConstraints = useMemo(() => {
@@ -901,28 +1097,18 @@ export default function EditorV2Screen() {
 
   // Select an overlay
   const handleSelectOverlay = useCallback((id: string | null) => {
-    console.log('[EditorV2] handleSelectOverlay:', id);
-    setSelectedOverlayId(id);
-    
-    if (id) {
-      const overlay = overlays.find(o => o.id === id);
-      if (overlay) {
-        if (isTextBasedOverlay(overlay)) {
-          // Open style sheet for text-based overlays
-          styleSheetRef.current?.snapToIndex(0);
-          logoActionSheetRef.current?.close();
-        } else if (isLogoOverlay(overlay)) {
-          // Open logo action sheet for logo overlays
-          logoActionSheetRef.current?.snapToIndex(0);
-          styleSheetRef.current?.close();
-        }
-      }
-    } else {
-      // Close both sheets when deselecting
-      styleSheetRef.current?.close();
-      logoActionSheetRef.current?.close();
+    // Set interaction flag to prevent canvas tap from interfering
+    if (id !== null) {
+      overlayInteractionRef.current = true;
+      // Clear the flag after a short delay (allows tap event to fully propagate)
+      setTimeout(() => {
+        overlayInteractionRef.current = false;
+      }, 100);
     }
-  }, [overlays]);
+    
+    setSelectedOverlayId(id);
+    // Context bar will appear automatically based on selection
+  }, []);
 
   // Update overlay transform (position, scale, rotation)
   const handleUpdateOverlayTransform = useCallback((id: string, transform: OverlayTransform) => {
@@ -949,8 +1135,6 @@ export default function EditorV2Screen() {
     setOverlays(prev => prev.filter(overlay => overlay.id !== id));
     if (selectedOverlayId === id) {
       setSelectedOverlayId(null);
-      styleSheetRef.current?.close();
-      logoActionSheetRef.current?.close();
     }
     console.log('[EditorV2] Deleted overlay:', id);
   }, [selectedOverlayId]);
@@ -962,35 +1146,7 @@ export default function EditorV2Screen() {
     }
   }, [selectedOverlayId, handleDeleteOverlay]);
 
-  // Open logo picker modal
-  const handleOpenLogoPickerModal = useCallback(() => {
-    logoPickerRef.current?.snapToIndex(0);
-  }, []);
-
-  // Close logo picker modal
-  const handleLogoPickerClose = useCallback(() => {
-    logoPickerRef.current?.close();
-  }, []);
-
-  // Handle logo selection from logo picker modal
-  const handleLogoSelected = useCallback((logoData: { uri: string; width: number; height: number }) => {
-    const newOverlay = createLogoOverlay(
-      logoData.uri,
-      logoData.width,
-      logoData.height,
-      false
-    );
-    setOverlays(prev => [...prev, newOverlay]);
-    setSelectedOverlayId(newOverlay.id);
-    // Open logo action sheet for the newly added logo
-    setTimeout(() => {
-      logoActionSheetRef.current?.snapToIndex(0);
-    }, 100);
-    
-    console.log('[EditorV2] Added logo overlay from picker:', newOverlay.id);
-  }, []);
-
-  // Handle scale change from ScaleSlider / LogoActionSheet
+  // Handle scale change from ScaleSlider
   const handleScaleSliderChange = useCallback((newScale: number) => {
     if (!selectedOverlayId || !selectedOverlay) return;
     
@@ -1175,25 +1331,14 @@ export default function EditorV2Screen() {
       
       console.log('[EditorV2] Preparing to capture canvas with overlays...');
       
-      // Wait for the preview image to be loaded
-      if (!isPreviewImageLoadedRef.current) {
-        console.log('[EditorV2] Waiting for preview image to load...');
-        const maxWaitTime = 3000;
-        const checkInterval = 100;
-        let waitedTime = 0;
-        
-        while (!isPreviewImageLoadedRef.current && waitedTime < maxWaitTime) {
-          await new Promise(resolve => setTimeout(resolve, checkInterval));
-          waitedTime += checkInterval;
-        }
-        
-        if (!isPreviewImageLoadedRef.current) {
-          console.warn('[EditorV2] Preview image did not load within timeout');
-        }
+      // Brief wait for React to re-render without selection UI (if overlay was selected)
+      // NOTE: We removed the 3-second image load wait - if the preview is visible on screen,
+      // ViewShot can capture it. The previous wait was causing 3+ second delays due to
+      // unreliable ref state tracking.
+      if (wasSelected) {
+        // Only wait if we deselected something - need UI to update
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
-      // Wait for React to re-render without selection UI
-      await new Promise(resolve => setTimeout(resolve, 300));
       
       console.log('[EditorV2] Capturing canvas now...');
       
@@ -1287,6 +1432,7 @@ export default function EditorV2Screen() {
       if (overlays.length > 0 && renderedPreviewUri) {
         console.log('[EditorV2] Step 1: Capturing canvas with overlays BEFORE save...');
         capturedPreviewPath = await captureCanvasWithOverlays();
+        
         if (capturedPreviewPath) {
           console.log('[EditorV2] Preview captured to temp location:', capturedPreviewPath);
         } else {
@@ -1314,6 +1460,8 @@ export default function EditorV2Screen() {
       }
 
       // STEP 3: If we captured a preview with overlays, save it to the draft's local directory
+      // NOTE: localPreviewPath is client-side only (not stored in DB), so we save locally
+      // but don't need a second saveDraft() call - that was causing ~430ms unnecessary delay
       let finalPreviewPath: string | null = null;
       if (capturedPreviewPath) {
         console.log('[EditorV2] Step 3: Saving captured preview to draft renders directory:', savedDraft.id);
@@ -1331,19 +1479,6 @@ export default function EditorV2Screen() {
           } catch (cacheError) {
             console.warn('[EditorV2] Failed to clear image cache:', cacheError);
           }
-          
-          // Update the draft with the local preview path
-          await saveDraft({
-            templateId: template.id,
-            beforeImageUri: null,
-            afterImageUri: null,
-            existingDraftId: savedDraft.id,
-            capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
-            renderedPreviewUrl: renderedPreviewUri,
-            wasRenderedAsPremium: isPremium,
-            localPreviewPath: permanentPath,
-          });
-          console.log('[EditorV2] Draft updated with local preview path');
         }
       }
 
@@ -1447,6 +1582,102 @@ export default function EditorV2Screen() {
     }
   }, [renderedPreviewUri]);
 
+  // Handle opening project actions bottom sheet
+  const handleOpenProjectActions = useCallback(() => {
+    projectActionsRef.current?.snapToIndex(0);
+  }, []);
+
+  // Handle closing project actions bottom sheet
+  const handleCloseProjectActions = useCallback(() => {
+    projectActionsRef.current?.close();
+  }, []);
+
+  // Handle rename action from action sheet
+  const handleOpenRenameModal = useCallback(() => {
+    handleCloseProjectActions();
+    // Small delay to let the bottom sheet close first
+    setTimeout(() => {
+      setIsRenameModalVisible(true);
+    }, 200);
+  }, [handleCloseProjectActions]);
+
+  const handleSaveRename = useCallback(async (newName: string | null) => {
+    // If we have a draft ID, save to backend
+    if (currentProject.draftId) {
+      try {
+        await renameDraft(currentProject.draftId, newName);
+      } catch (error) {
+        console.error('[EditorV2] Failed to rename project:', error);
+        Alert.alert('Error', 'Failed to rename project. Please try again.');
+        return;
+      }
+    }
+    // Note: For new projects (no draftId), the name will be saved when the draft is first saved
+    setIsRenameModalVisible(false);
+  }, [currentProject.draftId, renameDraft]);
+
+  const handleCancelRename = useCallback(() => {
+    setIsRenameModalVisible(false);
+  }, []);
+
+  // Handle delete project from action sheet
+  const handleDeleteProject = useCallback(() => {
+    handleCloseProjectActions();
+    
+    Alert.alert(
+      'Delete Project',
+      'Are you sure you want to delete this project? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (currentProject.draftId) {
+              try {
+                await deleteDraft(currentProject.draftId);
+              } catch (error) {
+                console.error('[EditorV2] Failed to delete project:', error);
+              }
+            }
+            // Navigate back to projects after delete
+            resetProject();
+            router.replace('/(tabs)/library');
+          },
+        },
+      ]
+    );
+  }, [currentProject.draftId, resetProject, router, handleCloseProjectActions, deleteDraft]);
+
+  // Handle navigating to home/projects
+  const handleGoHome = useCallback(() => {
+    if (hasUnsavedChanges) {
+      Alert.alert(
+        'Unsaved Changes',
+        'You have unsaved changes. What would you like to do?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Leave',
+            style: 'destructive',
+            onPress: () => {
+              resetProject();
+              router.replace('/(tabs)/library');
+            },
+          },
+          {
+            text: 'Save',
+            onPress: handleSaveDraft,
+          },
+        ],
+        { cancelable: true }
+      );
+    } else {
+      resetProject();
+      router.replace('/(tabs)/library');
+    }
+  }, [hasUnsavedChanges, resetProject, router, handleSaveDraft]);
+
   // Redirect if no template
   useEffect(() => {
     if (!template) {
@@ -1468,25 +1699,25 @@ export default function EditorV2Screen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header - Close left, Save + Download right */}
+        {/* Header - Home left, Actions right (save, download, more) */}
         <View style={styles.header}>
-          {/* Left - Close Button */}
+          {/* Left - Home Button */}
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={handleClose}
+            onPress={handleGoHome}
           >
-            <X size={24} color={Colors.light.text} />
+            <Home size={24} color={Colors.light.text} />
           </TouchableOpacity>
 
-          {/* Middle - Empty spacer */}
+          {/* Middle - Spacer (no project name) */}
           <View style={styles.headerSpacer} />
 
           {/* Right - Action Buttons */}
           <View style={styles.headerButtonsRight}>
-            {/* Save Button */}
+            {/* Save Button (icon only) */}
             <TouchableOpacity
               style={[
-                styles.headerActionButton,
+                styles.headerIconButton,
                 isSavingDraft && styles.headerActionButtonDisabled,
               ]}
               onPress={handleSaveDraft}
@@ -1495,22 +1726,14 @@ export default function EditorV2Screen() {
               {isSavingDraft ? (
                 <ActivityIndicator size="small" color={Colors.light.accent} />
               ) : (
-                <>
-                  <Save size={18} color={capturedCount > 0 ? Colors.light.accent : Colors.light.textTertiary} />
-                  <Text style={[
-                    styles.headerActionButtonText,
-                    capturedCount === 0 && styles.headerActionButtonTextDisabled,
-                  ]}>
-                    Save
-                  </Text>
-                </>
+                <Save size={20} color={capturedCount > 0 ? Colors.light.accent : Colors.light.textTertiary} />
               )}
             </TouchableOpacity>
 
-            {/* Download Button */}
+            {/* Download Button (icon only) */}
             <TouchableOpacity
               style={[
-                styles.headerActionButton,
+                styles.headerIconButton,
                 styles.headerDownloadButton,
                 (!renderedPreviewUri || isRendering || isDownloading) && styles.headerActionButtonDisabled,
               ]}
@@ -1520,16 +1743,16 @@ export default function EditorV2Screen() {
               {isDownloading ? (
                 <ActivityIndicator size="small" color={Colors.light.surface} />
               ) : (
-                <>
-                  <Download size={18} color={renderedPreviewUri && !isRendering ? Colors.light.surface : Colors.light.textTertiary} />
-                  <Text style={[
-                    styles.headerDownloadButtonText,
-                    (!renderedPreviewUri || isRendering) && styles.headerActionButtonTextDisabled,
-                  ]}>
-                    Download
-                  </Text>
-                </>
+                <Download size={20} color={renderedPreviewUri && !isRendering ? Colors.light.surface : Colors.light.textTertiary} />
               )}
+            </TouchableOpacity>
+
+            {/* More Options Button (3 dots) */}
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={handleOpenProjectActions}
+            >
+              <MoreHorizontal size={20} color={Colors.light.text} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1537,8 +1760,8 @@ export default function EditorV2Screen() {
         {/* Canvas Area */}
         <Pressable 
           style={styles.canvasArea} 
-          onPress={(isCropMode || manipulationSlotData) ? undefined : handleCanvasTap}
-          disabled={isCropMode || !!manipulationSlotData}
+          onPress={isCropMode ? undefined : handleCanvasTap}
+          disabled={isCropMode}
         >
           {/* Canvas wrapper for positioning overlay layer */}
           <View style={styles.canvasWrapper}>
@@ -1571,6 +1794,7 @@ export default function EditorV2Screen() {
                   initialTranslateY: manipulationSlotData.image.adjustments?.translateY || 0,
                   rotation: manipulationSlotData.image.adjustments?.rotation || 0,
                   onAdjustmentChange: handleManipulationAdjustmentChange,
+                  onTapOutsideSlot: handleCanvasTap,
                 } : null}
                 cropMode={isCropMode && cropSlotData ? {
                   slotId: cropSlotId!,
@@ -1603,26 +1827,12 @@ export default function EditorV2Screen() {
                     onSelectOverlay={handleSelectOverlay}
                     onUpdateOverlayTransform={handleUpdateOverlayTransform}
                     onDeleteOverlay={handleDeleteOverlay}
+                    onDuplicateOverlay={handleDuplicateOverlayById}
                   />
                 </View>
               )}
             </ViewShot>
           </View>
-          
-          {/* Floating Element Toolbar (Canva-style) - positioned above selected elements */}
-          {useCanvaStyleUI && hasSelection && !isCropMode && (
-            <FloatingElementToolbar
-              elementType={floatingToolbarElementType}
-              visible={true}
-              elementPosition={selectedElementPosition || undefined}
-              canvasTop={100} // Approximate header height
-              onReplace={selection.type === 'slot' ? handlePhotoReplace : handleLogoReplaceAction}
-              onCrop={selection.type === 'slot' ? handlePhotoResize : undefined}
-              onDuplicate={undefined} // TODO: Implement duplicate
-              onDelete={selection.type === 'slot' ? handlePhotoDelete : handleDeleteSelectedOverlay}
-              onMore={undefined}
-            />
-          )}
           
           {/* Preview error indicator */}
           {previewError && !isRendering && !isCropMode && (
@@ -1646,59 +1856,59 @@ export default function EditorV2Screen() {
             rotation={pendingRotation}
             onRotationChange={handleRotationChange}
           />
-        ) : useCanvaStyleUI ? (
-          // New Canva-style UI
-          hasSelection ? (
-            <ElementContextBar
-              elementType={contextBarElementType}
-              visible={true}
-              onPhotoReplace={handlePhotoReplace}
-              onPhotoAdjust={handlePhotoResize}
-              onPhotoAI={handlePhotoAI}
-              onPhotoResize={handlePhotoResize}
-              onTextFont={handleTextFontAction}
-              onTextColor={handleTextColorAction}
-              onTextSize={handleTextSizeAction}
-              onTextAlign={handleTextFontAction}
-              onLogoReplace={handleLogoReplaceAction}
-              onLogoOpacity={handleLogoOpacityAction}
-              onLogoSize={handleLogoSizeAction}
-              onConfirm={handleContextBarConfirm}
-            />
-          ) : (
-            <EditorMainToolbar
-              activeTool={activeMainTool}
-              onToolSelect={handleMainToolbarSelect}
-              visible={true}
-            />
-          )
+        ) : hasSelection ? (
+          <ElementContextBar
+            elementType={contextBarElementType}
+            visible={true}
+            currentColor={currentOverlayColor}
+            currentFontSize={currentOverlayFontSize}
+            currentFont={currentOverlayFont}
+            currentFormat={currentOverlayFormat}
+            currentBackgroundColor={currentOverlayBackgroundColor}
+            currentDate={currentOverlayDate}
+            currentDateFormat={currentOverlayDateFormat}
+            autoExpandOption={contextBarAutoExpandOption}
+            onPhotoReplace={handlePhotoReplace}
+            onPhotoAdjust={handlePhotoResize}
+            onPhotoAI={handlePhotoAI}
+            onPhotoResize={handlePhotoResize}
+            onTextEdit={handleTextEditAction}
+            onTextFont={handleInlineFontChange}
+            onTextColor={handleInlineColorChange}
+            onTextSize={handleInlineFontSizeChange}
+            onTextFormat={handleInlineFormatChange}
+            onTextBackground={handleInlineBackgroundChange}
+            onDateChange={handleDateChange}
+            onDateFormatChange={handleDateFormatChange}
+            onLogoReplace={handleLogoReplaceAction}
+            onLogoOpacity={handleLogoOpacityAction}
+            onLogoSize={handleLogoSizeAction}
+            onConfirm={handleContextBarConfirm}
+          />
         ) : (
-          // Legacy UI (fallback)
-          selection.id ? (
-            <ContextualToolbar
-              selectionType={selection.type}
-              visible={true}
-              onPhotoReplace={handlePhotoReplace}
-              onPhotoResize={handlePhotoResize}
-              onPhotoAI={handlePhotoAI}
-              onPhotoDelete={handlePhotoDelete}
-              onDeselect={() => {
-                // Save any pending manipulation adjustments before deselecting
-                if (pendingManipulationAdjustments) {
-                  saveManipulationAdjustments();
-                }
-                setSelection(DEFAULT_SELECTION);
-                setPendingManipulationAdjustments(null);
-              }}
-            />
-          ) : (
-            <ToolDock
-              activeTool={activeTool}
-              onToolSelect={handleToolSelect}
-            />
-          )
+          <EditorMainToolbar
+            activeTool={activeMainTool}
+            onToolSelect={handleMainToolbarSelect}
+            visible={true}
+          />
         )}
       </SafeAreaView>
+
+      {/* Text Edit Toolbar - appears above keyboard when editing text */}
+      <TextEditToolbar
+        initialContent={editingOverlayContent}
+        currentColor={editingOverlayColor}
+        currentFont={editingOverlayFont}
+        currentFontSize={editingOverlayFontSize}
+        currentFormat={editingOverlayFormat}
+        onContentChange={handleTextContentChange}
+        onColorChange={handleEditingColorChange}
+        onFontChange={handleEditingFontChange}
+        onFontSizeChange={handleEditingFontSizeChange}
+        onFormatChange={handleEditingFormatChange}
+        onDone={handleTextEditDone}
+        visible={!!editingOverlayId}
+      />
 
       {/* AI Enhancement Panel */}
       <AIEnhancePanel
@@ -1712,54 +1922,92 @@ export default function EditorV2Screen() {
         onClose={handleAIPanelClose}
       />
 
-      {/* Overlay Style Sheet - for customizing text/date overlays */}
-      <OverlayStyleSheet
-        bottomSheetRef={styleSheetRef}
+      {/* Text Style Panel - compact panel for text/date overlays */}
+      <TextStylePanel
+        ref={textStylePanelRef}
         overlay={selectedOverlay}
         onUpdateOverlay={handleUpdateOverlayProperties}
         onDeleteOverlay={handleDeleteSelectedOverlay}
+        onClose={handleTextStylePanelClose}
       />
 
-      {/* Logo Picker Modal - for selecting/uploading logo overlays */}
-      <LogoPickerModal
-        bottomSheetRef={logoPickerRef}
-        onSelectLogo={handleLogoSelected}
-        onClose={handleLogoPickerClose}
-      />
-
-      {/* Logo Action Sheet - for resizing and deleting logo overlays */}
-      <LogoActionSheet
-        bottomSheetRef={logoActionSheetRef}
-        overlay={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
+      {/* Logo Panel - compact panel for logo overlays */}
+      <LogoPanel
+        ref={logoPanelRef}
+        selectedLogo={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
         currentScale={selectedOverlay?.transform.scale ?? 1}
+        onSelectLogo={handleLogoPanelSelect}
         onScaleChange={handleScaleSliderChange}
-        onDeleteOverlay={handleDeleteSelectedOverlay}
+        onDeleteLogo={handleDeleteSelectedOverlay}
+        onClose={handleLogoPanelClose}
       />
 
-      {/* New Canva-style Panels */}
-      {useCanvaStyleUI && (
-        <>
-          {/* Text Style Panel - compact panel for text/date overlays */}
-          <TextStylePanel
-            ref={textStylePanelRef}
-            overlay={selectedOverlay}
-            onUpdateOverlay={handleUpdateOverlayProperties}
-            onDeleteOverlay={handleDeleteSelectedOverlay}
-            onClose={handleTextStylePanelClose}
-          />
+      {/* Rename Project Modal */}
+      <RenameProjectModal
+        visible={isRenameModalVisible}
+        currentName={currentProject.projectName || null}
+        onSave={handleSaveRename}
+        onCancel={handleCancelRename}
+        isLoading={isRenamingDraft}
+      />
 
-          {/* Logo Panel - compact panel for logo overlays */}
-          <LogoPanel
-            ref={logoPanelRef}
-            selectedLogo={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
-            currentScale={selectedOverlay?.transform.scale ?? 1}
-            onSelectLogo={handleLogoPanelSelect}
-            onScaleChange={handleScaleSliderChange}
-            onDeleteLogo={handleDeleteSelectedOverlay}
-            onClose={handleLogoPanelClose}
+      {/* Project Actions Bottom Sheet */}
+      <BottomSheet
+        ref={projectActionsRef}
+        index={-1}
+        enableDynamicSizing
+        enablePanDownToClose
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop
+            {...props}
+            disappearsOnIndex={-1}
+            appearsOnIndex={0}
+            opacity={0.5}
+            pressBehavior="close"
           />
-        </>
-      )}
+        )}
+        handleIndicatorStyle={styles.bottomSheetIndicator}
+      >
+        <BottomSheetView style={[styles.bottomSheetContent, { paddingBottom: insets.bottom + 12 }]}>
+          {/* Header */}
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>{projectDisplayName}</Text>
+            <TouchableOpacity
+              style={styles.sheetCloseButton}
+              onPress={handleCloseProjectActions}
+              activeOpacity={0.7}
+            >
+              <X size={20} color={Colors.light.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.sheetDivider} />
+
+          {/* Actions */}
+          <View style={styles.sheetActions}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleOpenRenameModal}
+              activeOpacity={0.7}
+            >
+              <Pencil size={22} color={Colors.light.text} />
+              <Text style={styles.actionText}>Rename</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleDeleteProject}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={22} color={Colors.light.error} />
+              <Text style={[styles.actionText, styles.actionTextDestructive]}>
+                Delete Project
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetView>
+      </BottomSheet>
     </GestureHandlerRootView>
   );
 }
@@ -1795,39 +2043,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  headerActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+  headerIconButton: {
+    width: 44,
+    height: 44,
     borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: Colors.light.surfaceSecondary,
   },
   headerActionButtonDisabled: {
     opacity: 0.5,
   },
-  headerActionButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.accent,
-  },
-  headerActionButtonTextDisabled: {
-    color: Colors.light.textTertiary,
-  },
   headerDownloadButton: {
     backgroundColor: Colors.light.accent,
-  },
-  headerDownloadButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.surface,
   },
   canvasArea: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingHorizontal: 20,
+    paddingTop: 16,
   },
   canvasWrapper: {
     position: 'relative',
@@ -1875,5 +2110,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  
+  // Bottom Sheet Styles
+  bottomSheetIndicator: {
+    backgroundColor: Colors.light.border,
+    width: 36,
+  },
+  bottomSheetContent: {
+    paddingHorizontal: 20,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.light.text,
+    flex: 1,
+  },
+  sheetCloseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sheetDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.light.border,
+    marginVertical: 8,
+  },
+  sheetActions: {
+    paddingTop: 8,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+  },
+  actionText: {
+    fontSize: 16,
+    color: Colors.light.text,
+  },
+  actionTextDestructive: {
+    color: Colors.light.error,
   },
 });

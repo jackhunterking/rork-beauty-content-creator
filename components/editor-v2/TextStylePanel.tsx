@@ -22,6 +22,7 @@ import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Check, Trash2, X } from 'lucide-react-native';
@@ -79,12 +80,16 @@ export const TextStylePanel = forwardRef<TextStylePanelRef, TextStylePanelProps>
     { overlay, onUpdateOverlay, onDeleteOverlay, onClose },
     ref
   ) {
+    const insets = useSafeAreaInsets();
     const bottomSheetRef = useRef<BottomSheet>(null);
     const [activeTab, setActiveTab] = useState<TabType>('font');
     const [showDatePicker, setShowDatePicker] = useState(false);
 
-    // Snap points - 25% for compact panel, 40% when editing text
-    const snapPoints = useMemo(() => ['25%', '40%'], []);
+    // Snap points - 28% for compact panel to account for safe area, 42% when editing text
+    const snapPoints = useMemo(() => ['28%', '42%'], []);
+    
+    // Calculate bottom padding with safe area
+    const bottomPadding = Math.max(insets.bottom, 16);
 
     // Check if overlay is text-based
     const isTextBased = overlay ? isTextBasedOverlay(overlay) : false;
@@ -416,7 +421,7 @@ export const TextStylePanel = forwardRef<TextStylePanelRef, TextStylePanelProps>
           <View style={styles.content}>{renderTabContent()}</View>
 
           {/* Tab Bar */}
-          <View style={styles.tabBar}>
+          <View style={[styles.tabBar, { paddingBottom: bottomPadding }]}>
             {visibleTabs.map((tab) => (
               <TouchableOpacity
                 key={tab.id}

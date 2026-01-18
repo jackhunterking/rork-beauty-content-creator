@@ -3,17 +3,21 @@
  * 
  * A container that wraps overlay content with pan, pinch-to-resize,
  * and rotation gestures. Provides Instagram-style interaction.
+ * Includes integrated action buttons (duplicate, delete) when selected.
  */
 
 import React, { useCallback, useMemo, useEffect, useRef } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   runOnJS,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
+import { Copy, Trash2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { OverlayTransform } from '@/types/overlays';
 
@@ -33,6 +37,8 @@ interface DraggableOverlayProps {
   onTransformChange: (transform: OverlayTransform) => void;
   /** Called when delete button is pressed */
   onDelete: () => void;
+  /** Called when duplicate button is pressed */
+  onDuplicate?: () => void;
   /** Content to render inside the overlay */
   children: React.ReactNode;
   /** Minimum scale allowed */
@@ -49,7 +55,8 @@ export function DraggableOverlay({
   isSelected,
   onSelect,
   onTransformChange,
-  onDelete: _onDelete,
+  onDelete,
+  onDuplicate,
   children,
   minScale = 0.2,
   maxScale = 3.0,
@@ -270,6 +277,33 @@ export function DraggableOverlay({
           animatedStyle,
         ]}
       >
+        {/* Action buttons - integrated with selection frame */}
+        {isSelected && (
+          <Animated.View 
+            style={styles.actionBar}
+            entering={FadeIn.duration(150)}
+            exiting={FadeOut.duration(100)}
+          >
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={onDuplicate}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Copy size={16} color={Colors.light.textSecondary} strokeWidth={2} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.deleteButton]}
+              onPress={onDelete}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Trash2 size={16} color={Colors.light.error} strokeWidth={2} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+        
+        {/* Content with selection frame */}
         <Animated.View style={[styles.content, selectionStyle]}>
           {children}
         </Animated.View>
@@ -310,6 +344,35 @@ const styles = StyleSheet.create({
   content: {
     padding: 8,
     borderRadius: 4,
+  },
+  actionBar: {
+    position: 'absolute',
+    top: -40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.surface,
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 4,
+    // Shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 6,
+    zIndex: 100,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(214, 69, 69, 0.1)',
   },
 });
 

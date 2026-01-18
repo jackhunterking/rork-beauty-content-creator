@@ -17,9 +17,10 @@ import {
   Keyboard,
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
-import { Check, Trash2 } from 'lucide-react-native';
+import { Check, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import {
   TextOverlay,
@@ -30,6 +31,8 @@ import {
   FONT_OPTIONS,
   DATE_FORMAT_OPTIONS,
   COLOR_PRESETS,
+  BACKGROUND_COLOR_PRESETS,
+  BACKGROUND_CONSTRAINTS,
   FONT_SIZE_CONSTRAINTS,
   isTextBasedOverlay,
 } from '@/types/overlays';
@@ -140,11 +143,15 @@ export function OverlayStyleSheet({
   onUpdateOverlay,
   onDeleteOverlay,
 }: OverlayStyleSheetProps) {
+  const insets = useSafeAreaInsets();
   const [showDatePicker, setShowDatePicker] = useState(false);
   
   // Snap points for bottom sheet - includes higher snap point for keyboard visibility
   // 30% for compact view, 60% for expanded, 90% when keyboard is active
   const snapPoints = useMemo(() => ['30%', '60%', '90%'], []);
+  
+  // Calculate bottom padding with safe area
+  const bottomPadding = Math.max(insets.bottom, 20) + 20;
 
   // Check if overlay is text-based
   const isTextBased = overlay ? isTextBasedOverlay(overlay) : false;
@@ -202,6 +209,21 @@ export function OverlayStyleSheet({
       onUpdateOverlay({ textShadow: !textOverlay.textShadow });
     }
   }, [textOverlay, onUpdateOverlay]);
+
+  // Handle background color change
+  const handleBackgroundColorChange = useCallback((color: string | null) => {
+    onUpdateOverlay({ backgroundColor: color ?? undefined });
+  }, [onUpdateOverlay]);
+
+  // Handle background padding change
+  const handleBackgroundPaddingChange = useCallback((padding: number) => {
+    onUpdateOverlay({ backgroundPadding: padding });
+  }, [onUpdateOverlay]);
+
+  // Handle background border radius change
+  const handleBackgroundRadiusChange = useCallback((radius: number) => {
+    onUpdateOverlay({ backgroundBorderRadius: radius });
+  }, [onUpdateOverlay]);
 
   if (!overlay || !isTextBased || !textOverlay) {
     return (
@@ -406,8 +428,71 @@ export function OverlayStyleSheet({
           </TouchableOpacity>
         </View>
 
+        {/* Background Color Picker */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Background</Text>
+          <View style={styles.colorGrid}>
+            {BACKGROUND_COLOR_PRESETS.map((color, index) => (
+              <TouchableOpacity
+                key={color ?? 'transparent'}
+                style={[
+                  styles.colorOption,
+                  color === null ? styles.transparentOption : { backgroundColor: color },
+                  (textOverlay.backgroundColor === color || 
+                   (color === null && !textOverlay.backgroundColor)) && styles.colorOptionSelected,
+                ]}
+                onPress={() => handleBackgroundColorChange(color)}
+                activeOpacity={0.7}
+              >
+                {color === null ? (
+                  <X size={14} color={Colors.light.textSecondary} />
+                ) : (
+                  (textOverlay.backgroundColor === color) && (
+                    <Check 
+                      size={16} 
+                      color={isLightColor(color.slice(0, 7)) ? '#000' : '#FFF'} 
+                    />
+                  )
+                )}
+                {color === null && !textOverlay.backgroundColor && (
+                  <Check size={14} color={Colors.light.accent} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Background Padding & Radius (only show when background is set) */}
+        {textOverlay.backgroundColor && (
+          <>
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Background Padding</Text>
+              <SizeSlider
+                value={textOverlay.backgroundPadding ?? BACKGROUND_CONSTRAINTS.defaultPadding}
+                min={BACKGROUND_CONSTRAINTS.minPadding}
+                max={BACKGROUND_CONSTRAINTS.maxPadding}
+                step={2}
+                onChange={handleBackgroundPaddingChange}
+                onInputFocus={() => bottomSheetRef.current?.snapToIndex(2)}
+              />
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Background Roundness</Text>
+              <SizeSlider
+                value={textOverlay.backgroundBorderRadius ?? BACKGROUND_CONSTRAINTS.defaultBorderRadius}
+                min={BACKGROUND_CONSTRAINTS.minBorderRadius}
+                max={BACKGROUND_CONSTRAINTS.maxBorderRadius}
+                step={2}
+                onChange={handleBackgroundRadiusChange}
+                onInputFocus={() => bottomSheetRef.current?.snapToIndex(2)}
+              />
+            </View>
+          </>
+        )}
+
         {/* Bottom padding for safe scrolling */}
-        <View style={{ height: 60 }} />
+        <View style={{ height: bottomPadding }} />
       </BottomSheetScrollView>
     </BottomSheet>
   );
@@ -565,6 +650,10 @@ const styles = StyleSheet.create({
   colorOptionSelected: {
     borderWidth: 3,
     borderColor: Colors.light.accent,
+  },
+  transparentOption: {
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderStyle: 'dashed',
   },
   sliderContainer: {
     flexDirection: 'row',

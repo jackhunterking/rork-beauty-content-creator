@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -25,13 +25,16 @@ import {
   Copy,
   Trash2,
   X,
+  Pencil,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, TemplateFormat } from '@/types';
 import { getDraftPreviewUri } from '@/services/imageUtils';
 import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
-import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
+import { useResponsive } from '@/hooks/useResponsive';
+import { getProjectDisplayName } from '@/utils/projectName';
+import RenameProjectModal from '@/components/RenameProjectModal';
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -56,6 +59,7 @@ const formatFilters = getAllFormats().map(config => ({
 
 export default function ProjectsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { 
     drafts,
     templates,
@@ -64,15 +68,22 @@ export default function ProjectsScreen() {
     refreshDrafts,
     duplicateDraft,
     deleteDraft,
+    renameDraft,
     isDuplicatingDraft,
+    isRenamingDraft,
   } = useApp();
 
   // Responsive configuration
   const responsive = useResponsive();
+  
 
   // Bottom sheet ref and selected draft state
   const bottomSheetRef = useRef<BottomSheet>(null);
   const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
+  
+  // Rename modal state
+  const [isRenameModalVisible, setIsRenameModalVisible] = useState(false);
+  const [draftToRename, setDraftToRename] = useState<Draft | null>(null);
 
   // Refresh projects whenever the screen gains focus
   useFocusEffect(
@@ -89,15 +100,6 @@ export default function ProjectsScreen() {
     templates.find(t => t.id === templateId), 
     [templates]
   );
-
-  // Dynamic tile height calculation
-  const getTileHeight = useCallback((format: TemplateFormat) => {
-    const config = getFormatById(format);
-    if (config) {
-      return getResponsiveTileHeight(responsive.tileWidth, config.aspectRatio);
-    }
-    return responsive.tileWidth;
-  }, [responsive.tileWidth]);
 
   // Filter projects by format
   const filteredProjects = useMemo(() => {
@@ -126,7 +128,7 @@ export default function ProjectsScreen() {
     router.push('/(tabs)');
   }, [router]);
 
-  // Handle opening bottom sheet (long press on project)
+  // Handle opening bottom sheet (three dots on project row)
   const handleOpenActionSheet = useCallback((draft: Draft) => {
     setSelectedDraft(draft);
     bottomSheetRef.current?.snapToIndex(0);
@@ -136,6 +138,37 @@ export default function ProjectsScreen() {
   const handleCloseActionSheet = useCallback(() => {
     bottomSheetRef.current?.close();
     setSelectedDraft(null);
+  }, []);
+
+  // Handle rename action - open rename modal
+  const handleOpenRenameModal = useCallback(() => {
+    if (!selectedDraft) return;
+    setDraftToRename(selectedDraft);
+    handleCloseActionSheet();
+    // Small delay to let the bottom sheet close first
+    setTimeout(() => {
+      setIsRenameModalVisible(true);
+    }, 200);
+  }, [selectedDraft, handleCloseActionSheet]);
+
+  // Handle save rename
+  const handleSaveRename = useCallback(async (newName: string | null) => {
+    if (!draftToRename) return;
+    
+    try {
+      await renameDraft(draftToRename.id, newName);
+      setIsRenameModalVisible(false);
+      setDraftToRename(null);
+    } catch (error) {
+      console.error('Failed to rename project:', error);
+      Alert.alert('Error', 'Failed to rename project. Please try again.');
+    }
+  }, [draftToRename, renameDraft]);
+
+  // Handle cancel rename
+  const handleCancelRename = useCallback(() => {
+    setIsRenameModalVisible(false);
+    setDraftToRename(null);
   }, []);
 
   // Handle duplicate draft
@@ -191,8 +224,6 @@ export default function ProjectsScreen() {
     );
   }, [selectedDraft, handleCloseActionSheet, deleteDraft]);
 
-  // Bottom sheet snap points
-  const snapPoints = useMemo(() => ['35%'], []);
 
   // Render bottom sheet backdrop
   const renderBackdrop = useCallback(
@@ -209,8 +240,9 @@ export default function ProjectsScreen() {
   );
 
   // Get selected draft info for bottom sheet header
-  const selectedTemplate = selectedDraft ? getTemplateForDraft(selectedDraft.templateId) : null;
   const selectedPreviewUri = selectedDraft ? getDraftPreviewUri(selectedDraft) : null;
+  const selectedTemplate = selectedDraft ? getTemplateForDraft(selectedDraft.templateId) : null;
+  const selectedDisplayName = selectedDraft ? getProjectDisplayName(selectedDraft) : 'Project';
 
   // Dynamic styles based on responsive configuration
   const dynamicStyles = useMemo(() => ({
@@ -223,20 +255,13 @@ export default function ProjectsScreen() {
     filterSection: {
       paddingHorizontal: responsive.gridPadding,
     },
-    gridContainer: {
+    listContainer: {
       paddingHorizontal: responsive.gridPadding,
-      alignItems: responsive.isTablet ? 'center' as const : undefined,
-    },
-    grid: {
-      gap: responsive.gridGap,
-      maxWidth: responsive.isTablet 
-        ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap 
-        : undefined,
-    },
-    projectTile: {
-      width: responsive.tileWidth,
     },
   }), [responsive]);
+
+  // Thumbnail size for list items
+  const thumbnailSize = 72;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -309,57 +334,61 @@ export default function ProjectsScreen() {
       ) : (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.gridContainer, dynamicStyles.gridContainer]}
+          contentContainerStyle={[styles.listContainer, dynamicStyles.listContainer]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={[styles.grid, dynamicStyles.grid]}>
-            {filteredProjects.map((draft) => {
-              const template = getTemplateForDraft(draft.templateId);
-              const previewUri = getDraftPreviewUri(draft);
-              const format = template?.format || '1:1';
-              
-              return (
-                <Pressable
-                  key={draft.id}
-                  style={[
-                    styles.projectTile,
-                    dynamicStyles.projectTile,
-                    { height: getTileHeight(format) }
-                  ]}
-                  onPress={() => handleResumeProject(draft)}
-                  onLongPress={() => handleOpenActionSheet(draft)}
-                  delayLongPress={400}
-                >
+          {filteredProjects.map((draft) => {
+            const template = getTemplateForDraft(draft.templateId);
+            const previewUri = getDraftPreviewUri(draft);
+            const format = template?.format || '1:1';
+            const displayName = getProjectDisplayName(draft);
+            
+            return (
+              <Pressable
+                key={draft.id}
+                style={styles.projectRow}
+                onPress={() => handleResumeProject(draft)}
+              >
+                {/* Thumbnail */}
+                <View style={[styles.thumbnailContainer, { width: thumbnailSize, height: thumbnailSize }]}>
                   {previewUri ? (
                     <Image
                       key={`project-preview-${draft.id}-${draft.updatedAt}`}
                       source={{ uri: previewUri }}
-                      style={styles.projectThumbnail}
+                      style={styles.thumbnail}
                       contentFit="cover"
                       transition={200}
-                      // For local files, disable disk caching to ensure fresh content
-                      // Local preview files change content without changing path
                       cachePolicy={previewUri.startsWith('file://') ? 'memory' : 'memory-disk'}
                     />
                   ) : (
-                    <View style={styles.projectPlaceholder}>
-                      <ImageIcon size={32} color={Colors.light.textTertiary} />
+                    <View style={styles.thumbnailPlaceholder}>
+                      <ImageIcon size={24} color={Colors.light.textTertiary} />
                     </View>
                   )}
-                  
-                  {/* More button overlay */}
-                  <TouchableOpacity
-                    style={styles.moreButtonOverlay}
-                    onPress={() => handleOpenActionSheet(draft)}
-                    activeOpacity={0.7}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <MoreHorizontal size={20} color={Colors.light.surface} />
-                  </TouchableOpacity>
-                </Pressable>
-              );
-            })}
-          </View>
+                </View>
+
+                {/* Project Info */}
+                <View style={styles.projectInfo}>
+                  <Text style={styles.projectName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <Text style={styles.projectFormat}>
+                    {getFormatLabel(format)}
+                  </Text>
+                </View>
+
+                {/* Three Dots Menu */}
+                <TouchableOpacity
+                  style={styles.moreButton}
+                  onPress={() => handleOpenActionSheet(draft)}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MoreHorizontal size={20} color={Colors.light.textSecondary} />
+                </TouchableOpacity>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       )}
 
@@ -377,12 +406,12 @@ export default function ProjectsScreen() {
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
-        snapPoints={snapPoints}
+        enableDynamicSizing
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         handleIndicatorStyle={styles.bottomSheetIndicator}
       >
-        <BottomSheetView style={styles.bottomSheetContent}>
+        <BottomSheetView style={[styles.bottomSheetContent, { paddingBottom: insets.bottom + 12 }]}>
           {/* Header with preview */}
           <View style={styles.sheetHeader}>
             <View style={styles.sheetPreviewContainer}>
@@ -400,7 +429,7 @@ export default function ProjectsScreen() {
             </View>
             <View style={styles.sheetTitleContainer}>
               <Text style={styles.sheetTitle} numberOfLines={1}>
-                {selectedTemplate?.name || 'Project'}
+                {selectedDisplayName}
               </Text>
               <Text style={styles.sheetSubtitle}>
                 {selectedTemplate ? getFormatLabel(selectedTemplate.format) : ''}
@@ -420,6 +449,15 @@ export default function ProjectsScreen() {
 
           {/* Actions */}
           <View style={styles.sheetActions}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleOpenRenameModal}
+              activeOpacity={0.7}
+            >
+              <Pencil size={22} color={Colors.light.text} />
+              <Text style={styles.actionText}>Rename</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.actionItem}
               onPress={handleDuplicateDraft}
@@ -442,6 +480,15 @@ export default function ProjectsScreen() {
           </View>
         </BottomSheetView>
       </BottomSheet>
+
+      {/* Rename Modal */}
+      <RenameProjectModal
+        visible={isRenameModalVisible}
+        currentName={draftToRename?.projectName || null}
+        onSave={handleSaveRename}
+        onCancel={handleCancelRename}
+        isLoading={isRenamingDraft}
+      />
     </SafeAreaView>
   );
 }
@@ -549,53 +596,55 @@ const styles = StyleSheet.create({
     color: Colors.light.surface,
   },
   
-  // Grid
+  // List View
   scrollView: {
     flex: 1,
   },
-  gridContainer: {
+  listContainer: {
     paddingBottom: 20,
   },
-  grid: {
+  projectRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.light.border,
   },
-  
-  // Project Tile
-  projectTile: {
-    borderRadius: 12,
+  thumbnailContainer: {
+    borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.light.glassEdge,
-    shadowColor: Colors.light.glassShadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-    position: 'relative',
   },
-  projectThumbnail: {
+  thumbnail: {
     width: '100%',
     height: '100%',
   },
-  projectPlaceholder: {
+  thumbnailPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
-  // More button overlay on tiles
-  moreButtonOverlay: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  projectInfo: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 8,
+  },
+  projectName: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  projectFormat: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+  },
+  moreButton: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 20,
   },
   
   // Loading overlay for duplication
@@ -630,7 +679,6 @@ const styles = StyleSheet.create({
     width: 36,
   },
   bottomSheetContent: {
-    flex: 1,
     paddingHorizontal: 20,
   },
   sheetHeader: {

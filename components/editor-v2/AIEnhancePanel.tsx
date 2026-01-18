@@ -8,6 +8,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   Sparkles, 
   User, 
@@ -150,7 +151,11 @@ export function AIEnhancePanel({
   onRequestPremium,
   onClose,
 }: AIEnhancePanelProps) {
-  const snapPoints = useMemo(() => ['50%'], []);
+  const insets = useSafeAreaInsets();
+  const snapPoints = useMemo(() => ['55%'], []);
+  
+  // Calculate bottom padding with safe area
+  const bottomPadding = Math.max(insets.bottom, 20) + 16;
 
   const handleSelectEnhancement = useCallback((type: AIEnhancementType) => {
     const option = AI_ENHANCEMENTS.find(e => e.id === type);
@@ -230,6 +235,9 @@ export function AIEnhancePanel({
             ✨ AI features coming soon. Stay tuned!
           </Text>
         </View>
+        
+        {/* Bottom safe area padding */}
+        <View style={{ height: bottomPadding }} />
       </BottomSheetView>
     </BottomSheet>
   );

@@ -198,7 +198,7 @@ export function CameraSheet({
         </View>
 
         {/* Controls */}
-        <View style={styles.controls}>
+        <View style={[styles.controls, { paddingBottom: Math.max(insets.bottom, 24) }]}>
           {/* Library Button */}
           <TouchableOpacity
             style={styles.sideButton}

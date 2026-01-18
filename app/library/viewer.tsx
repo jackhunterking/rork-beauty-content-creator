@@ -161,18 +161,14 @@ export default function PortfolioViewerScreen() {
           </View>
 
           {/* Info section */}
-          <View style={[styles.infoSection, dynamicStyles.infoSection]}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Template</Text>
-              <Text style={styles.infoValue}>{item.templateName}</Text>
-            </View>
-            {publishedPlatforms && (
+          {publishedPlatforms && (
+            <View style={[styles.infoSection, dynamicStyles.infoSection]}>
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Published to</Text>
                 <Text style={styles.infoValue}>{publishedPlatforms}</Text>
               </View>
-            )}
-          </View>
+            </View>
+          )}
 
           <View style={[styles.actions, dynamicStyles.actions]}>
             <TouchableOpacity style={styles.actionButton} onPress={handleShare} activeOpacity={0.8}>

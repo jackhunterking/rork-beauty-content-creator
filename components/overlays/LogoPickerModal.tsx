@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, ImageIcon, Briefcase, Upload, Check } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
@@ -53,12 +54,17 @@ export function LogoPickerModal({
   onSelectLogo,
   onClose,
 }: LogoPickerModalProps) {
+  const insets = useSafeAreaInsets();
+  
   // State
   const [modalState, setModalState] = useState<ModalState>('loading');
   const [brandLogo, setBrandLogo] = useState<BrandLogoData | null>(null);
   const [uploadedImage, setUploadedImage] = useState<UploadedImage | null>(null);
   const [saveToKit, setSaveToKit] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // Calculate bottom padding with safe area
+  const bottomPadding = Math.max(insets.bottom, 20) + 20;
   
   // Snap points - use percentage for consistent height across devices
   const snapPoints = useMemo(() => ['55%', '70%'], []);
@@ -364,7 +370,7 @@ export function LogoPickerModal({
     >
       <BottomSheetScrollView 
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

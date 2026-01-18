@@ -20,6 +20,7 @@ function mapRowToDraft(row: DraftRow): Draft {
     id: row.id,
     userId: row.user_id,
     templateId: row.template_id,
+    projectName: row.project_name || undefined,
     beforeImageUrl: row.before_image_url,
     afterImageUrl: row.after_image_url,
     capturedImageUrls: row.captured_image_urls || undefined,

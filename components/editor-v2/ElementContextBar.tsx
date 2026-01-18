@@ -2,48 +2,119 @@
  * ElementContextBar Component
  * 
  * Context-aware toolbar that replaces the main toolbar when an element is selected.
- * Follows Canva's pattern: no background, horizontal scroll, element-specific options,
- * checkmark to confirm/deselect.
+ * Follows Canva's pattern: bordered container with inline expandable options above,
+ * element-specific options, and a checkmark button.
  */
 
-import React, { useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
   FadeIn,
   FadeOut,
-  useSharedValue,
 } from 'react-native-reanimated';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { ColorPickerModal } from './ColorPickerModal';
 import {
   RefreshCw,
   Type,
-  Palette,
   Maximize2,
-  AlignCenter,
-  Sun,
-  Image as ImageIcon,
   Circle,
   Sparkles,
   Check,
-  Sliders,
+  Keyboard,
+  ALargeSmall,
+  Plus,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  X,
+  ListOrdered,
+  List,
+  CaseSensitive,
+  Calendar,
+  Square,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
+import { COLOR_PRESETS, BACKGROUND_COLOR_PRESETS, BACKGROUND_CONSTRAINTS, FONT_OPTIONS, FontFamily, DATE_FORMAT_OPTIONS, DateFormat } from '@/types/overlays';
 
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+/**
+ * TextColorIcon Component
+ * 
+ * Custom icon showing "A" with a rainbow gradient bar underneath,
+ * indicating text/typography color selection.
+ */
+interface TextColorIconProps {
+  size?: number;
+}
+
+function TextColorIcon({ size = 22 }: TextColorIconProps) {
+  const letterSize = size * 0.75;
+  const barHeight = size * 0.18;
+  const barWidth = size * 0.9;
+  
+  return (
+    <View style={textColorIconStyles.container}>
+      <Text style={[textColorIconStyles.letter, { fontSize: letterSize }]}>A</Text>
+      <LinearGradient
+        colors={['#FF0000', '#FF9900', '#FFFF00', '#00FF00', '#00FFFF', '#0066FF', '#9900FF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={[textColorIconStyles.gradientBar, { height: barHeight, width: barWidth }]}
+      />
+    </View>
+  );
+}
+
+const textColorIconStyles = StyleSheet.create({
+  container: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  letter: {
+    fontWeight: '700',
+    color: '#1a1a1a',
+    lineHeight: 20,
+    marginBottom: -2,
+  },
+  gradientBar: {
+    borderRadius: 2,
+  },
+});
 
 /**
  * Element types for context bar
  */
 export type ContextBarElementType = 'photo' | 'text' | 'date' | 'logo';
+
+/**
+ * Text format options
+ */
+export interface TextFormatOptions {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
+}
+
+/**
+ * Expandable option types
+ */
+type ExpandedOption = 'color' | 'size' | 'font' | 'format' | 'dateFormat' | 'datePicker' | 'background' | null;
 
 interface ContextBarAction {
   id: string;
@@ -51,37 +122,23 @@ interface ContextBarAction {
   label: string;
   onPress: () => void;
   isPrimary?: boolean;
+  expandable?: ExpandedOption;
 }
 
 interface ContextBarButtonProps {
   action: ContextBarAction;
+  isExpanded?: boolean;
 }
 
-function ContextBarButton({ action }: ContextBarButtonProps) {
-  const scale = useSharedValue(1);
-
-  const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.92, { damping: 15 });
-  }, [scale]);
-
-  const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, { damping: 15 });
-  }, [scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
+function ContextBarButton({ action, isExpanded }: ContextBarButtonProps) {
   const iconColor = action.isPrimary
     ? Colors.light.accent
-    : Colors.light.textSecondary;
+    : Colors.light.text;
 
   return (
-    <AnimatedTouchable
-      style={[styles.actionButton, animatedStyle]}
+    <TouchableOpacity
+      style={[styles.actionButton, isExpanded && styles.actionButtonExpanded]}
       onPress={action.onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
       activeOpacity={0.7}
     >
       <View style={styles.actionIconWrapper}>{action.icon(iconColor)}</View>
@@ -89,11 +146,13 @@ function ContextBarButton({ action }: ContextBarButtonProps) {
         style={[
           styles.actionLabel,
           action.isPrimary && styles.actionLabelPrimary,
+          isExpanded && styles.actionLabelExpanded,
         ]}
+        numberOfLines={1}
       >
         {action.label}
       </Text>
-    </AnimatedTouchable>
+    </TouchableOpacity>
   );
 }
 
@@ -102,16 +161,35 @@ interface ElementContextBarProps {
   elementType: ContextBarElementType | null;
   /** Whether the bar is visible */
   visible: boolean;
+  /** Current color value */
+  currentColor?: string;
+  /** Current font size value */
+  currentFontSize?: number;
+  /** Current font family */
+  currentFont?: FontFamily;
+  /** Current text format options */
+  currentFormat?: TextFormatOptions;
+  /** Current background color (undefined = no background) */
+  currentBackgroundColor?: string;
+  /** Auto-expand a specific option when component mounts/changes */
+  autoExpandOption?: ExpandedOption;
   /** Photo actions */
   onPhotoReplace?: () => void;
   onPhotoAdjust?: () => void;
   onPhotoAI?: () => void;
   onPhotoResize?: () => void;
-  /** Text/Date actions */
-  onTextFont?: () => void;
-  onTextColor?: () => void;
-  onTextSize?: () => void;
-  onTextAlign?: () => void;
+  /** Text actions */
+  onTextEdit?: () => void;
+  onTextFont?: (font: FontFamily) => void;
+  onTextColor?: (color: string) => void;
+  onTextSize?: (size: number) => void;
+  onTextFormat?: (format: TextFormatOptions) => void;
+  onTextBackground?: (color: string | undefined) => void;
+  /** Date actions */
+  onDateChange?: (date: Date) => void;
+  currentDate?: Date;
+  onDateFormatChange?: (format: DateFormat) => void;
+  currentDateFormat?: DateFormat;
   /** Logo actions */
   onLogoReplace?: () => void;
   onLogoOpacity?: () => void;
@@ -120,23 +198,124 @@ interface ElementContextBarProps {
   onConfirm?: () => void;
 }
 
+// Font size presets
+const FONT_SIZE_PRESETS = [12, 16, 20, 24, 32, 40, 48, 64, 72, 96];
+
 export function ElementContextBar({
   elementType,
   visible,
+  currentColor = '#FFFFFF',
+  currentFontSize = 24,
+  currentFont = 'System',
+  currentFormat = {},
+  currentBackgroundColor,
+  autoExpandOption,
   onPhotoReplace,
   onPhotoAdjust,
   onPhotoAI,
   onPhotoResize,
+  onTextEdit,
   onTextFont,
   onTextColor,
   onTextSize,
-  onTextAlign,
+  onTextFormat,
+  onTextBackground,
+  onDateChange,
+  currentDate = new Date(),
+  onDateFormatChange,
+  currentDateFormat = 'medium',
   onLogoReplace,
   onLogoOpacity,
   onLogoSize,
   onConfirm,
 }: ElementContextBarProps) {
   const insets = useSafeAreaInsets();
+  const [expandedOption, setExpandedOption] = useState<ExpandedOption>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [colorPickerMode, setColorPickerMode] = useState<'text' | 'background'>('text');
+  const hasAutoExpandedRef = useRef<string | null>(null);
+
+  // Auto-expand option when specified and element type changes
+  useEffect(() => {
+    if (autoExpandOption && elementType && hasAutoExpandedRef.current !== elementType) {
+      setExpandedOption(autoExpandOption);
+      hasAutoExpandedRef.current = elementType;
+    } else if (!autoExpandOption) {
+      // Reset when no auto-expand specified
+      hasAutoExpandedRef.current = null;
+    }
+  }, [autoExpandOption, elementType]);
+
+  // Toggle expanded option
+  const handleToggleExpand = (option: ExpandedOption) => {
+    setExpandedOption(expandedOption === option ? null : option);
+  };
+
+  // Handle color selection
+  const handleColorSelect = (color: string) => {
+    onTextColor?.(color);
+  };
+
+  // Handle font size selection
+  const handleSizeSelect = (size: number) => {
+    onTextSize?.(size);
+  };
+
+  // Handle font selection
+  const handleFontSelect = (font: FontFamily) => {
+    onTextFont?.(font);
+  };
+
+  // Handle format toggle
+  const handleFormatToggle = (key: keyof TextFormatOptions, value?: any) => {
+    const newFormat = { ...currentFormat };
+    if (key === 'textAlign') {
+      newFormat.textAlign = value;
+    } else {
+      newFormat[key] = !currentFormat[key];
+    }
+    onTextFormat?.(newFormat);
+  };
+
+  // Handle date format selection
+  const handleDateFormatSelect = (format: DateFormat) => {
+    onDateFormatChange?.(format);
+  };
+
+  // Handle date picker change
+  const handleDatePickerChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      onDateChange?.(selectedDate);
+    }
+  };
+
+  // Handle background color selection
+  const handleBackgroundSelect = (color: string | null) => {
+    onTextBackground?.(color ?? undefined);
+  };
+
+  // Open color picker for text color
+  const handleOpenTextColorPicker = useCallback(() => {
+    setColorPickerMode('text');
+    setShowColorPicker(true);
+  }, []);
+
+  // Open color picker for background color
+  const handleOpenBackgroundColorPicker = useCallback(() => {
+    setColorPickerMode('background');
+    setShowColorPicker(true);
+  }, []);
+
+  // Handle color picker selection
+  const handleColorPickerSelect = useCallback((color: string) => {
+    if (colorPickerMode === 'text') {
+      onTextColor?.(color);
+    } else {
+      onTextBackground?.(color);
+    }
+  }, [colorPickerMode, onTextColor, onTextBackground]);
 
   // Get actions based on element type
   const getActions = (): ContextBarAction[] => {
@@ -148,13 +327,6 @@ export function ElementContextBar({
             icon: (color) => <RefreshCw size={22} color={color} strokeWidth={1.8} />,
             label: 'Replace',
             onPress: onPhotoReplace || (() => {}),
-            isPrimary: true,
-          },
-          {
-            id: 'adjust',
-            icon: (color) => <Sliders size={22} color={color} strokeWidth={1.8} />,
-            label: 'Adjust',
-            onPress: onPhotoAdjust || (() => {}),
           },
           {
             id: 'resize',
@@ -164,7 +336,7 @@ export function ElementContextBar({
           },
           {
             id: 'ai',
-            icon: (color) => <Sparkles size={22} color={Colors.light.accent} strokeWidth={1.8} />,
+            icon: () => <Sparkles size={22} color={Colors.light.accent} strokeWidth={1.8} />,
             label: 'AI Edit',
             onPress: onPhotoAI || (() => {}),
             isPrimary: true,
@@ -172,32 +344,121 @@ export function ElementContextBar({
         ];
 
       case 'text':
-      case 'date':
         return [
+          {
+            id: 'edit',
+            icon: (color) => <Keyboard size={22} color={color} strokeWidth={1.8} />,
+            label: 'Edit',
+            onPress: onTextEdit || (() => {}),
+          },
           {
             id: 'font',
             icon: (color) => <Type size={22} color={color} strokeWidth={1.8} />,
             label: 'Font',
-            onPress: onTextFont || (() => {}),
-            isPrimary: true,
-          },
-          {
-            id: 'color',
-            icon: (color) => <Palette size={22} color={color} strokeWidth={1.8} />,
-            label: 'Color',
-            onPress: onTextColor || (() => {}),
+            onPress: () => handleToggleExpand('font'),
+            expandable: 'font',
           },
           {
             id: 'size',
-            icon: (color) => <Maximize2 size={22} color={color} strokeWidth={1.8} />,
-            label: 'Size',
-            onPress: onTextSize || (() => {}),
+            icon: (color) => <ALargeSmall size={22} color={color} strokeWidth={1.8} />,
+            label: 'Font size',
+            onPress: () => handleToggleExpand('size'),
+            expandable: 'size',
           },
           {
-            id: 'align',
-            icon: (color) => <AlignCenter size={22} color={color} strokeWidth={1.8} />,
+            id: 'color',
+            icon: () => <TextColorIcon size={22} />,
+            label: 'Color',
+            onPress: () => handleToggleExpand('color'),
+            expandable: 'color',
+          },
+          {
+            id: 'background',
+            icon: (color) => (
+              <View style={styles.bgIconWrapper}>
+                <Square 
+                  size={20} 
+                  color={currentBackgroundColor ? Colors.light.text : color} 
+                  strokeWidth={2} 
+                  fill={currentBackgroundColor || 'transparent'} 
+                />
+                {!currentBackgroundColor && (
+                  <View style={styles.bgIconSlash} />
+                )}
+              </View>
+            ),
+            label: 'Bg',
+            onPress: () => handleToggleExpand('background'),
+            expandable: 'background',
+          },
+          {
+            id: 'format',
+            icon: (color) => <Bold size={22} color={color} strokeWidth={1.8} />,
+            label: 'Format',
+            onPress: () => handleToggleExpand('format'),
+            expandable: 'format',
+          },
+        ];
+
+      case 'date':
+        return [
+          {
+            id: 'datePicker',
+            icon: (color) => <Calendar size={22} color={color} strokeWidth={1.8} />,
+            label: 'Date',
+            onPress: () => setShowDatePicker(true),
+          },
+          {
+            id: 'dateFormat',
+            icon: (color) => (
+              <View style={styles.formatIcon}>
+                <Text style={[styles.formatIconText, { color }]}>MM</Text>
+                <Text style={[styles.formatIconText, { color }]}>YY</Text>
+              </View>
+            ),
             label: 'Style',
-            onPress: onTextAlign || (() => {}),
+            onPress: () => handleToggleExpand('dateFormat'),
+            expandable: 'dateFormat',
+          },
+          {
+            id: 'font',
+            icon: (color) => <Type size={22} color={color} strokeWidth={1.8} />,
+            label: 'Font',
+            onPress: () => handleToggleExpand('font'),
+            expandable: 'font',
+          },
+          {
+            id: 'size',
+            icon: (color) => <ALargeSmall size={22} color={color} strokeWidth={1.8} />,
+            label: 'Font size',
+            onPress: () => handleToggleExpand('size'),
+            expandable: 'size',
+          },
+          {
+            id: 'color',
+            icon: () => <TextColorIcon size={22} />,
+            label: 'Color',
+            onPress: () => handleToggleExpand('color'),
+            expandable: 'color',
+          },
+          {
+            id: 'background',
+            icon: (color) => (
+              <View style={styles.bgIconWrapper}>
+                <Square 
+                  size={20} 
+                  color={currentBackgroundColor ? Colors.light.text : color} 
+                  strokeWidth={2} 
+                  fill={currentBackgroundColor || 'transparent'} 
+                />
+                {!currentBackgroundColor && (
+                  <View style={styles.bgIconSlash} />
+                )}
+              </View>
+            ),
+            label: 'Bg',
+            onPress: () => handleToggleExpand('background'),
+            expandable: 'background',
           },
         ];
 
@@ -208,7 +469,6 @@ export function ElementContextBar({
             icon: (color) => <RefreshCw size={22} color={color} strokeWidth={1.8} />,
             label: 'Replace',
             onPress: onLogoReplace || (() => {}),
-            isPrimary: true,
           },
           {
             id: 'opacity',
@@ -231,77 +491,817 @@ export function ElementContextBar({
 
   const actions = getActions();
 
+  // Render font picker row
+  const renderFontPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.fontScrollContent}
+        bounces={false}
+      >
+        {FONT_OPTIONS.map((font) => (
+          <TouchableOpacity
+            key={font.id}
+            style={[
+              styles.fontOption,
+              currentFont === font.id && styles.fontOptionSelected,
+            ]}
+            onPress={() => handleFontSelect(font.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.fontOptionText,
+              currentFont === font.id && styles.fontOptionTextSelected,
+            ]}>
+              {font.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render color picker row
+  const renderColorPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.colorScrollContent}
+        bounces={false}
+      >
+        {/* Color wheel / add button - opens full picker */}
+        <TouchableOpacity 
+          style={styles.colorWheelButton} 
+          activeOpacity={0.7}
+          onPress={handleOpenTextColorPicker}
+        >
+          <View style={styles.colorWheelGradient}>
+            <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Color presets */}
+        {COLOR_PRESETS.map((color) => (
+          <TouchableOpacity
+            key={color}
+            style={[
+              styles.colorOption,
+              { backgroundColor: color },
+              currentColor === color && styles.colorOptionSelected,
+            ]}
+            onPress={() => handleColorSelect(color)}
+            activeOpacity={0.7}
+          />
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render font size picker row
+  const renderSizePicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.sizeScrollContent}
+        bounces={false}
+      >
+        {FONT_SIZE_PRESETS.map((size) => (
+          <TouchableOpacity
+            key={size}
+            style={[
+              styles.sizeOption,
+              currentFontSize === size && styles.sizeOptionSelected,
+            ]}
+            onPress={() => handleSizeSelect(size)}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.sizeOptionText,
+              currentFontSize === size && styles.sizeOptionTextSelected,
+            ]}>
+              {size}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render date format picker row
+  const renderDateFormatPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.dateFormatScrollContent}
+        bounces={false}
+      >
+        {DATE_FORMAT_OPTIONS.map((format) => (
+          <TouchableOpacity
+            key={format.id}
+            style={[
+              styles.dateFormatOption,
+              currentDateFormat === format.id && styles.dateFormatOptionSelected,
+            ]}
+            onPress={() => handleDateFormatSelect(format.id)}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.dateFormatLabel,
+              currentDateFormat === format.id && styles.dateFormatLabelSelected,
+            ]}>
+              {format.label}
+            </Text>
+            <Text style={[
+              styles.dateFormatExample,
+              currentDateFormat === format.id && styles.dateFormatExampleSelected,
+            ]}>
+              {format.example}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render background color picker row
+  const renderBackgroundPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.colorScrollContent}
+        bounces={false}
+      >
+        {/* Custom color picker button */}
+        <TouchableOpacity 
+          style={styles.colorWheelButton} 
+          activeOpacity={0.7}
+          onPress={handleOpenBackgroundColorPicker}
+        >
+          <View style={styles.colorWheelGradient}>
+            <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+          </View>
+        </TouchableOpacity>
+
+        {BACKGROUND_COLOR_PRESETS.map((color, index) => {
+          const isSelected = currentBackgroundColor === color || 
+            (color === null && !currentBackgroundColor);
+          const isTransparent = color === null;
+          const isSemiTransparent = color && (color.length === 9 || color.includes('rgba'));
+          
+          return (
+            <TouchableOpacity
+              key={color ?? 'transparent'}
+              style={[
+                styles.bgColorOption,
+                isSelected && styles.bgColorOptionSelected,
+              ]}
+              onPress={() => handleBackgroundSelect(color)}
+              activeOpacity={0.7}
+            >
+              {/* Checkered background for transparency indicator */}
+              {(isTransparent || isSemiTransparent) && (
+                <View style={styles.checkerboardBg}>
+                  <View style={[styles.checkerSquare, styles.checkerDark]} />
+                  <View style={styles.checkerSquare} />
+                  <View style={styles.checkerSquare} />
+                  <View style={[styles.checkerSquare, styles.checkerDark]} />
+                </View>
+              )}
+              {/* Color fill */}
+              <View style={[
+                styles.bgColorFill,
+                color ? { backgroundColor: color } : styles.transparentFill,
+              ]}>
+                {isTransparent && (
+                  <X size={16} color={Colors.light.error} strokeWidth={2.5} />
+                )}
+              </View>
+              {/* Selection ring */}
+              {isSelected && <View style={styles.bgColorSelectionRing} />}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render format panel (Bold, Italic, Underline, Strikethrough, aA, Alignment)
+  const renderFormatPanel = () => (
+    <Animated.View 
+      style={styles.formatPanel}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      {/* Header */}
+      <View style={styles.formatHeader}>
+        <Text style={styles.formatTitle}>Format</Text>
+        <TouchableOpacity 
+          onPress={() => setExpandedOption(null)}
+          style={styles.formatCloseButton}
+        >
+          <X size={20} color={Colors.light.textSecondary} strokeWidth={2} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Text style buttons row */}
+      <View style={styles.formatRow}>
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            currentFormat.bold && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('bold')}
+          activeOpacity={0.7}
+        >
+          <Bold 
+            size={20} 
+            color={currentFormat.bold ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2.5} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            currentFormat.italic && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('italic')}
+          activeOpacity={0.7}
+        >
+          <Italic 
+            size={20} 
+            color={currentFormat.italic ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            currentFormat.underline && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('underline')}
+          activeOpacity={0.7}
+        >
+          <Underline 
+            size={20} 
+            color={currentFormat.underline ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            currentFormat.strikethrough && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('strikethrough')}
+          activeOpacity={0.7}
+        >
+          <Strikethrough 
+            size={20} 
+            color={currentFormat.strikethrough ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.formatButton}
+          activeOpacity={0.7}
+        >
+          <CaseSensitive 
+            size={20} 
+            color={Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* Alignment buttons row */}
+      <View style={styles.formatRow}>
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            styles.formatButtonWide,
+            currentFormat.textAlign === 'left' && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('textAlign', 'left')}
+          activeOpacity={0.7}
+        >
+          <AlignLeft 
+            size={20} 
+            color={currentFormat.textAlign === 'left' ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            styles.formatButtonWide,
+            (currentFormat.textAlign === 'center' || !currentFormat.textAlign) && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('textAlign', 'center')}
+          activeOpacity={0.7}
+        >
+          <AlignCenter 
+            size={20} 
+            color={(currentFormat.textAlign === 'center' || !currentFormat.textAlign) ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            styles.formatButtonWide,
+            currentFormat.textAlign === 'right' && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('textAlign', 'right')}
+          activeOpacity={0.7}
+        >
+          <AlignRight 
+            size={20} 
+            color={currentFormat.textAlign === 'right' ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.formatButton,
+            styles.formatButtonWide,
+            currentFormat.textAlign === 'justify' && styles.formatButtonActive,
+          ]}
+          onPress={() => handleFormatToggle('textAlign', 'justify')}
+          activeOpacity={0.7}
+        >
+          <AlignJustify 
+            size={20} 
+            color={currentFormat.textAlign === 'justify' ? Colors.light.accent : Colors.light.text} 
+            strokeWidth={2} 
+          />
+        </TouchableOpacity>
+      </View>
+
+      {/* List options row */}
+      <View style={styles.formatRow}>
+        <TouchableOpacity
+          style={[styles.formatButton, styles.formatButtonHalf]}
+          activeOpacity={0.7}
+        >
+          <List size={20} color={Colors.light.text} strokeWidth={2} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.formatButton, styles.formatButtonHalf]}
+          activeOpacity={0.7}
+        >
+          <ListOrdered size={20} color={Colors.light.text} strokeWidth={2} />
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+
   if (!visible || !elementType) {
     return null;
   }
 
   return (
+    <>
     <Animated.View
-      style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}
+      style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}
       entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(100)}
     >
-      <View style={styles.content}>
-        {/* Actions scroll */}
+      {/* Date Time Picker Modal (for Android it shows as dialog, for iOS inline) */}
+      {showDatePicker && elementType === 'date' && (
+        <Animated.View 
+          style={styles.datePickerRow}
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(100)}
+        >
+          <DateTimePicker
+            value={currentDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDatePickerChange}
+            style={styles.datePicker}
+          />
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.datePickerDoneButton}
+              onPress={() => setShowDatePicker(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.datePickerDoneText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
+      )}
+
+      {/* Expanded options row (above main bar) */}
+      {expandedOption === 'font' && renderFontPicker()}
+      {expandedOption === 'color' && renderColorPicker()}
+      {expandedOption === 'size' && renderSizePicker()}
+      {expandedOption === 'format' && renderFormatPanel()}
+      {expandedOption === 'dateFormat' && renderDateFormatPicker()}
+      {expandedOption === 'background' && renderBackgroundPicker()}
+
+      {/* Main context bar */}
+      <View style={styles.actionsContainer}>
+        {/* Scrollable actions */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.actionsScroll}
           bounces={false}
+          style={styles.scrollView}
         >
           {actions.map((action) => (
-            <ContextBarButton key={action.id} action={action} />
+            <ContextBarButton 
+              key={action.id} 
+              action={action} 
+              isExpanded={expandedOption === action.expandable}
+            />
           ))}
         </ScrollView>
 
-        {/* Confirm/Done button */}
+        {/* Confirm/Done button inside container, aligned right */}
         <TouchableOpacity
           style={styles.confirmButton}
           onPress={onConfirm}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <Check size={24} color={Colors.light.surface} strokeWidth={2.5} />
+          <Check size={20} color={Colors.light.text} strokeWidth={2.5} />
         </TouchableOpacity>
       </View>
     </Animated.View>
+
+    {/* Color Picker Modal */}
+    <ColorPickerModal
+      visible={showColorPicker}
+      currentColor={colorPickerMode === 'text' ? currentColor : (currentBackgroundColor || '#000000')}
+      title={colorPickerMode === 'text' ? 'Text Color' : 'Background Color'}
+      onSelectColor={handleColorPickerSelect}
+      onClose={() => setShowColorPicker(false)}
+    />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    // No background - transparent like Canva
-    backgroundColor: 'transparent',
+    backgroundColor: Colors.light.background,
     paddingTop: 8,
+    paddingHorizontal: 16,
   },
-  content: {
+  // Expanded options row
+  expandedRow: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    marginBottom: 8,
+    paddingVertical: 10,
+  },
+  // Format panel
+  formatPanel: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  formatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  formatTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  formatCloseButton: {
+    padding: 4,
+  },
+  formatRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  formatButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.surface,
+  },
+  formatButtonWide: {
+    flex: 1,
+  },
+  formatButtonHalf: {
+    flex: 1,
+  },
+  formatButtonActive: {
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderColor: Colors.light.accent,
+  },
+  // Font picker
+  fontScrollContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+    alignItems: 'center',
+  },
+  fontOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  fontOptionSelected: {
+    backgroundColor: Colors.light.accent,
+  },
+  fontOptionText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.light.text,
+  },
+  fontOptionTextSelected: {
+    color: Colors.light.surface,
+    fontWeight: '600',
+  },
+  // Color picker
+  colorScrollContent: {
+    paddingHorizontal: 12,
+    gap: 10,
+    alignItems: 'center',
+  },
+  colorWheelButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  colorWheelGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Rainbow gradient approximation
+    backgroundColor: '#8B5CF6',
+    borderWidth: 3,
+    borderColor: '#EC4899',
+  },
+  colorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorOptionSelected: {
+    borderColor: Colors.light.accent,
+    borderWidth: 3,
+  },
+  transparentColorOption: {
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderStyle: 'dashed',
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+  },
+  // Background color picker improved styles
+  bgColorOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    position: 'relative',
+  },
+  bgColorOptionSelected: {
+    borderColor: Colors.light.accent,
+    borderWidth: 3,
+  },
+  bgColorFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transparentFill: {
+    backgroundColor: 'transparent',
+  },
+  bgColorSelectionRing: {
+    position: 'absolute',
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: Colors.light.accent,
+  },
+  checkerboardBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  checkerSquare: {
+    width: '50%',
+    height: '50%',
+    backgroundColor: '#FFFFFF',
+  },
+  checkerDark: {
+    backgroundColor: '#E0E0E0',
+  },
+  // Size picker
+  sizeScrollContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+    alignItems: 'center',
+  },
+  sizeOption: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sizeOptionSelected: {
+    backgroundColor: Colors.light.accent,
+  },
+  sizeOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.light.text,
+  },
+  sizeOptionTextSelected: {
+    color: Colors.light.surface,
+  },
+  // Date format picker
+  dateFormatScrollContent: {
+    paddingHorizontal: 12,
+    gap: 10,
+    alignItems: 'center',
+  },
+  dateFormatOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: Colors.light.surfaceSecondary,
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  dateFormatOptionSelected: {
+    backgroundColor: Colors.light.accent,
+  },
+  dateFormatLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.light.textSecondary,
+    marginBottom: 2,
+  },
+  dateFormatLabelSelected: {
+    color: Colors.light.surface,
+  },
+  dateFormatExample: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.light.text,
+  },
+  dateFormatExampleSelected: {
+    color: Colors.light.surface,
+  },
+  // Format icon for date style
+  formatIcon: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'column',
+  },
+  formatIconText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    lineHeight: 10,
+    textAlign: 'center',
+  },
+  // Date picker
+  datePickerRow: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  datePicker: {
+    width: '100%',
+    height: 150,
+  },
+  datePickerDoneButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    backgroundColor: Colors.light.accent,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  datePickerDoneText: {
+    color: Colors.light.surface,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  // Main actions container
+  actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    gap: 12,
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    overflow: 'hidden',
+    paddingRight: 6,
+  },
+  scrollView: {
+    flex: 1,
   },
   actionsScroll: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 4,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
   },
   actionButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    minWidth: 56,
+    paddingVertical: 2,
+    paddingHorizontal: 14,
+    minWidth: 60,
+    borderRadius: 8,
+  },
+  actionButtonExpanded: {
+    backgroundColor: Colors.light.surfaceSecondary,
   },
   actionIconWrapper: {
-    width: 44,
-    height: 44,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   actionLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
-    color: Colors.light.textSecondary,
+    color: Colors.light.text,
     textAlign: 'center',
     letterSpacing: -0.2,
   },
@@ -309,19 +1309,32 @@ const styles = StyleSheet.create({
     color: Colors.light.accent,
     fontWeight: '600',
   },
+  actionLabelExpanded: {
+    fontWeight: '600',
+  },
   confirmButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.accent,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.light.surfaceSecondary,
     alignItems: 'center',
     justifyContent: 'center',
-    // Shadow
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    marginLeft: 4,
+  },
+  // Bg icon wrapper for visibility
+  bgIconWrapper: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  bgIconSlash: {
+    position: 'absolute',
+    width: 2,
+    height: 24,
+    backgroundColor: Colors.light.textSecondary,
+    transform: [{ rotate: '45deg' }],
   },
 });
 

@@ -106,11 +106,10 @@ function ToolbarButton({
     transform: [{ scale: scale.value }],
   }));
 
-  const iconColor = isActive
-    ? Colors.light.accent
-    : disabled
+  // No highlight/active state for main toolbar items (no sub-menus)
+  const iconColor = disabled
     ? Colors.light.textTertiary
-    : Colors.light.textSecondary;
+    : Colors.light.text;
 
   return (
     <AnimatedTouchable
@@ -130,7 +129,6 @@ function ToolbarButton({
       <Text
         style={[
           styles.buttonLabel,
-          isActive && styles.buttonLabelActive,
           disabled && styles.buttonLabelDisabled,
         ]}
       >
@@ -227,13 +225,9 @@ const styles = StyleSheet.create({
   buttonLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: Colors.light.textSecondary,
+    color: Colors.light.text,
     textAlign: 'center',
     letterSpacing: -0.2,
-  },
-  buttonLabelActive: {
-    color: Colors.light.accent,
-    fontWeight: '600',
   },
   buttonLabelDisabled: {
     color: Colors.light.textTertiary,

@@ -21,12 +21,8 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import {
-  RefreshCw,
-  Crop,
   Copy,
   Trash2,
-  MoreHorizontal,
-  Maximize2,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
@@ -70,11 +66,8 @@ interface FloatingElementToolbarProps {
   /** Canvas offset from top of screen */
   canvasTop?: number;
   /** Actions */
-  onReplace?: () => void;
-  onCrop?: () => void;
   onDuplicate?: () => void;
   onDelete?: () => void;
-  onMore?: () => void;
 }
 
 interface ToolbarButtonProps {
@@ -112,12 +105,17 @@ export function FloatingElementToolbar({
   visible,
   elementPosition,
   canvasTop = 0,
-  onReplace,
-  onCrop,
   onDuplicate,
   onDelete,
-  onMore,
 }: FloatingElementToolbarProps) {
+  // Pre-calculate toolbar width OUTSIDE the worklet (FIX for Hypothesis A)
+  // This must be calculated before useAnimatedStyle since it's a regular JS function
+  // Overlays: 2 buttons (duplicate, delete)
+  const toolbarWidth = useMemo(() => {
+    const buttonCount = elementType ? 2 : 0;
+    return TOOLBAR_PADDING * 2 + buttonCount * BUTTON_SIZE + (buttonCount - 1) * TOOLBAR_GAP;
+  }, [elementType]);
+
   // Calculate toolbar position
   const toolbarPosition = useMemo(() => {
     if (!elementPosition) {
@@ -135,110 +133,45 @@ export function FloatingElementToolbar({
     // Center horizontally on the element
     let left = elementPosition.x + elementPosition.width / 2;
 
-    // Clamp to screen bounds
-    const toolbarWidth = getToolbarWidth(elementType);
+    // Clamp to screen bounds using pre-calculated width
     left = Math.max(toolbarWidth / 2 + 16, Math.min(left, SCREEN_WIDTH - toolbarWidth / 2 - 16));
 
     return { top, left };
-  }, [elementPosition, canvasTop, elementType]);
+  }, [elementPosition, canvasTop, toolbarWidth]);
 
   // Animated style for smooth positioning
+  // NOTE: Removed opacity animation here - FadeIn/FadeOut layout animations handle opacity
   const animatedStyle = useAnimatedStyle(() => {
     return {
       top: withSpring(toolbarPosition.top, SPRING_CONFIG),
       left: withSpring(toolbarPosition.left, SPRING_CONFIG),
-      opacity: withTiming(visible ? 1 : 0, { duration: 150 }),
+      // opacity removed - handled by entering/exiting animations
       transform: [
-        { translateX: -getToolbarWidth(elementType) / 2 },
+        { translateX: -toolbarWidth / 2 }, // Using pre-calculated value instead of function call
         { scale: withSpring(visible ? 1 : 0.9, SPRING_CONFIG) },
       ],
     };
-  }, [toolbarPosition, visible, elementType]);
+  }, [toolbarPosition, visible, toolbarWidth]);
 
-  // Get actions based on element type
+  // Get actions - all overlay types show duplicate and delete
   const renderActions = () => {
-    const actions: React.ReactNode[] = [];
-
-    switch (elementType) {
-      case 'photo':
-        actions.push(
-          <ToolbarButton
-            key="replace"
-            icon={<RefreshCw size={18} color={Colors.light.accent} strokeWidth={2} />}
-            onPress={onReplace || (() => {})}
-          />,
-          <ToolbarButton
-            key="crop"
-            icon={<Maximize2 size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onCrop || (() => {})}
-          />,
-          <ToolbarButton
-            key="delete"
-            icon={<Trash2 size={18} color={Colors.light.error} strokeWidth={2} />}
-            onPress={onDelete || (() => {})}
-            variant="danger"
-          />,
-          <ToolbarButton
-            key="more"
-            icon={<MoreHorizontal size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onMore || (() => {})}
-          />
-        );
-        break;
-
-      case 'text':
-      case 'date':
-        actions.push(
-          <ToolbarButton
-            key="duplicate"
-            icon={<Copy size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onDuplicate || (() => {})}
-          />,
-          <ToolbarButton
-            key="delete"
-            icon={<Trash2 size={18} color={Colors.light.error} strokeWidth={2} />}
-            onPress={onDelete || (() => {})}
-            variant="danger"
-          />,
-          <ToolbarButton
-            key="more"
-            icon={<MoreHorizontal size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onMore || (() => {})}
-          />
-        );
-        break;
-
-      case 'logo':
-        actions.push(
-          <ToolbarButton
-            key="replace"
-            icon={<RefreshCw size={18} color={Colors.light.accent} strokeWidth={2} />}
-            onPress={onReplace || (() => {})}
-          />,
-          <ToolbarButton
-            key="duplicate"
-            icon={<Copy size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onDuplicate || (() => {})}
-          />,
-          <ToolbarButton
-            key="delete"
-            icon={<Trash2 size={18} color={Colors.light.error} strokeWidth={2} />}
-            onPress={onDelete || (() => {})}
-            variant="danger"
-          />,
-          <ToolbarButton
-            key="more"
-            icon={<MoreHorizontal size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
-            onPress={onMore || (() => {})}
-          />
-        );
-        break;
-
-      default:
-        return null;
-    }
-
-    return actions;
+    if (!elementType) return null;
+    
+    return (
+      <>
+        <ToolbarButton
+          key="duplicate"
+          icon={<Copy size={18} color={Colors.light.textSecondary} strokeWidth={2} />}
+          onPress={onDuplicate || (() => {})}
+        />
+        <ToolbarButton
+          key="delete"
+          icon={<Trash2 size={18} color={Colors.light.error} strokeWidth={2} />}
+          onPress={onDelete || (() => {})}
+          variant="danger"
+        />
+      </>
+    );
   };
 
   if (!visible || !elementType) {
@@ -257,17 +190,7 @@ export function FloatingElementToolbar({
   );
 }
 
-/**
- * Calculate toolbar width based on element type
- */
-function getToolbarWidth(elementType: FloatingToolbarElementType | null): number {
-  const buttonCount = elementType === 'photo' ? 4 : elementType ? 3 : 0;
-  return (
-    TOOLBAR_PADDING * 2 +
-    buttonCount * BUTTON_SIZE +
-    (buttonCount - 1) * TOOLBAR_GAP
-  );
-}
+// getToolbarWidth function removed - calculation moved inline to useMemo to avoid worklet issues
 
 const styles = StyleSheet.create({
   container: {

@@ -56,6 +56,7 @@ interface ManipulationModeConfig {
   initialTranslateY: number;
   rotation: number; // Read-only - uses existing adjustments
   onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
+  onTapOutsideSlot?: () => void; // Called when user taps outside the slot to deselect
 }
 
 interface TemplateCanvasProps {
@@ -671,6 +672,7 @@ function ManipulationOverlay({
   initialTranslateY,
   currentRotation, // Read-only
   onAdjustmentChange,
+  onTapOutsideSlot,
 }: {
   slot: Slot;
   imageUri: string;
@@ -681,6 +683,7 @@ function ManipulationOverlay({
   initialTranslateY: number;
   currentRotation: number; // Read-only - from existing adjustments
   onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
+  onTapOutsideSlot?: () => void;
 }) {
   const slotWidth = slot.width;
   const slotHeight = slot.height;
@@ -940,10 +943,27 @@ function ManipulationOverlay({
     [clampTranslation, reportAdjustment, getMinScaleForPosition]
   );
 
-  // Combine gestures (pan + pinch only - NO rotation)
+  // Tap gesture - any tap on the canvas deselects the slot
+  // Pan/pinch gestures still work for manipulation
+  const tapGesture = useMemo(() =>
+    Gesture.Tap()
+      .onEnd(() => {
+        'worklet';
+        // Any tap on the canvas should deselect
+        if (onTapOutsideSlot) {
+          runOnJS(onTapOutsideSlot)();
+        }
+      }),
+    [onTapOutsideSlot]
+  );
+
+  // Combine gestures (pan + pinch + tap - NO rotation)
   const composedGesture = useMemo(() =>
-    Gesture.Simultaneous(panGesture, pinchGesture),
-    [panGesture, pinchGesture]
+    Gesture.Race(
+      tapGesture,
+      Gesture.Simultaneous(panGesture, pinchGesture)
+    ),
+    [tapGesture, panGesture, pinchGesture]
   );
 
   // Calculate image bounds for rendering
@@ -1187,6 +1207,7 @@ export function TemplateCanvas({
             initialTranslateY={manipulationMode.initialTranslateY}
             currentRotation={manipulationMode.rotation}
             onAdjustmentChange={manipulationMode.onAdjustmentChange}
+            onTapOutsideSlot={manipulationMode.onTapOutsideSlot}
           />
         )}
 

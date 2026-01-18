@@ -14,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { 
-  Palette, 
   User, 
   ChevronRight, 
   Crown, 
@@ -24,15 +23,12 @@ import {
   FileText,
   Shield,
   RefreshCw,
-  ExternalLink,
   MessageCircle,
   Send,
   ImageIcon,
   X,
   Cloud,
   CloudOff,
-  Info,
-  Gift,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
@@ -77,8 +73,6 @@ export default function SettingsScreen() {
     isPremium, 
     isLoading: isSubscriptionLoading,
     subscriptionDetails,
-    isComplimentaryPro,
-    superwallUserId,
   } = usePremiumStatus();
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
   // Restore purchases only needed for free users
@@ -100,9 +94,6 @@ export default function SettingsScreen() {
   const [isLoadingBrandKit, setIsLoadingBrandKit] = useState(true);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isSyncingBrandKit, setIsSyncingBrandKit] = useState(false);
-  
-  // Debug section state (hidden by default, shown via long press on version)
-  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   // Load Brand Kit on mount and when auth changes
   useEffect(() => {
@@ -748,119 +739,12 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* App Version - Long press to show debug info */}
-          <TouchableOpacity 
-            style={styles.versionContainer}
-            onLongPress={() => setShowDebugInfo(!showDebugInfo)}
-            activeOpacity={0.7}
-          >
+          {/* App Version */}
+          <View style={styles.versionContainer}>
             <Text style={styles.versionText}>
               Version {appVersion} ({buildNumber})
             </Text>
-            {!showDebugInfo && (
-              <Text style={styles.versionHint}>Long press for debug info</Text>
-            )}
-          </TouchableOpacity>
-          
-          {/* Debug Section - Hidden by default */}
-          {showDebugInfo && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Debug Info</Text>
-              <View style={styles.card}>
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>Subscription Status</Text>
-                  <Text style={[
-                    styles.debugValue,
-                    subscriptionDetails.status === 'ACTIVE' && styles.debugValueSuccess,
-                    subscriptionDetails.status === 'INACTIVE' && styles.debugValueError,
-                    subscriptionDetails.status === 'UNKNOWN' && styles.debugValueWarning,
-                  ]}>
-                    {subscriptionDetails.status}
-                  </Text>
-                </View>
-                
-                <View style={styles.debugDivider} />
-                
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>Source</Text>
-                  <Text style={styles.debugValue}>
-                    {subscriptionDetails.source === 'superwall' ? 'App Store' : 
-                     subscriptionDetails.source === 'complimentary' ? 'Admin Granted' : 'None'}
-                  </Text>
-                </View>
-                
-                <View style={styles.debugDivider} />
-                
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>isPremium</Text>
-                  <Text style={[
-                    styles.debugValue, 
-                    isPremium ? styles.debugValueSuccess : styles.debugValueError
-                  ]}>
-                    {isPremium ? 'true' : 'false'}
-                  </Text>
-                </View>
-                
-                <View style={styles.debugDivider} />
-                
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>isComplimentaryPro</Text>
-                  <Text style={styles.debugValue}>{isComplimentaryPro ? 'true' : 'false'}</Text>
-                </View>
-                
-                <View style={styles.debugDivider} />
-                
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>Entitlements</Text>
-                  <Text style={styles.debugValue}>
-                    {subscriptionDetails.entitlements.length > 0 
-                      ? subscriptionDetails.entitlements.map(e => e.id).join(', ')
-                      : 'None'}
-                  </Text>
-                </View>
-                
-                {superwallUserId && (
-                  <>
-                    <View style={styles.debugDivider} />
-                    <View style={styles.debugRow}>
-                      <Text style={styles.debugLabel}>Superwall User ID</Text>
-                      <Text style={styles.debugValueSmall} numberOfLines={1} ellipsizeMode="middle">
-                        {superwallUserId}
-                      </Text>
-                    </View>
-                  </>
-                )}
-                
-                <View style={styles.debugDivider} />
-                
-                <View style={styles.debugRow}>
-                  <Text style={styles.debugLabel}>Auth Status</Text>
-                  <Text style={[
-                    styles.debugValue, 
-                    isAuthenticated ? styles.debugValueSuccess : styles.debugValueWarning
-                  ]}>
-                    {isAuthenticated ? 'Signed In' : 'Not Signed In'}
-                  </Text>
-                </View>
-                
-                <View style={styles.debugDivider} />
-                
-                {/* Editor V2 Info */}
-                <View style={styles.debugPrototypeInfo}>
-                  <Text style={styles.debugPrototypeButtonText}>🧪 Editor V2 Active</Text>
-                  <Text style={styles.debugPrototypeHint}>Select a template from Create tab to test</Text>
-                </View>
-                
-                <TouchableOpacity 
-                  style={styles.debugHideButton}
-                  onPress={() => setShowDebugInfo(false)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.debugHideButtonText}>Hide Debug Info</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -885,7 +769,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: 40,
   },
   section: {
     marginBottom: 24,
@@ -1192,89 +1076,11 @@ const styles = StyleSheet.create({
   // Version styles
   versionContainer: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   versionText: {
     fontSize: 13,
     color: Colors.light.textTertiary,
-  },
-  versionHint: {
-    fontSize: 11,
-    color: Colors.light.textTertiary,
-    marginTop: 4,
-    opacity: 0.6,
-  },
-  
-  // Debug section styles
-  debugRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  debugLabel: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  debugValue: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: Colors.light.text,
-  },
-  debugValueSmall: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: Colors.light.text,
-    maxWidth: 150,
-  },
-  debugValueSuccess: {
-    color: Colors.light.success,
-  },
-  debugValueError: {
-    color: Colors.light.error,
-  },
-  debugValueWarning: {
-    color: '#FF9800',
-  },
-  debugDivider: {
-    height: 1,
-    backgroundColor: Colors.light.borderLight,
-    marginHorizontal: 16,
-  },
-  debugHideButton: {
-    alignItems: 'center',
-    paddingVertical: 14,
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.borderLight,
-  },
-  debugHideButtonText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500' as const,
-  },
-  debugPrototypeInfo: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginHorizontal: 16,
-    marginTop: 12,
-    backgroundColor: 'rgba(90, 171, 97, 0.1)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(90, 171, 97, 0.3)',
-  },
-  debugPrototypeButtonText: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: Colors.light.success,
-  },
-  debugPrototypeHint: {
-    fontSize: 12,
-    color: Colors.light.success,
-    opacity: 0.7,
-    marginTop: 4,
   },
   
   // Feedback styles

@@ -19,6 +19,7 @@ import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -85,11 +86,15 @@ export const EditorSubPanel = forwardRef<EditorSubPanelRef, EditorSubPanelProps>
     },
     ref
   ) {
+    const insets = useSafeAreaInsets();
     const bottomSheetRef = useRef<BottomSheet>(null);
+    
+    // Calculate bottom padding with safe area
+    const bottomPadding = Math.max(insets.bottom, 16);
 
-    // Default snap points - 25% for compact panel
+    // Default snap points - 28% for compact panel to account for safe area
     const snapPoints = useMemo(
-      () => customSnapPoints || ['25%'],
+      () => customSnapPoints || ['28%'],
       [customSnapPoints]
     );
 
@@ -173,14 +178,17 @@ export const EditorSubPanel = forwardRef<EditorSubPanelRef, EditorSubPanelProps>
         {/* Content */}
         <ContentWrapper
           style={styles.content}
-          contentContainerStyle={scrollable ? styles.scrollContent : undefined}
+          contentContainerStyle={scrollable ? [styles.scrollContent, { paddingBottom: bottomPadding }] : undefined}
           showsVerticalScrollIndicator={false}
         >
           {children}
         </ContentWrapper>
 
         {/* Footer (e.g., category tabs) */}
-        {footer && <View style={styles.footer}>{footer}</View>}
+        {footer && <View style={[styles.footer, { paddingBottom: bottomPadding }]}>{footer}</View>}
+        
+        {/* Add bottom padding if no footer */}
+        {!footer && !scrollable && <View style={{ height: bottomPadding }} />}
       </BottomSheet>
     );
   }

@@ -6,7 +6,7 @@
  * brand kit integration, and upload options.
  */
 
-import React, { useState, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, useCallback, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -21,6 +21,7 @@ import BottomSheet, {
   BottomSheetView,
   BottomSheetBackdrop,
 } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import {
   X,
@@ -77,14 +78,15 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
     },
     ref
   ) {
+    const insets = useSafeAreaInsets();
     const bottomSheetRef = useRef<BottomSheet>(null);
     const [mode, setMode] = useState<PanelMode>('picker');
     const [brandLogo, setBrandLogo] = useState<BrandLogoData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-
-    // Snap points - 25% for compact panel
-    const snapPoints = useMemo(() => ['28%'], []);
+    
+    // Calculate bottom padding with safe area
+    const bottomPadding = insets.bottom + 12;
 
     // Load brand kit logo on mount
     useEffect(() => {
@@ -246,7 +248,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
 
     // Render picker mode content
     const renderPickerContent = () => (
-      <View style={styles.pickerContent}>
+      <View style={[styles.pickerContent, { paddingBottom: bottomPadding }]}>
         {/* Brand Logo Section */}
         {brandLogo ? (
           <TouchableOpacity
@@ -297,7 +299,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       const scalePercentage = Math.round(currentScale * 100);
 
       return (
-        <View style={styles.editorContent}>
+        <View style={[styles.editorContent, { paddingBottom: bottomPadding }]}>
           {/* Scale Slider */}
           <View style={styles.sliderSection}>
             <View style={styles.sliderHeader}>
@@ -337,7 +339,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
-        snapPoints={snapPoints}
+        enableDynamicSizing
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         onChange={handleSheetChange}
@@ -380,7 +382,6 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
   container: {
-    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -407,7 +408,6 @@ const styles = StyleSheet.create({
   },
   // Picker content
   pickerContent: {
-    flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 12,
@@ -473,7 +473,6 @@ const styles = StyleSheet.create({
   },
   // Editor content
   editorContent: {
-    flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 16,

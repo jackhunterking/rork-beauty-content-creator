@@ -5,6 +5,10 @@ const templatedApiKey = process.env.EXPO_PUBLIC_TEMPLATED_API_KEY || process.env
 const superwallIosKey = process.env.EXPO_PUBLIC_SUPERWALL_IOS_KEY || "";
 const superwallAndroidKey = process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY || "";
 
+// PostHog API keys - get these from your PostHog dashboard (Project Settings → Project API Key)
+const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_API_KEY || "";
+const posthogHost = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+
 export default {
   expo: {
     name: "Resulta",
@@ -110,6 +114,8 @@ export default {
       templatedApiKey: templatedApiKey,
       superwallIosKey: superwallIosKey,
       superwallAndroidKey: superwallAndroidKey,
+      posthogApiKey: posthogApiKey,
+      posthogHost: posthogHost,
     },
   },
 };

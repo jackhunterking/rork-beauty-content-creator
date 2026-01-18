@@ -37,6 +37,8 @@ interface OverlayLayerProps {
   onUpdateOverlayTransform: (id: string, transform: OverlayTransform) => void;
   /** Called when an overlay is deleted */
   onDeleteOverlay: (id: string) => void;
+  /** Called when an overlay is duplicated */
+  onDuplicateOverlay?: (id: string) => void;
 }
 
 export function OverlayLayer({
@@ -47,6 +49,7 @@ export function OverlayLayer({
   onSelectOverlay,
   onUpdateOverlayTransform,
   onDeleteOverlay,
+  onDuplicateOverlay,
 }: OverlayLayerProps) {
   // Handle overlay selection
   const handleSelectOverlay = useCallback((id: string) => {
@@ -63,6 +66,11 @@ export function OverlayLayer({
     onDeleteOverlay(id);
     onSelectOverlay(null);
   }, [onDeleteOverlay, onSelectOverlay]);
+
+  // Handle overlay duplication
+  const handleDuplicateOverlay = useCallback((id: string) => {
+    onDuplicateOverlay?.(id);
+  }, [onDuplicateOverlay]);
 
   // Render overlay content based on type
   const renderOverlayContent = useCallback((overlay: Overlay) => {
@@ -120,6 +128,7 @@ export function OverlayLayer({
             onSelect={() => handleSelectOverlay(overlay.id)}
             onTransformChange={(transform) => handleTransformChange(overlay.id, transform)}
             onDelete={() => handleDeleteOverlay(overlay.id)}
+            onDuplicate={() => handleDuplicateOverlay(overlay.id)}
             minScale={scaleConstraints.minScale}
             maxScale={scaleConstraints.maxScale}
           >

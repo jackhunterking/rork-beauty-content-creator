@@ -13,6 +13,7 @@ import {
   formatDate,
   FONT_OPTIONS,
   FontFamily,
+  BACKGROUND_CONSTRAINTS,
 } from '@/types/overlays';
 
 interface TextOverlayContentProps {
@@ -62,8 +63,40 @@ export function TextOverlayContent({ overlay }: TextOverlayContentProps) {
     };
   }, [overlay.textShadow, overlay.color]);
 
+  // Calculate format styles (bold, italic, underline, strikethrough)
+  const formatStyle = useMemo(() => {
+    const overlayAny = overlay as any;
+    return {
+      fontWeight: overlayAny.bold ? 'bold' as const : 'normal' as const,
+      fontStyle: overlayAny.italic ? 'italic' as const : 'normal' as const,
+      textDecorationLine: (overlayAny.underline && overlayAny.strikethrough) 
+        ? 'underline line-through' as const
+        : overlayAny.underline 
+          ? 'underline' as const 
+          : overlayAny.strikethrough 
+            ? 'line-through' as const 
+            : 'none' as const,
+      textAlign: (overlayAny.textAlign || 'center') as 'left' | 'center' | 'right' | 'justify',
+    };
+  }, [overlay]);
+
+  // Calculate background style
+  const backgroundStyle = useMemo(() => {
+    if (!overlay.backgroundColor) return {};
+    
+    const padding = overlay.backgroundPadding ?? BACKGROUND_CONSTRAINTS.defaultPadding;
+    const borderRadius = overlay.backgroundBorderRadius ?? BACKGROUND_CONSTRAINTS.defaultBorderRadius;
+    
+    return {
+      backgroundColor: overlay.backgroundColor,
+      paddingHorizontal: padding + 4, // Extra horizontal padding for readability
+      paddingVertical: padding,
+      borderRadius,
+    };
+  }, [overlay.backgroundColor, overlay.backgroundPadding, overlay.backgroundBorderRadius]);
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, backgroundStyle]}>
       <Text
         style={[
           styles.text,
@@ -73,6 +106,7 @@ export function TextOverlayContent({ overlay }: TextOverlayContentProps) {
             color: overlay.color,
           },
           shadowStyle,
+          formatStyle,
         ]}
         numberOfLines={3}
         adjustsFontSizeToFit={false}

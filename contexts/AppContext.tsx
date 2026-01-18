@@ -4,7 +4,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
-import { deleteDraft as deleteDraftService, saveDraftWithImages, duplicateDraft as duplicateDraftService } from '@/services/draftService';
+import { deleteDraft as deleteDraftService, saveDraftWithImages, duplicateDraft as duplicateDraftService, renameDraft as renameDraftService } from '@/services/draftService';
 import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as deletePortfolioItemService } from '@/services/portfolioService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 import { useRealtimeDrafts } from '@/hooks/useRealtimeDrafts';
@@ -70,6 +70,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     cachedPreviewUrl: string | null;
     wasRenderedAsPremium: boolean | null;
     localPreviewPath: string | null;
+    projectName: string | null;
   }>({
     contentType: 'single',
     template: null,
@@ -80,6 +81,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     cachedPreviewUrl: null,
     wasRenderedAsPremium: null,
     localPreviewPath: null,
+    projectName: null,
   });
 
   // Initialize local storage on app start
@@ -204,6 +206,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       renderedPreviewUrl,
       wasRenderedAsPremium,
       localPreviewPath,
+      projectName,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -213,6 +216,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;
+      projectName?: string | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -222,7 +226,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         capturedImageUris,
         renderedPreviewUrl,
         wasRenderedAsPremium,
-        localPreviewPath
+        localPreviewPath,
+        projectName
       );
     },
     onSuccess: (savedDraft) => {
@@ -233,29 +238,55 @@ export const [AppProvider, useApp] = createContextHook(() => {
         cachedPreviewUrl: savedDraft.renderedPreviewUrl || null,
         wasRenderedAsPremium: savedDraft.wasRenderedAsPremium ?? null,
         localPreviewPath: savedDraft.localPreviewPath || null,
+        projectName: savedDraft.projectName || null,
       }));
       // Note: No manual cache updates needed - useRealtimeDrafts will receive
       // the INSERT/UPDATE event from Supabase and update automatically
     },
   });
 
-  // Delete draft mutation
+  // Delete draft mutation with optimistic update
   const deleteDraftMutation = useMutation({
     mutationFn: async (draftId: string) => {
       await deleteDraftService(draftId);
       return draftId;
     },
-    // Note: No onSuccess needed - useRealtimeDrafts will receive
-    // the DELETE event from Supabase and remove the draft automatically
+    onSuccess: () => {
+      // Immediately refresh drafts to reflect the deletion
+      // This ensures instant UI feedback without waiting for real-time events
+      refetchDrafts();
+    },
   });
 
-  // Duplicate draft mutation
+  // Duplicate draft mutation with optimistic update
   const duplicateDraftMutation = useMutation({
     mutationFn: async (sourceDraftId: string) => {
       return duplicateDraftService(sourceDraftId);
     },
-    // Note: No onSuccess needed - useRealtimeDrafts will receive
-    // the INSERT event from Supabase and add the new draft automatically
+    onSuccess: () => {
+      // Immediately refresh drafts to include the newly duplicated draft
+      // This ensures instant UI feedback without waiting for real-time events
+      refetchDrafts();
+    },
+  });
+
+  // Rename draft mutation with optimistic update
+  const renameDraftMutation = useMutation({
+    mutationFn: async ({ draftId, projectName }: { draftId: string; projectName: string | null }) => {
+      return renameDraftService(draftId, projectName);
+    },
+    onSuccess: (renamedDraft) => {
+      // Update current project if this is the active draft
+      if (currentProject.draftId === renamedDraft.id) {
+        setCurrentProject(prev => ({
+          ...prev,
+          projectName: renamedDraft.projectName || null,
+        }));
+      }
+      // Immediately refresh drafts to reflect the name change
+      // This ensures instant UI feedback without waiting for real-time events
+      refetchDrafts();
+    },
   });
 
   // Add to portfolio mutation
@@ -320,6 +351,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
       localPreviewPath: null,
+      projectName: null,
     }));
   }, []);
 
@@ -410,6 +442,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
       localPreviewPath: null,
+      projectName: null,
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -493,6 +526,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       cachedPreviewUrl: draft.renderedPreviewUrl || null,
       wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
       localPreviewPath: draft.localPreviewPath || null,
+      projectName: draft.projectName || null,
     });
   }, []);
 
@@ -569,13 +603,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
       renderedPreviewUrl?: string | null;
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;
+      projectName?: string | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     duplicateDraft: (draftId: string) => duplicateDraftMutation.mutateAsync(draftId),
+    renameDraft: (draftId: string, projectName: string | null) => renameDraftMutation.mutateAsync({ draftId, projectName }),
     loadDraft,
     refreshDrafts,
     isSavingDraft: saveDraftMutation.isPending,
     isDuplicatingDraft: duplicateDraftMutation.isPending,
+    isRenamingDraft: renameDraftMutation.isPending,
     
     // Portfolio actions
     addToPortfolio: (item: Omit<PortfolioItem, 'id' | 'createdAt'>) => addToPortfolioMutation.mutateAsync(item),
