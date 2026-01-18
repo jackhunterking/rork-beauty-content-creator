@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useMemo, useEffect, useRef } from 'react';
-import { StyleSheet, View, TouchableOpacity } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -14,7 +14,6 @@ import Animated, {
   withSpring,
   runOnJS,
 } from 'react-native-reanimated';
-import { X, Move } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { OverlayTransform } from '@/types/overlays';
 
@@ -43,14 +42,14 @@ interface DraggableOverlayProps {
 }
 
 export function DraggableOverlay({
-  id,
+  id: _id,
   transform,
   canvasWidth,
   canvasHeight,
   isSelected,
   onSelect,
   onTransformChange,
-  onDelete,
+  onDelete: _onDelete,
   children,
   minScale = 0.2,
   maxScale = 3.0,
@@ -274,31 +273,6 @@ export function DraggableOverlay({
         <Animated.View style={[styles.content, selectionStyle]}>
           {children}
         </Animated.View>
-
-        {/* Selection handles and delete button */}
-        {isSelected && (
-          <>
-            {/* Delete button */}
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={onDelete}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <X size={14} color={Colors.light.surface} />
-            </TouchableOpacity>
-
-            {/* Move indicator */}
-            <View style={styles.moveIndicator}>
-              <Move size={12} color={Colors.light.accent} />
-            </View>
-
-            {/* Corner handles for resize indication */}
-            <View style={[styles.handle, styles.handleTopLeft]} />
-            <View style={[styles.handle, styles.handleTopRight]} />
-            <View style={[styles.handle, styles.handleBottomLeft]} />
-            <View style={[styles.handle, styles.handleBottomRight]} />
-          </>
-        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -336,65 +310,6 @@ const styles = StyleSheet.create({
   content: {
     padding: 8,
     borderRadius: 4,
-  },
-  deleteButton: {
-    position: 'absolute',
-    top: -12,
-    right: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.light.error,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  moveIndicator: {
-    position: 'absolute',
-    top: -12,
-    left: -12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.light.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: Colors.light.accent,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  handle: {
-    position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 2,
-    borderColor: Colors.light.accent,
-  },
-  handleTopLeft: {
-    top: -5,
-    left: -5,
-  },
-  handleTopRight: {
-    top: -5,
-    right: -5,
-  },
-  handleBottomLeft: {
-    bottom: -5,
-    left: -5,
-  },
-  handleBottomRight: {
-    bottom: -5,
-    right: -5,
   },
 });
 

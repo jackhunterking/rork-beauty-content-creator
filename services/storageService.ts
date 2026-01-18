@@ -160,3 +160,65 @@ export async function downloadDraftImage(url: string): Promise<string> {
 export function isSupabaseStorageUrl(url: string): boolean {
   return url.includes('supabase') && url.includes('storage');
 }
+
+/**
+ * Copy all images from one draft to another
+ * Used for duplicating drafts
+ * @param sourceDraftId - The source draft ID to copy from
+ * @param targetDraftId - The target draft ID to copy to
+ * @returns A map of slot IDs to new public URLs
+ */
+export async function copyDraftImages(
+  sourceDraftId: string,
+  targetDraftId: string
+): Promise<Record<string, string>> {
+  try {
+    // List all files in the source draft folder
+    const { data: files, error: listError } = await supabase.storage
+      .from(BUCKET_NAME)
+      .list(sourceDraftId);
+
+    if (listError) {
+      console.error('List error while copying:', listError);
+      throw listError;
+    }
+
+    if (!files || files.length === 0) {
+      console.log('No images to copy for draft:', sourceDraftId);
+      return {};
+    }
+
+    const newUrls: Record<string, string> = {};
+
+    // Copy each file to the new draft folder
+    for (const file of files) {
+      const sourcePath = `${sourceDraftId}/${file.name}`;
+      const targetPath = `${targetDraftId}/${file.name}`;
+
+      const { error: copyError } = await supabase.storage
+        .from(BUCKET_NAME)
+        .copy(sourcePath, targetPath);
+
+      if (copyError) {
+        console.error(`Failed to copy ${sourcePath} to ${targetPath}:`, copyError);
+        // Continue with other files even if one fails
+        continue;
+      }
+
+      // Get the public URL for the copied file
+      const { data: urlData } = supabase.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(targetPath);
+
+      // Extract slot ID from filename (e.g., "slot-before.jpg" -> "slot-before")
+      const slotId = file.name.replace(/\.[^/.]+$/, '');
+      newUrls[slotId] = urlData.publicUrl;
+    }
+
+    console.log(`Copied ${Object.keys(newUrls).length} images from ${sourceDraftId} to ${targetDraftId}`);
+    return newUrls;
+  } catch (error) {
+    console.error('Failed to copy draft images:', error);
+    throw error;
+  }
+}

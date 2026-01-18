@@ -4,7 +4,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
-import { deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
+import { deleteDraft as deleteDraftService, saveDraftWithImages, duplicateDraft as duplicateDraftService } from '@/services/draftService';
 import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as deletePortfolioItemService } from '@/services/portfolioService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
 import { useRealtimeDrafts } from '@/hooks/useRealtimeDrafts';
@@ -247,6 +247,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
     // Note: No onSuccess needed - useRealtimeDrafts will receive
     // the DELETE event from Supabase and remove the draft automatically
+  });
+
+  // Duplicate draft mutation
+  const duplicateDraftMutation = useMutation({
+    mutationFn: async (sourceDraftId: string) => {
+      return duplicateDraftService(sourceDraftId);
+    },
+    // Note: No onSuccess needed - useRealtimeDrafts will receive
+    // the INSERT event from Supabase and add the new draft automatically
   });
 
   // Add to portfolio mutation
@@ -562,9 +571,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath?: string | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
+    duplicateDraft: (draftId: string) => duplicateDraftMutation.mutateAsync(draftId),
     loadDraft,
     refreshDrafts,
     isSavingDraft: saveDraftMutation.isPending,
+    isDuplicatingDraft: duplicateDraftMutation.isPending,
     
     // Portfolio actions
     addToPortfolio: (item: Omit<PortfolioItem, 'id' | 'createdAt'>) => addToPortfolioMutation.mutateAsync(item),

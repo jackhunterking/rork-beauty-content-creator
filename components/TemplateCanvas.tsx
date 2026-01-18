@@ -42,6 +42,22 @@ interface CropModeConfig {
   onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
 }
 
+/**
+ * ManipulationModeConfig - Same as CropModeConfig but rotation is read-only
+ * Used when slot is selected (before clicking "Resize")
+ */
+interface ManipulationModeConfig {
+  slotId: string;
+  imageUri: string;
+  imageWidth: number;
+  imageHeight: number;
+  initialScale: number;
+  initialTranslateX: number;
+  initialTranslateY: number;
+  rotation: number; // Read-only - uses existing adjustments
+  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
+}
+
 interface TemplateCanvasProps {
   template: Template;
   onSlotPress: (slotId: string) => void;
@@ -55,7 +71,9 @@ interface TemplateCanvasProps {
   onPreviewLoad?: () => void;
   /** Currently selected slot ID for selection highlight */
   selectedSlotId?: string | null;
-  /** Crop mode configuration */
+  /** Manipulation mode - pan/pinch without rotation (when slot is selected) */
+  manipulationMode?: ManipulationModeConfig | null;
+  /** Crop mode configuration - full resize with rotation */
   cropMode?: CropModeConfig | null;
 }
 
@@ -640,6 +658,389 @@ function CropOverlay({
 }
 
 /**
+ * ManipulationOverlay - Pan and pinch gestures WITHOUT rotation
+ * 
+ * Same visual appearance as CropOverlay but:
+ * - No rotation gesture (rotation is read-only from existing adjustments)
+ * - Used when slot is selected, before clicking "Resize"
+ * - ContextualToolbar remains visible (not CropToolbar)
+ */
+function ManipulationOverlay({
+  slot,
+  imageUri,
+  imageWidth,
+  imageHeight,
+  initialScale,
+  initialTranslateX,
+  initialTranslateY,
+  currentRotation, // Read-only
+  onAdjustmentChange,
+}: {
+  slot: Slot;
+  imageUri: string;
+  imageWidth: number;
+  imageHeight: number;
+  initialScale: number;
+  initialTranslateX: number;
+  initialTranslateY: number;
+  currentRotation: number; // Read-only - from existing adjustments
+  onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
+}) {
+  const slotWidth = slot.width;
+  const slotHeight = slot.height;
+  const slotX = slot.x;
+  const slotY = slot.y;
+
+  // Calculate base image size - this is the size where image exactly fills slot (cover fit)
+  const baseImageSize = useMemo(() => {
+    const imageAspect = imageWidth / imageHeight;
+    const slotAspect = slotWidth / slotHeight;
+
+    if (imageAspect > slotAspect) {
+      return {
+        width: slotHeight * imageAspect,
+        height: slotHeight,
+      };
+    } else {
+      return {
+        width: slotWidth,
+        height: slotWidth / imageAspect,
+      };
+    }
+  }, [imageWidth, imageHeight, slotWidth, slotHeight]);
+
+  // Gesture state - scale 1.0 = image exactly fills slot
+  // Rotation is READ-ONLY (passed through unchanged)
+  const scale = useSharedValue(Math.max(1, initialScale));
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const rotation = useSharedValue(currentRotation);
+  
+  const startScale = useSharedValue(1);
+  const startTranslateX = useSharedValue(0);
+  const startTranslateY = useSharedValue(0);
+
+  // Constants
+  const MAX_SCALE = 5.0;
+  const BASE_MIN_SCALE = 1.0;
+  
+  // Calculate minimum scale needed when rotating
+  const minScaleForRotation = useMemo(() => {
+    const slotDiagonal = Math.sqrt(slotWidth * slotWidth + slotHeight * slotHeight);
+    const minImageDimension = Math.min(baseImageSize.width, baseImageSize.height);
+    return (slotDiagonal / minImageDimension) * 1.05;
+  }, [slotWidth, slotHeight, baseImageSize]);
+
+  // Current minimum scale depends on rotation
+  const currentMinScale = useMemo(() => {
+    return currentRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
+  }, [currentRotation, minScaleForRotation]);
+
+  // Initialize with saved adjustments (only once)
+  const hasInitialized = React.useRef(false);
+  React.useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+    
+    const minScale = currentRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
+    const effectiveScale = Math.max(minScale, initialScale);
+    scale.value = effectiveScale;
+    rotation.value = currentRotation;
+    
+    // Calculate max translation in rotated coordinate system
+    const scaledWidth = baseImageSize.width * effectiveScale;
+    const scaledHeight = baseImageSize.height * effectiveScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    
+    const angleRad = (currentRotation * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const absCos = Math.abs(cos);
+    const absSin = Math.abs(sin);
+    
+    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
+    
+    const u = initialTranslateX * maxU;
+    const v = initialTranslateY * maxV;
+    
+    translateX.value = u * cos - v * sin;
+    translateY.value = u * sin + v * cos;
+  }, []);
+
+  // Clamp translation to keep rotated image covering slot
+  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number, rotationDeg: number) => {
+    'worklet';
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const absCos = Math.abs(cos);
+    const absSin = Math.abs(sin);
+    
+    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
+    
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
+    
+    const uClamped = Math.max(-maxU, Math.min(maxU, u));
+    const vClamped = Math.max(-maxV, Math.min(maxV, v));
+    
+    return {
+      x: uClamped * cos - vClamped * sin,
+      y: uClamped * sin + vClamped * cos,
+    };
+  }, [baseImageSize, slotWidth, slotHeight]);
+  
+  // Get max translation in rotated coordinates for normalization
+  const getMaxUV = useCallback((currentScale: number, rotationDeg: number) => {
+    'worklet';
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const absCos = Math.abs(Math.cos(angleRad));
+    const absSin = Math.abs(Math.sin(angleRad));
+    
+    return {
+      maxU: Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin)),
+      maxV: Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos)),
+    };
+  }, [baseImageSize, slotWidth, slotHeight]);
+
+  // Report adjustment to parent - rotation passes through unchanged
+  const reportAdjustment = useCallback(() => {
+    const currentScale = scale.value;
+    const currentRot = rotation.value;
+    const tx = translateX.value;
+    const ty = translateY.value;
+    
+    const angleRad = (currentRot * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
+    
+    const { maxU, maxV } = getMaxUV(currentScale, currentRot);
+    
+    const adjustments = {
+      scale: currentScale,
+      translateX: maxU > 0 ? u / maxU : 0,
+      translateY: maxV > 0 ? v / maxV : 0,
+      rotation: currentRot, // Pass through unchanged
+    };
+    
+    onAdjustmentChange(adjustments);
+  }, [getMaxUV, onAdjustmentChange, scale, translateX, translateY, rotation]);
+
+  // Pan gesture - drag to reposition
+  const panGesture = useMemo(() =>
+    Gesture.Pan()
+      .onStart(() => {
+        'worklet';
+        startTranslateX.value = translateX.value;
+        startTranslateY.value = translateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const clamped = clampTranslation(
+          startTranslateX.value + event.translationX,
+          startTranslateY.value + event.translationY,
+          scale.value,
+          rotation.value
+        );
+        translateX.value = clamped.x;
+        translateY.value = clamped.y;
+      })
+      .onEnd(() => {
+        'worklet';
+        runOnJS(reportAdjustment)();
+      }),
+    [clampTranslation, reportAdjustment]
+  );
+
+  // Calculate minimum scale needed for rotated image to cover slot
+  const getMinScaleForPosition = useCallback((tx: number, ty: number, rotationDeg: number) => {
+    'worklet';
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    const baseHalfW = baseImageSize.width / 2;
+    const baseHalfH = baseImageSize.height / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    
+    const corners = [
+      { x: halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: -halfSlotH },
+      { x: halfSlotW, y: -halfSlotH },
+    ];
+    
+    let minScale = BASE_MIN_SCALE;
+    
+    for (const corner of corners) {
+      const cx = corner.x - tx;
+      const cy = corner.y - ty;
+      const localX = cx * cos + cy * sin;
+      const localY = -cx * sin + cy * cos;
+      const scaleForX = Math.abs(localX) / baseHalfW;
+      const scaleForY = Math.abs(localY) / baseHalfH;
+      minScale = Math.max(minScale, scaleForX, scaleForY);
+    }
+    
+    return minScale;
+  }, [slotWidth, slotHeight, baseImageSize]);
+
+  // Pinch gesture - zoom in/out
+  const pinchGesture = useMemo(() =>
+    Gesture.Pinch()
+      .onStart(() => {
+        'worklet';
+        startScale.value = scale.value;
+        startTranslateX.value = translateX.value;
+        startTranslateY.value = translateY.value;
+      })
+      .onUpdate((event) => {
+        'worklet';
+        const proposedScale = startScale.value * event.scale;
+        const dynamicMinScale = getMinScaleForPosition(
+          startTranslateX.value,
+          startTranslateY.value,
+          rotation.value
+        );
+        const newScale = Math.max(dynamicMinScale, Math.min(MAX_SCALE, proposedScale));
+        scale.value = newScale;
+        
+        const scaleRatio = newScale / startScale.value;
+        const clamped = clampTranslation(
+          startTranslateX.value * scaleRatio,
+          startTranslateY.value * scaleRatio,
+          newScale,
+          rotation.value
+        );
+        translateX.value = clamped.x;
+        translateY.value = clamped.y;
+      })
+      .onEnd(() => {
+        'worklet';
+        runOnJS(reportAdjustment)();
+      }),
+    [clampTranslation, reportAdjustment, getMinScaleForPosition]
+  );
+
+  // Combine gestures (pan + pinch only - NO rotation)
+  const composedGesture = useMemo(() =>
+    Gesture.Simultaneous(panGesture, pinchGesture),
+    [panGesture, pinchGesture]
+  );
+
+  // Calculate image bounds for rendering
+  const getImageBounds = useCallback((s: number, tx: number, ty: number) => {
+    'worklet';
+    const scaledWidth = baseImageSize.width * s;
+    const scaledHeight = baseImageSize.height * s;
+    const left = slotX + (slotWidth - scaledWidth) / 2 + tx;
+    const top = slotY + (slotHeight - scaledHeight) / 2 + ty;
+    return { left, top, width: scaledWidth, height: scaledHeight };
+  }, [baseImageSize, slotX, slotY, slotWidth, slotHeight]);
+
+  // Animated style for the overflow image
+  const overflowImageStyle = useAnimatedStyle(() => {
+    const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
+    return {
+      position: 'absolute' as const,
+      left: bounds.left,
+      top: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+      transform: [{ rotate: `${rotation.value}deg` }],
+    };
+  });
+
+  // Animated style for the image inside the slot
+  const slotImageStyle = useAnimatedStyle(() => {
+    const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
+    return {
+      position: 'absolute' as const,
+      left: bounds.left - slotX,
+      top: bounds.top - slotY,
+      width: bounds.width,
+      height: bounds.height,
+      transform: [{ rotate: `${rotation.value}deg` }],
+    };
+  });
+
+  // Animated style for the border around the full image
+  const borderStyle = useAnimatedStyle(() => {
+    const bounds = getImageBounds(scale.value, translateX.value, translateY.value);
+    return {
+      position: 'absolute' as const,
+      left: bounds.left - 2,
+      top: bounds.top - 2,
+      width: bounds.width + 4,
+      height: bounds.height + 4,
+      transform: [{ rotate: `${rotation.value}deg` }],
+    };
+  });
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {/* Dim the canvas */}
+      <View style={cropStyles.canvasOverlay} />
+
+      {/* Gesture area */}
+      <GestureDetector gesture={composedGesture}>
+        <View style={StyleSheet.absoluteFill}>
+          {/* Overflow image at reduced opacity */}
+          <Animated.View style={[overflowImageStyle, { opacity: CROP_OVERFLOW_OPACITY }]}>
+            <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          </Animated.View>
+        </View>
+      </GestureDetector>
+
+      {/* Slot window - full opacity with grid */}
+      <View
+        style={[cropStyles.slotWindow, { left: slotX, top: slotY, width: slotWidth, height: slotHeight }]}
+        pointerEvents="none"
+      >
+        <View style={cropStyles.slotClip}>
+          <Animated.View style={slotImageStyle}>
+            <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          </Animated.View>
+        </View>
+
+        {/* Grid */}
+        <View style={cropStyles.grid}>
+          <View style={[cropStyles.gridLine, cropStyles.vLine, { left: '33.33%' }]} />
+          <View style={[cropStyles.gridLine, cropStyles.vLine, { left: '66.66%' }]} />
+          <View style={[cropStyles.gridLine, cropStyles.hLine, { top: '33.33%' }]} />
+          <View style={[cropStyles.gridLine, cropStyles.hLine, { top: '66.66%' }]} />
+        </View>
+      </View>
+
+      {/* Border around full image */}
+      <Animated.View style={[cropStyles.imageBorder, borderStyle]} pointerEvents="none" />
+    </View>
+  );
+}
+
+/**
  * TemplateCanvas - Renders template preview with invisible slot tap targets
  * 
  * Preview Priority:
@@ -657,6 +1058,7 @@ export function TemplateCanvas({
   onPreviewError,
   onPreviewLoad,
   selectedSlotId = null,
+  manipulationMode = null,
   cropMode = null,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
@@ -694,6 +1096,12 @@ export function TemplateCanvas({
       displayHeight
     );
   }, [template, displayWidth, displayHeight]);
+
+  // Find the manipulation slot
+  const manipulationSlot = useMemo(() => {
+    if (!manipulationMode) return null;
+    return scaledSlots.find(s => s.layerId === manipulationMode.slotId) || null;
+  }, [manipulationMode, scaledSlots]);
 
   // Find the crop slot
   const cropSlot = useMemo(() => {
@@ -755,8 +1163,8 @@ export function TemplateCanvas({
           }}
         />
 
-        {/* Invisible slot tap targets - hidden during crop mode */}
-        {!cropMode && scaledSlots.map(slot => (
+        {/* Invisible slot tap targets - hidden during manipulation or crop mode */}
+        {!manipulationMode && !cropMode && scaledSlots.map(slot => (
           <SlotRegion
             key={slot.layerId}
             slot={slot}
@@ -764,14 +1172,29 @@ export function TemplateCanvas({
           />
         ))}
 
-        {/* Canva-style selection overlay for selected slot - hidden during crop mode */}
-        {!cropMode && selectedSlotId && scaledSlots.find(s => s.layerId === selectedSlotId) && (
+        {/* Canva-style selection overlay - hidden during manipulation or crop mode */}
+        {!manipulationMode && !cropMode && selectedSlotId && scaledSlots.find(s => s.layerId === selectedSlotId) && (
           <SelectionOverlay 
             slot={scaledSlots.find(s => s.layerId === selectedSlotId)!} 
           />
         )}
 
-        {/* Crop overlay - rendered inside canvas for perfect alignment */}
+        {/* Manipulation overlay - pan/pinch without rotation (when slot is selected) */}
+        {manipulationMode && manipulationSlot && !cropMode && (
+          <ManipulationOverlay
+            slot={manipulationSlot}
+            imageUri={manipulationMode.imageUri}
+            imageWidth={manipulationMode.imageWidth}
+            imageHeight={manipulationMode.imageHeight}
+            initialScale={manipulationMode.initialScale}
+            initialTranslateX={manipulationMode.initialTranslateX}
+            initialTranslateY={manipulationMode.initialTranslateY}
+            currentRotation={manipulationMode.rotation}
+            onAdjustmentChange={manipulationMode.onAdjustmentChange}
+          />
+        )}
+
+        {/* Crop overlay - full resize with rotation */}
         {cropMode && cropSlot && (
           <CropOverlay
             slot={cropSlot}

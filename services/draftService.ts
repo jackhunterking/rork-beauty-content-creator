@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { Draft, DraftRow } from '@/types';
-import { uploadDraftImage, deleteDraftImages } from './storageService';
+import { uploadDraftImage, deleteDraftImages, copyDraftImages } from './storageService';
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory } from './localStorageService';
+import { copyOverlays } from './overlayPersistenceService';
 
 /**
  * Helper to get the current authenticated user ID
@@ -412,4 +413,95 @@ export async function getDraftCount(): Promise<number> {
   }
 
   return count || 0;
+}
+
+/**
+ * Duplicate an existing draft
+ * Creates a new draft with the same template and copied images
+ * Also copies any overlays associated with the draft
+ * @param sourceDraftId - The ID of the draft to duplicate
+ * @returns The newly created draft
+ */
+export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
+  try {
+    // Get current user ID (RLS will verify ownership)
+    const userId = await getCurrentUserId();
+    
+    // Fetch the source draft
+    const sourceDraft = await fetchDraftById(sourceDraftId);
+    if (!sourceDraft) {
+      throw new Error('Source draft not found');
+    }
+    
+    // Create a new draft record with the same template
+    const { data: newDraftData, error: createError } = await supabase
+      .from('drafts')
+      .insert({
+        user_id: userId,
+        template_id: sourceDraft.templateId,
+        // Leave image URLs null initially - we'll update after copying
+        before_image_url: null,
+        after_image_url: null,
+        captured_image_urls: null,
+        // Don't copy rendered preview - it will need to be re-rendered
+        rendered_preview_url: null,
+        was_rendered_as_premium: null,
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating duplicate draft:', createError);
+      throw createError;
+    }
+
+    const newDraft = mapRowToDraft(newDraftData as DraftRow);
+    
+    // Copy images from source to new draft in storage
+    const copiedImageUrls = await copyDraftImages(sourceDraftId, newDraft.id);
+    
+    // Build the update data based on what was copied
+    const updatePayload: {
+      beforeImageUrl?: string | null;
+      afterImageUrl?: string | null;
+      capturedImageUrls?: Record<string, string> | null;
+    } = {};
+    
+    // Map copied URLs back to the appropriate fields
+    // Check for legacy before/after fields
+    if (copiedImageUrls['before']) {
+      updatePayload.beforeImageUrl = copiedImageUrls['before'];
+    }
+    if (copiedImageUrls['after']) {
+      updatePayload.afterImageUrl = copiedImageUrls['after'];
+    }
+    
+    // Build captured image URLs map (excluding legacy before/after)
+    const capturedUrls: Record<string, string> = {};
+    for (const [slotId, url] of Object.entries(copiedImageUrls)) {
+      if (slotId !== 'before' && slotId !== 'after') {
+        capturedUrls[slotId] = url;
+      }
+    }
+    
+    if (Object.keys(capturedUrls).length > 0) {
+      updatePayload.capturedImageUrls = capturedUrls;
+    }
+    
+    // Update the new draft with the copied image URLs
+    let updatedDraft = newDraft;
+    if (Object.keys(updatePayload).length > 0) {
+      updatedDraft = await updateDraft(newDraft.id, updatePayload);
+    }
+    
+    // Copy overlays from source to new draft (local storage)
+    await copyOverlays(sourceDraftId, newDraft.id);
+    
+    console.log(`Successfully duplicated draft ${sourceDraftId} to ${newDraft.id}`);
+    
+    return updatedDraft;
+  } catch (error) {
+    console.error('Failed to duplicate draft:', error);
+    throw error;
+  }
 }

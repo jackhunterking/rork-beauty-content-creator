@@ -115,11 +115,19 @@ export default function EditorV2Screen() {
   const hasSetInitialStateRef = useRef(false);
   const hasSetInitialOverlaysRef = useRef(false);
 
-  // Crop/Resize mode state
+  // Crop/Resize mode state (full resize with rotation)
   const [isCropMode, setIsCropMode] = useState(false);
   const [cropSlotId, setCropSlotId] = useState<string | null>(null);
   const [pendingRotation, setPendingRotation] = useState(0);
   const [pendingCropAdjustments, setPendingCropAdjustments] = useState<{
+    scale: number;
+    translateX: number;
+    translateY: number;
+    rotation: number;
+  } | null>(null);
+
+  // Manipulation mode state (pan/pinch without rotation - when slot is selected)
+  const [pendingManipulationAdjustments, setPendingManipulationAdjustments] = useState<{
     scale: number;
     translateX: number;
     translateY: number;
@@ -185,6 +193,22 @@ export default function EditorV2Screen() {
       image,
     };
   }, [cropSlotId, isCropMode, scaledSlots, capturedImages]);
+
+  // Get manipulation mode slot data (when slot is selected, not in crop mode)
+  const manipulationSlotData = useMemo(() => {
+    // Only active when a slot is selected and we're not in full crop mode
+    if (selection.type !== 'slot' || !selection.id || isCropMode) return null;
+    
+    const scaledSlot = scaledSlots.find(s => s.layerId === selection.id);
+    const image = capturedImages[selection.id];
+    
+    if (!scaledSlot || !image) return null;
+    
+    return {
+      slot: scaledSlot,
+      image,
+    };
+  }, [selection.type, selection.id, isCropMode, scaledSlots, capturedImages]);
 
   // Count captured slots for save validation
   const capturedCount = useMemo(() => 
@@ -565,9 +589,15 @@ export default function EditorV2Screen() {
 
   // Handle slot press (from TemplateCanvas)
   const handleSlotPress = useCallback((slotId: string) => {
+    // Save pending manipulation adjustments if selecting a different slot
+    if (selection.id && selection.id !== slotId && selection.type === 'slot' && pendingManipulationAdjustments) {
+      saveManipulationAdjustments();
+    }
+    
     // Always deselect overlay when interacting with slots
     if (selection.id) {
       setSelection(DEFAULT_SELECTION);
+      setPendingManipulationAdjustments(null);
     }
     // Also deselect any selected overlay
     if (selectedOverlayId) {
@@ -582,19 +612,25 @@ export default function EditorV2Screen() {
       // Empty slot - navigate to fullscreen capture screen
       router.push(`/capture/${slotId}`);
     } else {
-      // Has image - select it for contextual actions
+      // Has image - select it for contextual actions (manipulation mode will be activated)
       setSelection({
         type: 'slot',
         id: slotId,
         isTransforming: false,
       });
     }
-  }, [capturedImages, selection.id, router, selectedOverlayId]);
+  }, [capturedImages, selection.id, selection.type, router, selectedOverlayId, pendingManipulationAdjustments, saveManipulationAdjustments]);
 
   // Handle canvas tap (deselect)
   const handleCanvasTap = useCallback(() => {
+    // Save any pending manipulation adjustments before deselecting
+    if (selection.id && selection.type === 'slot' && pendingManipulationAdjustments) {
+      saveManipulationAdjustments();
+    }
+    
     if (selection.id) {
       setSelection(DEFAULT_SELECTION);
+      setPendingManipulationAdjustments(null);
     }
     // Also deselect any selected overlay
     if (selectedOverlayId) {
@@ -602,7 +638,7 @@ export default function EditorV2Screen() {
       styleSheetRef.current?.close();
       logoActionSheetRef.current?.close();
     }
-  }, [selection, selectedOverlayId]);
+  }, [selection, selectedOverlayId, pendingManipulationAdjustments, saveManipulationAdjustments]);
 
 
   // Handle AI enhancement selection
@@ -772,16 +808,36 @@ export default function EditorV2Screen() {
 
   const handlePhotoResize = useCallback(() => {
     if (selection.id && capturedImages[selection.id]) {
-      // Enter inline resize mode
+      // First, save any pending manipulation adjustments
+      if (pendingManipulationAdjustments) {
+        const currentImage = capturedImages[selection.id];
+        if (currentImage) {
+          const updatedAdjustments = {
+            ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
+            scale: pendingManipulationAdjustments.scale,
+            translateX: pendingManipulationAdjustments.translateX,
+            translateY: pendingManipulationAdjustments.translateY,
+            rotation: pendingManipulationAdjustments.rotation,
+          };
+          setCapturedImage(selection.id, {
+            ...currentImage,
+            adjustments: updatedAdjustments,
+          });
+        }
+        setPendingManipulationAdjustments(null);
+      }
+      
+      // Enter inline resize mode (full crop with rotation)
       const image = capturedImages[selection.id];
       setCropSlotId(selection.id);
       setIsCropMode(true);
-      // Initialize rotation from existing adjustments
-      setPendingRotation(image.adjustments?.rotation || 0);
+      // Initialize rotation from existing adjustments (including any just saved)
+      const savedAdjustments = pendingManipulationAdjustments || image.adjustments;
+      setPendingRotation(savedAdjustments?.rotation || 0);
       // Clear selection while in resize mode
       setSelection(DEFAULT_SELECTION);
     }
-  }, [selection, capturedImages]);
+  }, [selection, capturedImages, pendingManipulationAdjustments, setCapturedImage]);
 
   // Resize mode handlers
   const handleResizeCancel = useCallback(() => {
@@ -832,6 +888,43 @@ export default function EditorV2Screen() {
   }) => {
     setPendingCropAdjustments(adjustments);
   }, []);
+
+  // Handle adjustment changes from ManipulationOverlay (pan/pinch only)
+  const handleManipulationAdjustmentChange = useCallback((adjustments: {
+    scale: number;
+    translateX: number;
+    translateY: number;
+    rotation: number;
+  }) => {
+    setPendingManipulationAdjustments(adjustments);
+  }, []);
+
+  // Save pending manipulation adjustments to the captured image
+  const saveManipulationAdjustments = useCallback(() => {
+    if (!selection.id || selection.type !== 'slot' || !pendingManipulationAdjustments) return;
+    
+    const currentImage = capturedImages[selection.id];
+    if (!currentImage) return;
+    
+    // Merge with existing adjustments (rotation stays the same since manipulation doesn't change it)
+    const finalAdjustments = {
+      ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
+      scale: pendingManipulationAdjustments.scale,
+      translateX: pendingManipulationAdjustments.translateX,
+      translateY: pendingManipulationAdjustments.translateY,
+      // rotation passes through from pendingManipulationAdjustments (unchanged)
+      rotation: pendingManipulationAdjustments.rotation,
+    };
+    
+    console.log('[EditorV2] Saving manipulation adjustments for slot:', selection.id, finalAdjustments);
+    
+    setCapturedImage(selection.id, {
+      ...currentImage,
+      adjustments: finalAdjustments,
+    });
+    
+    setPendingManipulationAdjustments(null);
+  }, [selection.id, selection.type, pendingManipulationAdjustments, capturedImages, setCapturedImage]);
 
   // Handle rotation change from slider
   const handleRotationChange = useCallback((rotation: number) => {
@@ -1091,7 +1184,23 @@ export default function EditorV2Screen() {
   }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, renderedPreviewUri, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts]);
 
   // Handle back/close with unsaved changes check
+  // Navigation destination depends on context:
+  // - If editing an existing draft (has draftId), go back to Projects tab
+  // - If creating new from template (no draftId), go back to Create tab
   const handleClose = useCallback(() => {
+    const isEditingExistingDraft = !!currentProject.draftId;
+    const navigateBack = () => {
+      resetProject();
+      // Navigate to the appropriate tab based on context
+      if (isEditingExistingDraft) {
+        // Came from Projects tab (editing existing draft) - go back to Projects
+        router.replace('/(tabs)/library');
+      } else {
+        // Came from Create tab (new template) - go back to Create
+        router.replace('/(tabs)');
+      }
+    };
+
     if (hasUnsavedChanges) {
       Alert.alert(
         'Unsaved Changes',
@@ -1101,10 +1210,7 @@ export default function EditorV2Screen() {
           {
             text: 'Leave',
             style: 'destructive',
-            onPress: () => {
-              resetProject();
-              router.back();
-            },
+            onPress: navigateBack,
           },
           {
             text: 'Save',
@@ -1115,10 +1221,9 @@ export default function EditorV2Screen() {
       );
     } else {
       // No changes, just leave
-      resetProject();
-      router.back();
+      navigateBack();
     }
-  }, [hasUnsavedChanges, resetProject, router, handleSaveDraft]);
+  }, [hasUnsavedChanges, resetProject, router, handleSaveDraft, currentProject.draftId]);
 
   // Handle download to gallery
   const handleDownload = useCallback(async () => {
@@ -1238,8 +1343,8 @@ export default function EditorV2Screen() {
         {/* Canvas Area */}
         <Pressable 
           style={styles.canvasArea} 
-          onPress={isCropMode ? undefined : handleCanvasTap}
-          disabled={isCropMode}
+          onPress={(isCropMode || manipulationSlotData) ? undefined : handleCanvasTap}
+          disabled={isCropMode || !!manipulationSlotData}
         >
           {/* Canvas wrapper for positioning overlay layer */}
           <View style={styles.canvasWrapper}>
@@ -1253,7 +1358,7 @@ export default function EditorV2Screen() {
               }}
               style={[styles.viewShotWrapper, { width: canvasDimensions.width, height: canvasDimensions.height }]}
             >
-              {/* TemplateCanvas handles rendering, slot targets, selection, and crop mode */}
+              {/* TemplateCanvas handles rendering, slot targets, selection, manipulation, and crop mode */}
               <TemplateCanvas
                 template={template}
                 onSlotPress={isCropMode ? () => {} : handleSlotPress}
@@ -1262,6 +1367,17 @@ export default function EditorV2Screen() {
                 onPreviewError={handlePreviewError}
                 onPreviewLoad={handlePreviewImageLoad}
                 selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
+                manipulationMode={manipulationSlotData && !isCropMode ? {
+                  slotId: selection.id!,
+                  imageUri: manipulationSlotData.image.uri,
+                  imageWidth: manipulationSlotData.image.width,
+                  imageHeight: manipulationSlotData.image.height,
+                  initialScale: manipulationSlotData.image.adjustments?.scale || 1,
+                  initialTranslateX: manipulationSlotData.image.adjustments?.translateX || 0,
+                  initialTranslateY: manipulationSlotData.image.adjustments?.translateY || 0,
+                  rotation: manipulationSlotData.image.adjustments?.rotation || 0,
+                  onAdjustmentChange: handleManipulationAdjustmentChange,
+                } : null}
                 cropMode={isCropMode && cropSlotData ? {
                   slotId: cropSlotId!,
                   imageUri: cropSlotData.image.uri,
@@ -1276,8 +1392,8 @@ export default function EditorV2Screen() {
                 } : null}
               />
               
-              {/* Overlay Layer - renders overlays on top of canvas */}
-              {!isCropMode && canvasDimensions.width > 0 && (
+              {/* Overlay Layer - renders overlays on top of canvas (hidden during manipulation/crop) */}
+              {!isCropMode && !manipulationSlotData && canvasDimensions.width > 0 && (
                 <View style={[
                   styles.overlayContainer, 
                   { 
@@ -1329,7 +1445,14 @@ export default function EditorV2Screen() {
             onPhotoResize={handlePhotoResize}
             onPhotoAI={handlePhotoAI}
             onPhotoDelete={handlePhotoDelete}
-            onDeselect={() => setSelection(DEFAULT_SELECTION)}
+            onDeselect={() => {
+              // Save any pending manipulation adjustments before deselecting
+              if (pendingManipulationAdjustments) {
+                saveManipulationAdjustments();
+              }
+              setSelection(DEFAULT_SELECTION);
+              setPendingManipulationAdjustments(null);
+            }}
           />
         ) : (
           <ToolDock

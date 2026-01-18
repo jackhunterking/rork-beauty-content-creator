@@ -706,7 +706,14 @@ export default function EditorScreen() {
             allowNavigationRef.current = true;
             isDiscardingRef.current = true;
             resetProject();
-            router.back();
+            // Navigate to the appropriate tab based on context
+            if (currentProject.draftId) {
+              // Came from Projects tab (editing existing draft) - go back to Projects
+              router.replace('/(tabs)/library');
+            } else {
+              // Came from Create tab (new template) - go back to Create
+              router.replace('/(tabs)');
+            }
           },
         },
         {
@@ -743,7 +750,12 @@ export default function EditorScreen() {
               if (!savedDraft) {
                 console.error('[Editor] Draft save returned null');
                 allowNavigationRef.current = true;
-                router.back();
+                // Navigate to the appropriate tab based on context
+                if (currentProject.draftId) {
+                  router.replace('/(tabs)/library');
+                } else {
+                  router.replace('/(tabs)');
+                }
                 return;
               }
               
@@ -789,7 +801,12 @@ export default function EditorScreen() {
               console.error('Failed to save draft:', error);
               // Still navigate back even if save failed
               allowNavigationRef.current = true;
-              router.back();
+              // Navigate to the appropriate tab based on context
+              if (currentProject.draftId) {
+                router.replace('/(tabs)/library');
+              } else {
+                router.replace('/(tabs)');
+              }
             }
           },
         },
@@ -799,13 +816,23 @@ export default function EditorScreen() {
   }, [template, slots, capturedImages, saveDraft, currentProject.draftId, resetProject, router, renderedPreviewUri, isPremium, localPreviewPath, overlays, captureCanvasWithOverlays]);
 
   // Handle back button press with unsaved changes check
+  // Navigation destination depends on context:
+  // - If editing an existing draft (has draftId), go back to Projects tab
+  // - If creating new from template (no draftId), go back to Create tab
   const handleBackPress = useCallback(() => {
     if (hasUnsavedChanges && !allowNavigationRef.current) {
       showBackConfirmation();
     } else {
-      router.back();
+      // Navigate to the appropriate tab based on context
+      if (currentProject.draftId) {
+        // Came from Projects tab (editing existing draft) - go back to Projects
+        router.replace('/(tabs)/library');
+      } else {
+        // Came from Create tab (new template) - go back to Create
+        router.replace('/(tabs)');
+      }
     }
-  }, [hasUnsavedChanges, showBackConfirmation, router]);
+  }, [hasUnsavedChanges, showBackConfirmation, router, currentProject.draftId]);
 
   const isEditingDraft = !!currentProject.draftId;
 

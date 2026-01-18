@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   StyleSheet,
@@ -8,17 +8,30 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter, Stack } from 'expo-router';
-import { Image as ImageIcon, Square, RectangleVertical, RectangleHorizontal, Clock, ChevronLeft } from 'lucide-react-native';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { 
+  Image as ImageIcon, 
+  Square, 
+  RectangleVertical, 
+  RectangleHorizontal, 
+  Clock, 
+  ChevronLeft,
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  X,
+} from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, TemplateFormat } from '@/types';
 import { getDraftPreviewUri } from '@/services/imageUtils';
 import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
-import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
+import { useResponsive } from '@/hooks/useResponsive';
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -31,6 +44,22 @@ const getFormatIcon = (config: FormatConfig, active: boolean) => {
     case 'portrait':
     default:
       return <RectangleVertical size={18} color={color} />;
+  }
+};
+
+// Helper to get small format icon for list items
+const getSmallFormatIcon = (formatId: string) => {
+  const config = getFormatById(formatId);
+  if (!config) return <Square size={14} color={Colors.light.textSecondary} />;
+  
+  switch (config.icon) {
+    case 'square':
+      return <Square size={14} color={Colors.light.textSecondary} />;
+    case 'landscape':
+      return <RectangleHorizontal size={14} color={Colors.light.textSecondary} />;
+    case 'portrait':
+    default:
+      return <RectangleVertical size={14} color={Colors.light.textSecondary} />;
   }
 };
 
@@ -49,10 +78,17 @@ export default function DraftsScreen() {
     loadDraft,
     isDraftsLoading,
     refreshDrafts,
+    duplicateDraft,
+    deleteDraft,
+    isDuplicatingDraft,
   } = useApp();
 
   // Responsive configuration
   const responsive = useResponsive();
+
+  // Bottom sheet ref and selected draft state
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
 
   // Refresh drafts whenever the screen gains focus
   useFocusEffect(
@@ -75,15 +111,6 @@ export default function DraftsScreen() {
     [templates]
   );
 
-  // Dynamic tile height calculation
-  const getTileHeight = useCallback((format: TemplateFormat) => {
-    const config = getFormatById(format);
-    if (config) {
-      return getResponsiveTileHeight(responsive.tileWidth, config.aspectRatio);
-    }
-    return responsive.tileWidth;
-  }, [responsive.tileWidth]);
-
   // Filter drafts by format
   const filteredDrafts = useMemo(() => {
     return drafts.filter(draft => {
@@ -97,7 +124,7 @@ export default function DraftsScreen() {
     setSelectedFormat(format);
   }, []);
 
-  // Handle resume draft
+  // Handle resume draft (tap on row)
   const handleResumeDraft = useCallback((draft: Draft) => {
     const template = getTemplateForDraft(draft.templateId);
     if (!template) return;
@@ -106,23 +133,106 @@ export default function DraftsScreen() {
     router.push('/editor-v2');
   }, [getTemplateForDraft, loadDraft, router]);
 
+  // Handle opening bottom sheet
+  const handleOpenActionSheet = useCallback((draft: Draft) => {
+    setSelectedDraft(draft);
+    bottomSheetRef.current?.snapToIndex(0);
+  }, []);
+
+  // Handle closing bottom sheet
+  const handleCloseActionSheet = useCallback(() => {
+    bottomSheetRef.current?.close();
+    setSelectedDraft(null);
+  }, []);
+
+  // Handle duplicate draft
+  const handleDuplicateDraft = useCallback(async () => {
+    if (!selectedDraft) return;
+    
+    handleCloseActionSheet();
+    
+    try {
+      const newDraft = await duplicateDraft(selectedDraft.id);
+      // Show success feedback
+      Alert.alert(
+        'Project Duplicated',
+        'A copy of your project has been created.',
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Open Copy', 
+            style: 'default',
+            onPress: () => {
+              const template = getTemplateForDraft(newDraft.templateId);
+              if (template) {
+                loadDraft(newDraft, template);
+                router.push('/editor-v2');
+              }
+            }
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to duplicate draft:', error);
+      Alert.alert('Error', 'Failed to duplicate project. Please try again.');
+    }
+  }, [selectedDraft, handleCloseActionSheet, duplicateDraft, getTemplateForDraft, loadDraft, router]);
+
+  // Handle delete draft with confirmation
+  const handleDeleteDraft = useCallback(async () => {
+    if (!selectedDraft) return;
+    
+    handleCloseActionSheet();
+    
+    Alert.alert(
+      'Delete Project',
+      'Are you sure you want to delete this project? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDraft(selectedDraft.id);
+            } catch (error) {
+              console.error('Failed to delete draft:', error);
+              Alert.alert('Error', 'Failed to delete project. Please try again.');
+            }
+          }
+        },
+      ]
+    );
+  }, [selectedDraft, handleCloseActionSheet, deleteDraft]);
+
+  // Bottom sheet snap points
+  const snapPoints = useMemo(() => ['35%'], []);
+
+  // Render bottom sheet backdrop
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  // Get selected draft info for bottom sheet header
+  const selectedTemplate = selectedDraft ? getTemplateForDraft(selectedDraft.templateId) : null;
+  const selectedPreviewUri = selectedDraft ? getDraftPreviewUri(selectedDraft) : null;
+
   // Dynamic styles
   const dynamicStyles = useMemo(() => ({
     filterSection: {
       paddingHorizontal: responsive.gridPadding,
     },
-    gridContainer: {
+    listContainer: {
       paddingHorizontal: responsive.gridPadding,
-      alignItems: responsive.isTablet ? 'center' as const : undefined,
-    },
-    grid: {
-      gap: responsive.gridGap,
-      maxWidth: responsive.isTablet 
-        ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap 
-        : undefined,
-    },
-    draftTile: {
-      width: responsive.tileWidth,
     },
   }), [responsive]);
 
@@ -157,7 +267,7 @@ export default function DraftsScreen() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <Stack.Screen
         options={{
-          title: 'Drafts',
+          title: 'Projects',
           headerBackVisible: false,
           headerLeft: () => (
             <TouchableOpacity
@@ -171,6 +281,7 @@ export default function DraftsScreen() {
           ),
         }}
       />
+      
       {/* Format Filter Row */}
       <View style={[styles.filterSection, dynamicStyles.filterSection]}>
         <ScrollView 
@@ -221,47 +332,145 @@ export default function DraftsScreen() {
       ) : (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.gridContainer, dynamicStyles.gridContainer]}
+          contentContainerStyle={[styles.listContainer, dynamicStyles.listContainer]}
           showsVerticalScrollIndicator={false}
         >
-          <View style={[styles.grid, dynamicStyles.grid]}>
-            {filteredDrafts.map((draft) => {
-              const template = getTemplateForDraft(draft.templateId);
-              const previewUri = getDraftPreviewUri(draft);
-              const format = template?.format || '1:1';
-              
-              return (
-                <Pressable
-                  key={draft.id}
-                  style={[
-                    styles.draftTile,
-                    dynamicStyles.draftTile,
-                    { height: getTileHeight(format) }
-                  ]}
-                  onPress={() => handleResumeDraft(draft)}
-                >
+          {filteredDrafts.map((draft) => {
+            const template = getTemplateForDraft(draft.templateId);
+            const previewUri = getDraftPreviewUri(draft);
+            const format = template?.format || '1:1';
+            const formatLabel = getFormatLabel(format);
+            const templateName = template?.name || 'Untitled';
+            
+            return (
+              <Pressable
+                key={draft.id}
+                style={styles.listItem}
+                onPress={() => handleResumeDraft(draft)}
+              >
+                {/* Thumbnail */}
+                <View style={styles.thumbnailContainer}>
                   {previewUri ? (
                     <Image
                       key={`draft-preview-${draft.id}-${draft.updatedAt}`}
                       source={{ uri: previewUri }}
-                      style={styles.draftThumbnail}
+                      style={styles.thumbnail}
                       contentFit="cover"
                       transition={200}
-                      // For local files, disable disk caching to ensure fresh content
-                      // Local preview files change content without changing path
                       cachePolicy={previewUri.startsWith('file://') ? 'memory' : 'memory-disk'}
                     />
                   ) : (
-                    <View style={styles.draftPlaceholder}>
-                      <ImageIcon size={32} color={Colors.light.textTertiary} />
+                    <View style={styles.thumbnailPlaceholder}>
+                      <ImageIcon size={24} color={Colors.light.textTertiary} />
                     </View>
                   )}
-                </Pressable>
-              );
-            })}
-          </View>
+                </View>
+
+                {/* Info Section */}
+                <View style={styles.infoSection}>
+                  <Text style={styles.itemTitle} numberOfLines={1}>
+                    {templateName}
+                  </Text>
+                  <View style={styles.metaRow}>
+                    {getSmallFormatIcon(format)}
+                    <Text style={styles.metaText}>{formatLabel}</Text>
+                  </View>
+                </View>
+
+                {/* More Button */}
+                <TouchableOpacity
+                  style={styles.moreButton}
+                  onPress={() => handleOpenActionSheet(draft)}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MoreHorizontal size={22} color={Colors.light.textSecondary} />
+                </TouchableOpacity>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       )}
+
+      {/* Loading overlay for duplication */}
+      {isDuplicatingDraft && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={Colors.light.accent} />
+            <Text style={styles.loadingOverlayText}>Duplicating project...</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Action Bottom Sheet */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        handleIndicatorStyle={styles.bottomSheetIndicator}
+      >
+        <BottomSheetView style={styles.bottomSheetContent}>
+          {/* Header with preview */}
+          <View style={styles.sheetHeader}>
+            <View style={styles.sheetPreviewContainer}>
+              {selectedPreviewUri ? (
+                <Image
+                  source={{ uri: selectedPreviewUri }}
+                  style={styles.sheetPreview}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.sheetPreviewPlaceholder}>
+                  <ImageIcon size={20} color={Colors.light.textTertiary} />
+                </View>
+              )}
+            </View>
+            <View style={styles.sheetTitleContainer}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {selectedTemplate?.name || 'Project'}
+              </Text>
+              <Text style={styles.sheetSubtitle}>
+                {selectedTemplate ? getFormatLabel(selectedTemplate.format) : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.sheetCloseButton}
+              onPress={handleCloseActionSheet}
+              activeOpacity={0.7}
+            >
+              <X size={20} color={Colors.light.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.sheetDivider} />
+
+          {/* Actions */}
+          <View style={styles.sheetActions}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleDuplicateDraft}
+              activeOpacity={0.7}
+            >
+              <Copy size={22} color={Colors.light.text} />
+              <Text style={styles.actionText}>Duplicate Project</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleDeleteDraft}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={22} color={Colors.light.error} />
+              <Text style={[styles.actionText, styles.actionTextDestructive]}>
+                Delete Project
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetView>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -359,38 +568,167 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   
-  // Grid
+  // List View
   scrollView: {
     flex: 1,
   },
-  gridContainer: {
+  listContainer: {
     paddingBottom: 20,
   },
-  grid: {
+  listItem: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.light.border,
   },
   
-  // Draft Tile
-  draftTile: {
-    borderRadius: 12,
+  // Thumbnail
+  thumbnailContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: Colors.light.glassEdge,
-    shadowColor: Colors.light.glassShadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
   },
-  draftThumbnail: {
+  thumbnail: {
     width: '100%',
     height: '100%',
   },
-  draftPlaceholder: {
+  thumbnailPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  
+  // Info Section
+  infoSection: {
+    flex: 1,
+    marginLeft: 12,
+    marginRight: 8,
+  },
+  itemTitle: {
+    fontSize: 16,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+    marginBottom: 4,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+  },
+  
+  // More Button
+  moreButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  // Loading overlay
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingBox: {
+    backgroundColor: Colors.light.surface,
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  loadingOverlayText: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+  },
+  
+  // Bottom Sheet
+  bottomSheetIndicator: {
+    backgroundColor: Colors.light.border,
+    width: 36,
+  },
+  bottomSheetContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  sheetPreviewContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sheetPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  sheetPreviewPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetTitleContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.light.text,
+  },
+  sheetSubtitle: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  sheetCloseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sheetDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.light.border,
+    marginVertical: 8,
+  },
+  sheetActions: {
+    paddingTop: 8,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+  },
+  actionText: {
+    fontSize: 16,
+    color: Colors.light.text,
+  },
+  actionTextDestructive: {
+    color: Colors.light.error,
   },
 });
