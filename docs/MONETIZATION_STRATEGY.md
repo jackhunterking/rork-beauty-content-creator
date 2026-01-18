@@ -129,14 +129,30 @@ The following features have been completely removed from the system:
 
 ## Analytics & ROAS Tracking
 
-### Key Events (Meta/Facebook)
+### Facebook Standard Events
 
-| Event | When | Purpose |
-|-------|------|---------|
-| `app_install` | App first opened | Track installs from ads |
-| `registration` | User signs up | Track account creation |
-| `subscription` | User subscribes | Primary conversion event for ROAS |
-| `content_view` | User views content | Engagement tracking |
+Events use Facebook's official naming convention for proper attribution and optimization.
+See `services/metaAnalyticsService.ts` for implementation.
+
+| Facebook Event | When Triggered | Purpose |
+|----------------|----------------|---------|
+| `fb_mobile_activate_app` | App opened (automatic) | Track installs and opens |
+| `fb_mobile_complete_registration` | User signs up | Track account creation |
+| `fb_mobile_subscribe` | User subscribes | Subscription attribution |
+| `fb_mobile_purchase` | User pays | Revenue tracking for ROAS |
+| `fb_mobile_start_trial` | User starts trial | Trial-to-paid funnel |
+| `fb_mobile_content_view` | User views template | Engagement tracking |
+| `fb_mobile_initiated_checkout` | User views paywall | Conversion funnel |
+
+### Standard Parameters Used
+
+| Parameter | Description |
+|-----------|-------------|
+| `fb_content_id` | Product/template identifier |
+| `fb_content_type` | Type of content (e.g., 'subscription', 'template') |
+| `fb_currency` | Currency code (USD) |
+| `fb_registration_method` | Sign-up method (apple, google, email) |
+| `_valueToSum` | Revenue value for purchases |
 
 ### Funnel Metrics
 

@@ -209,6 +209,10 @@ function CropOverlay({
   React.useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
+    // #region agent log - debug init
+    console.log('[DEBUG-INIT] CropOverlay initialized', { slotWidth, slotHeight, baseW: baseImageSize.width, baseH: baseImageSize.height });
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:init',message:'crop_overlay_init',data:{slotWidth,slotHeight,baseW:baseImageSize.width,baseH:baseImageSize.height,initialRotation,initialScale},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'INIT'})}).catch(()=>{});
+    // #endregion
     
     // Determine initial min scale based on initial rotation
     const minScale = initialRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
@@ -216,11 +220,19 @@ function CropOverlay({
     scale.value = effectiveScale;
     rotation.value = initialRotation;
     
-    // Calculate translation from normalized values
+    // Calculate translation from normalized values using rotated bounding box
     const scaledWidth = baseImageSize.width * effectiveScale;
     const scaledHeight = baseImageSize.height * effectiveScale;
-    const maxTx = Math.max(0, (scaledWidth - slotWidth) / 2);
-    const maxTy = Math.max(0, (scaledHeight - slotHeight) / 2);
+    
+    // Account for rotation when calculating max translation
+    const angleRad = (Math.abs(initialRotation) * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const boundingWidth = Math.abs(scaledWidth * cos) + Math.abs(scaledHeight * sin);
+    const boundingHeight = Math.abs(scaledWidth * sin) + Math.abs(scaledHeight * cos);
+    
+    const maxTx = Math.max(0, (boundingWidth - slotWidth) / 2);
+    const maxTy = Math.max(0, (boundingHeight - slotHeight) / 2);
     
     translateX.value = initialTranslateX * maxTx;
     translateY.value = initialTranslateY * maxTy;
@@ -236,55 +248,142 @@ function CropOverlay({
     // Determine required minimum scale
     const requiredMinScale = currentRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
     
+    // Get current scale (may need to increase if below minimum)
+    const effectiveScale = Math.max(scale.value, requiredMinScale);
+    
     // If current scale is below required minimum, scale up immediately
     if (scale.value < requiredMinScale) {
       scale.value = requiredMinScale;
-      
-      // Re-clamp translation after scale change
-      const scaledWidth = baseImageSize.width * requiredMinScale;
-      const scaledHeight = baseImageSize.height * requiredMinScale;
-      const maxTx = Math.max(0, (scaledWidth - slotWidth) / 2);
-      const maxTy = Math.max(0, (scaledHeight - slotHeight) / 2);
-      
-      translateX.value = Math.max(-maxTx, Math.min(maxTx, translateX.value));
-      translateY.value = Math.max(-maxTy, Math.min(maxTy, translateY.value));
     }
+    
+    // Re-clamp translation after rotation change using rotated bounding box
+    const scaledWidth = baseImageSize.width * effectiveScale;
+    const scaledHeight = baseImageSize.height * effectiveScale;
+    
+    // Calculate rotated bounding box
+    const angleRad = (Math.abs(currentRotation) * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const boundingWidth = Math.abs(scaledWidth * cos) + Math.abs(scaledHeight * sin);
+    const boundingHeight = Math.abs(scaledWidth * sin) + Math.abs(scaledHeight * cos);
+    
+    const maxTx = Math.max(0, (boundingWidth - slotWidth) / 2);
+    const maxTy = Math.max(0, (boundingHeight - slotHeight) / 2);
+    
+    // Clamp current translation to new bounds
+    const oldTx = translateX.value;
+    const oldTy = translateY.value;
+    translateX.value = Math.max(-maxTx, Math.min(maxTx, translateX.value));
+    translateY.value = Math.max(-maxTy, Math.min(maxTy, translateY.value));
+    
+    // #region agent log - debug rotation change
+    console.log('[DEBUG-ROTATION]', JSON.stringify({currentRotation,effectiveScale,boundingWidth,boundingHeight,slotWidth,slotHeight,maxTx,maxTy}));
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:rotationEffect',message:'rotation_changed',data:{currentRotation,effectiveScale,scaledWidth,scaledHeight,boundingWidth,boundingHeight,slotWidth,slotHeight,maxTx,maxTy,oldTx,oldTy,newTx:translateX.value,newTy:translateY.value},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-E'})}).catch(()=>{});
+    // #endregion
   }, [currentRotation, minScaleForRotation, baseImageSize, slotWidth, slotHeight]);
 
-  // Get max translation for current scale
-  const getMaxTranslation = useCallback((currentScale: number) => {
+  // Calculate the bounding box of the rotated image
+  // When a rectangle is rotated, its axis-aligned bounding box changes
+  const getRotatedBoundingBox = useCallback((width: number, height: number, angleDeg: number) => {
+    'worklet';
+    const angleRad = (Math.abs(angleDeg) * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    
+    // Rotated bounding box dimensions
+    const boundingWidth = Math.abs(width * cos) + Math.abs(height * sin);
+    const boundingHeight = Math.abs(width * sin) + Math.abs(height * cos);
+    
+    return { boundingWidth, boundingHeight };
+  }, []);
+
+  // #region agent log - debug bounding box
+  const debugBoundingBox = useCallback((msg: string, data: any) => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:getMaxTranslation',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-D-E'})}).catch(()=>{});
+  }, []);
+  // #endregion
+
+  // Get max translation for current scale AND rotation
+  // This accounts for the rotated bounding box so the image always covers the slot
+  const getMaxTranslation = useCallback((currentScale: number, rotationDeg: number) => {
     'worklet';
     const scaledWidth = baseImageSize.width * currentScale;
     const scaledHeight = baseImageSize.height * currentScale;
-    return {
-      maxX: Math.max(0, (scaledWidth - slotWidth) / 2),
-      maxY: Math.max(0, (scaledHeight - slotHeight) / 2),
+    
+    // Get the bounding box of the rotated image
+    const { boundingWidth, boundingHeight } = getRotatedBoundingBox(scaledWidth, scaledHeight, rotationDeg);
+    
+    // Calculate max translation based on rotated bounding box
+    // The image center can move as far as half the difference between bounding box and slot
+    const result = {
+      maxX: Math.max(0, (boundingWidth - slotWidth) / 2),
+      maxY: Math.max(0, (boundingHeight - slotHeight) / 2),
     };
-  }, [baseImageSize, slotWidth, slotHeight]);
+    // #region agent log - debug max translation
+    runOnJS(debugBoundingBox)('max_translation', {
+      scaledWidth,
+      scaledHeight,
+      boundingWidth,
+      boundingHeight,
+      slotWidth,
+      slotHeight,
+      rotation: rotationDeg,
+      maxX: result.maxX,
+      maxY: result.maxY
+    });
+    // #endregion
+    return result;
+  }, [baseImageSize, slotWidth, slotHeight, getRotatedBoundingBox, debugBoundingBox]);
 
-  // Clamp translation to keep image covering slot
-  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number) => {
+  // #region agent log - debug clamp calculation
+  const debugClamp = useCallback((msg: string, data: any) => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:clampTranslation',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-C'})}).catch(()=>{});
+  }, []);
+  // #endregion
+
+  // Clamp translation to keep ROTATED image covering slot
+  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number, rotationDeg: number) => {
     'worklet';
-    const { maxX, maxY } = getMaxTranslation(currentScale);
-    return {
+    const { maxX, maxY } = getMaxTranslation(currentScale, rotationDeg);
+    const result = {
       x: Math.max(-maxX, Math.min(maxX, tx)),
       y: Math.max(-maxY, Math.min(maxY, ty)),
     };
-  }, [getMaxTranslation]);
+    // #region agent log - debug clamp values
+    runOnJS(debugClamp)('clamp_values', {
+      inputTx: tx,
+      inputTy: ty,
+      scale: currentScale,
+      rotation: rotationDeg,
+      maxX,
+      maxY,
+      outputX: result.x,
+      outputY: result.y
+    });
+    // #endregion
+    return result;
+  }, [getMaxTranslation, debugClamp]);
 
   // Report adjustment to parent
   const reportAdjustment = useCallback(() => {
     const currentScale = scale.value;
-    const currentRotation = rotation.value;
-    const { maxX, maxY } = getMaxTranslation(currentScale);
+    const currentRot = rotation.value;
+    const { maxX, maxY } = getMaxTranslation(currentScale, currentRot);
     
     onAdjustmentChange({
       scale: currentScale,
       translateX: maxX > 0 ? translateX.value / maxX : 0,
       translateY: maxY > 0 ? translateY.value / maxY : 0,
-      rotation: currentRotation,
+      rotation: currentRot,
     });
   }, [getMaxTranslation, onAdjustmentChange, scale, translateX, translateY, rotation]);
+
+  // #region agent log - debug pan gesture
+  const debugPanGesture = useCallback((msg: string, data: any) => {
+    console.log('[DEBUG-PAN]', msg, JSON.stringify(data));
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:panGesture',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-B-C'})}).catch(()=>{});
+  }, []);
+  // #endregion
 
   // Pan gesture - drag to reposition
   const panGesture = useMemo(() =>
@@ -296,19 +395,33 @@ function CropOverlay({
       })
       .onUpdate((event) => {
         'worklet';
+        // Pass rotation to clampTranslation to account for rotated bounding box
         const clamped = clampTranslation(
           startTranslateX.value + event.translationX,
           startTranslateY.value + event.translationY,
-          scale.value
+          scale.value,
+          rotation.value
         );
         translateX.value = clamped.x;
         translateY.value = clamped.y;
       })
       .onEnd(() => {
         'worklet';
+        // #region agent log - debug pan end
+        runOnJS(debugPanGesture)('pan_end', {
+          finalTx: translateX.value,
+          finalTy: translateY.value,
+          scale: scale.value,
+          rotation: rotation.value,
+          slotWidth,
+          slotHeight,
+          baseW: baseImageSize.width,
+          baseH: baseImageSize.height
+        });
+        // #endregion
         runOnJS(reportAdjustment)();
       }),
-    [clampTranslation, reportAdjustment]
+    [clampTranslation, reportAdjustment, debugPanGesture, slotWidth, slotHeight, baseImageSize]
   );
 
   // Pinch gesture - zoom in/out (minimum scale depends on rotation state)
@@ -327,11 +440,13 @@ function CropOverlay({
         scale.value = newScale;
         
         // Adjust translation proportionally and clamp
+        // Pass rotation to account for rotated bounding box
         const scaleRatio = newScale / startScale.value;
         const clamped = clampTranslation(
           startTranslateX.value * scaleRatio,
           startTranslateY.value * scaleRatio,
-          newScale
+          newScale,
+          rotation.value
         );
         translateX.value = clamped.x;
         translateY.value = clamped.y;
@@ -348,6 +463,12 @@ function CropOverlay({
     Gesture.Simultaneous(panGesture, pinchGesture),
     [panGesture, pinchGesture]
   );
+
+  // #region agent log - debug image bounds
+  const debugImageBounds = useCallback((msg: string, data: any) => {
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:getImageBounds',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C-D'})}).catch(()=>{});
+  }, []);
+  // #endregion
 
   // Calculate image bounds for rendering
   const getImageBounds = useCallback((s: number, tx: number, ty: number) => {

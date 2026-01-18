@@ -47,8 +47,22 @@ import {
 import {
   createTextOverlay,
   createDateOverlay,
+  createLogoOverlay,
   Overlay,
+  OverlayTransform,
+  TextOverlay,
+  DateOverlay,
+  LogoOverlay,
+  isTextBasedOverlay,
+  isLogoOverlay,
+  LOGO_SIZE_CONSTRAINTS,
 } from '@/types/overlays';
+import {
+  OverlayLayer,
+  OverlayStyleSheet,
+  LogoPickerModal,
+  LogoActionSheet,
+} from '@/components/overlays';
 
 export default function EditorV2Screen() {
   const router = useRouter();
@@ -61,6 +75,9 @@ export default function EditorV2Screen() {
 
   // Bottom sheet refs
   const aiPanelRef = useRef<BottomSheet>(null);
+  const styleSheetRef = useRef<BottomSheet>(null);
+  const logoPickerRef = useRef<BottomSheet>(null);
+  const logoActionSheetRef = useRef<BottomSheet>(null);
 
   // Preview rendering state (like old editor)
   const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
@@ -71,6 +88,7 @@ export default function EditorV2Screen() {
   const [activeTool, setActiveTool] = useState<ToolType>('photo');
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [aiProcessingType, setAIProcessingType] = useState<AIEnhancementType | null>(null);
 
@@ -302,13 +320,23 @@ export default function EditorV2Screen() {
       // Add text overlay (free for all users)
       const newOverlay = createTextOverlay();
       setOverlays(prev => [...prev, newOverlay]);
+      setSelectedOverlayId(newOverlay.id);
+      // Open style sheet for text customization
+      setTimeout(() => {
+        styleSheetRef.current?.snapToIndex(0);
+      }, 100);
     } else if (tool === 'date') {
       // Add date overlay (free for all users)
       const newOverlay = createDateOverlay();
       setOverlays(prev => [...prev, newOverlay]);
+      setSelectedOverlayId(newOverlay.id);
+      // Open style sheet for date customization
+      setTimeout(() => {
+        styleSheetRef.current?.snapToIndex(0);
+      }, 100);
     } else if (tool === 'logo') {
-      // TODO: Open logo picker (free for all users)
-      Alert.alert('Logo', 'Logo picker coming soon');
+      // Open logo picker modal (free for all users)
+      logoPickerRef.current?.snapToIndex(0);
     }
 
     setActiveTool(tool);
@@ -319,6 +347,12 @@ export default function EditorV2Screen() {
     // Always deselect overlay when interacting with slots
     if (selection.id) {
       setSelection(DEFAULT_SELECTION);
+    }
+    // Also deselect any selected overlay
+    if (selectedOverlayId) {
+      setSelectedOverlayId(null);
+      styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
     }
 
     const hasImage = hasValidCapturedImage(slotId, capturedImages);
@@ -334,14 +368,20 @@ export default function EditorV2Screen() {
         isTransforming: false,
       });
     }
-  }, [capturedImages, selection.id, router]);
+  }, [capturedImages, selection.id, router, selectedOverlayId]);
 
   // Handle canvas tap (deselect)
   const handleCanvasTap = useCallback(() => {
     if (selection.id) {
       setSelection(DEFAULT_SELECTION);
     }
-  }, [selection]);
+    // Also deselect any selected overlay
+    if (selectedOverlayId) {
+      setSelectedOverlayId(null);
+      styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
+    }
+  }, [selection, selectedOverlayId]);
 
 
   // Handle AI enhancement selection
@@ -367,6 +407,138 @@ export default function EditorV2Screen() {
   const handleAIPanelClose = useCallback(() => {
     aiPanelRef.current?.close();
   }, []);
+
+  // ============================================
+  // Overlay Handlers
+  // ============================================
+
+  // Get currently selected overlay
+  const selectedOverlay = useMemo(() => 
+    overlays.find(o => o.id === selectedOverlayId) || null,
+    [overlays, selectedOverlayId]
+  );
+
+  // Get scale constraints for selected overlay
+  const selectedOverlayScaleConstraints = useMemo(() => {
+    if (!selectedOverlay) {
+      return { minScale: 0.2, maxScale: 3.0 };
+    }
+    
+    if (isLogoOverlay(selectedOverlay)) {
+      return {
+        minScale: LOGO_SIZE_CONSTRAINTS.minScale,
+        maxScale: LOGO_SIZE_CONSTRAINTS.maxScale,
+      };
+    }
+    
+    // Text/Date overlays have different constraints
+    return {
+      minScale: 0.5,
+      maxScale: 2.5,
+    };
+  }, [selectedOverlay]);
+
+  // Select an overlay
+  const handleSelectOverlay = useCallback((id: string | null) => {
+    console.log('[EditorV2] handleSelectOverlay:', id);
+    setSelectedOverlayId(id);
+    
+    if (id) {
+      const overlay = overlays.find(o => o.id === id);
+      if (overlay) {
+        if (isTextBasedOverlay(overlay)) {
+          // Open style sheet for text-based overlays
+          styleSheetRef.current?.snapToIndex(0);
+          logoActionSheetRef.current?.close();
+        } else if (isLogoOverlay(overlay)) {
+          // Open logo action sheet for logo overlays
+          logoActionSheetRef.current?.snapToIndex(0);
+          styleSheetRef.current?.close();
+        }
+      }
+    } else {
+      // Close both sheets when deselecting
+      styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
+    }
+  }, [overlays]);
+
+  // Update overlay transform (position, scale, rotation)
+  const handleUpdateOverlayTransform = useCallback((id: string, transform: OverlayTransform) => {
+    setOverlays(prev => prev.map(overlay => 
+      overlay.id === id 
+        ? { ...overlay, transform, updatedAt: new Date().toISOString() }
+        : overlay
+    ));
+  }, []);
+
+  // Update overlay properties (for text styling)
+  const handleUpdateOverlayProperties = useCallback((updates: Partial<TextOverlay | DateOverlay>) => {
+    if (!selectedOverlayId) return;
+    
+    setOverlays(prev => prev.map(overlay => 
+      overlay.id === selectedOverlayId
+        ? { ...overlay, ...updates, updatedAt: new Date().toISOString() }
+        : overlay
+    ));
+  }, [selectedOverlayId]);
+
+  // Delete an overlay
+  const handleDeleteOverlay = useCallback((id: string) => {
+    setOverlays(prev => prev.filter(overlay => overlay.id !== id));
+    if (selectedOverlayId === id) {
+      setSelectedOverlayId(null);
+      styleSheetRef.current?.close();
+      logoActionSheetRef.current?.close();
+    }
+    console.log('[EditorV2] Deleted overlay:', id);
+  }, [selectedOverlayId]);
+
+  // Delete selected overlay (from style sheet)
+  const handleDeleteSelectedOverlay = useCallback(() => {
+    if (selectedOverlayId) {
+      handleDeleteOverlay(selectedOverlayId);
+    }
+  }, [selectedOverlayId, handleDeleteOverlay]);
+
+  // Open logo picker modal
+  const handleOpenLogoPickerModal = useCallback(() => {
+    logoPickerRef.current?.snapToIndex(0);
+  }, []);
+
+  // Close logo picker modal
+  const handleLogoPickerClose = useCallback(() => {
+    logoPickerRef.current?.close();
+  }, []);
+
+  // Handle logo selection from logo picker modal
+  const handleLogoSelected = useCallback((logoData: { uri: string; width: number; height: number }) => {
+    const newOverlay = createLogoOverlay(
+      logoData.uri,
+      logoData.width,
+      logoData.height,
+      false
+    );
+    setOverlays(prev => [...prev, newOverlay]);
+    setSelectedOverlayId(newOverlay.id);
+    // Open logo action sheet for the newly added logo
+    setTimeout(() => {
+      logoActionSheetRef.current?.snapToIndex(0);
+    }, 100);
+    console.log('[EditorV2] Added logo overlay from picker:', newOverlay.id);
+  }, []);
+
+  // Handle scale change from ScaleSlider / LogoActionSheet
+  const handleScaleSliderChange = useCallback((newScale: number) => {
+    if (!selectedOverlayId || !selectedOverlay) return;
+    
+    const updatedTransform: OverlayTransform = {
+      ...selectedOverlay.transform,
+      scale: newScale,
+    };
+    
+    handleUpdateOverlayTransform(selectedOverlayId, updatedTransform);
+  }, [selectedOverlayId, selectedOverlay, handleUpdateOverlayTransform]);
 
   // Canva-style contextual toolbar actions
   const handlePhotoReplace = useCallback(() => {
@@ -548,27 +720,51 @@ export default function EditorV2Screen() {
           onPress={isCropMode ? undefined : handleCanvasTap}
           disabled={isCropMode}
         >
-          {/* TemplateCanvas handles rendering, slot targets, selection, and crop mode */}
-          <TemplateCanvas
-            template={template}
-            onSlotPress={isCropMode ? () => {} : handleSlotPress}
-            renderedPreviewUri={renderedPreviewUri}
-            isRendering={isRendering}
-            onPreviewError={handlePreviewError}
-            selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
-            cropMode={isCropMode && cropSlotData ? {
-              slotId: cropSlotId!,
-              imageUri: cropSlotData.image.uri,
-              imageWidth: cropSlotData.image.width,
-              imageHeight: cropSlotData.image.height,
-              initialScale: cropSlotData.image.adjustments?.scale || 1,
-              initialTranslateX: cropSlotData.image.adjustments?.translateX || 0,
-              initialTranslateY: cropSlotData.image.adjustments?.translateY || 0,
-              initialRotation: cropSlotData.image.adjustments?.rotation || 0,
-              rotation: pendingRotation,
-              onAdjustmentChange: handleCropAdjustmentChange,
-            } : null}
-          />
+          {/* Canvas wrapper for positioning overlay layer */}
+          <View style={styles.canvasWrapper}>
+            {/* TemplateCanvas handles rendering, slot targets, selection, and crop mode */}
+            <TemplateCanvas
+              template={template}
+              onSlotPress={isCropMode ? () => {} : handleSlotPress}
+              renderedPreviewUri={renderedPreviewUri}
+              isRendering={isRendering}
+              onPreviewError={handlePreviewError}
+              selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
+              cropMode={isCropMode && cropSlotData ? {
+                slotId: cropSlotId!,
+                imageUri: cropSlotData.image.uri,
+                imageWidth: cropSlotData.image.width,
+                imageHeight: cropSlotData.image.height,
+                initialScale: cropSlotData.image.adjustments?.scale || 1,
+                initialTranslateX: cropSlotData.image.adjustments?.translateX || 0,
+                initialTranslateY: cropSlotData.image.adjustments?.translateY || 0,
+                initialRotation: cropSlotData.image.adjustments?.rotation || 0,
+                rotation: pendingRotation,
+                onAdjustmentChange: handleCropAdjustmentChange,
+              } : null}
+            />
+            
+            {/* Overlay Layer - renders overlays on top of canvas */}
+            {!isCropMode && canvasDimensions.width > 0 && (
+              <View style={[
+                styles.overlayContainer, 
+                { 
+                  width: canvasDimensions.width, 
+                  height: canvasDimensions.height 
+                }
+              ]}>
+                <OverlayLayer
+                  overlays={overlays}
+                  selectedOverlayId={selectedOverlayId}
+                  canvasWidth={canvasDimensions.width}
+                  canvasHeight={canvasDimensions.height}
+                  onSelectOverlay={handleSelectOverlay}
+                  onUpdateOverlayTransform={handleUpdateOverlayTransform}
+                  onDeleteOverlay={handleDeleteOverlay}
+                />
+              </View>
+            )}
+          </View>
           
           {/* Preview error indicator */}
           {previewError && !isRendering && !isCropMode && (
@@ -621,6 +817,30 @@ export default function EditorV2Screen() {
         onRequestPremium={(feature) => requestPremiumAccess(feature)}
         onClose={handleAIPanelClose}
       />
+
+      {/* Overlay Style Sheet - for customizing text/date overlays */}
+      <OverlayStyleSheet
+        bottomSheetRef={styleSheetRef}
+        overlay={selectedOverlay}
+        onUpdateOverlay={handleUpdateOverlayProperties}
+        onDeleteOverlay={handleDeleteSelectedOverlay}
+      />
+
+      {/* Logo Picker Modal - for selecting/uploading logo overlays */}
+      <LogoPickerModal
+        bottomSheetRef={logoPickerRef}
+        onSelectLogo={handleLogoSelected}
+        onClose={handleLogoPickerClose}
+      />
+
+      {/* Logo Action Sheet - for resizing and deleting logo overlays */}
+      <LogoActionSheet
+        bottomSheetRef={logoActionSheetRef}
+        overlay={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
+        currentScale={selectedOverlay?.transform.scale ?? 1}
+        onScaleChange={handleScaleSliderChange}
+        onDeleteOverlay={handleDeleteSelectedOverlay}
+      />
     </GestureHandlerRootView>
   );
 }
@@ -667,6 +887,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 20,
+  },
+  canvasWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  overlayContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    overflow: 'hidden',
+    borderRadius: 6,
+    pointerEvents: 'box-none',
   },
   errorBanner: {
     position: 'absolute',

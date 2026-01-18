@@ -9,7 +9,6 @@ import React, { useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
-  ImagePlus, 
   Type, 
   Calendar, 
   Image as ImageIcon, 
@@ -111,16 +110,6 @@ export function ToolDock({
     icon: (active: boolean) => React.ReactNode;
     label: string;
   }> = [
-    {
-      id: 'photo',
-      icon: (active) => (
-        <ImagePlus 
-          size={24} 
-          color={active ? Colors.light.accent : Colors.light.textSecondary} 
-        />
-      ),
-      label: 'Photo',
-    },
     {
       id: 'text',
       icon: (active) => (

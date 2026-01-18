@@ -3,6 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser, usePlacement, useSuperwall } from 'expo-superwall';
 import { supabase } from '@/lib/supabase';
 import type { SubscriptionStatus, Entitlement, EntitlementsInfo } from 'expo-superwall';
+import { 
+  trackSubscribe, 
+  trackStartTrial, 
+  trackInitiatedCheckout 
+} from '@/services/metaAnalyticsService';
 
 /**
  * Premium Status Hook
@@ -197,11 +202,33 @@ export interface PlacementParams {
 /**
  * Hook to trigger a paywall for premium features
  * Use this when you want to gate a feature behind a paywall
+ * 
+ * Integrates with Facebook SDK for proper attribution:
+ * - fb_mobile_initiated_checkout when paywall is presented
+ * - fb_mobile_subscribe when user successfully subscribes
+ * - fb_mobile_start_trial when user starts a trial
  */
 export function usePremiumFeature() {
   const { registerPlacement, state: paywallState } = usePlacement({
-    onPresent: (info) => console.log('Paywall presented:', info.name),
-    onDismiss: (info, result) => console.log('Paywall dismissed:', result),
+    onPresent: (info) => {
+      console.log('Paywall presented:', info.name);
+      // Track checkout initiation for Facebook attribution
+      trackInitiatedCheckout(info.name);
+    },
+    onDismiss: (info, result) => {
+      console.log('Paywall dismissed:', result);
+      
+      // Track successful subscription/purchase events for Facebook
+      if (result.type === 'purchased') {
+        console.log('[Premium] Purchase completed - tracking fb_mobile_subscribe');
+        // Note: Price/currency would come from Superwall product info if available
+        // For now, we track without specific price - Superwall may also send this event
+        trackSubscribe(info.name || 'pro_subscription', 0, 'USD');
+      } else if (result.type === 'restored') {
+        console.log('[Premium] Purchase restored');
+        // Restore doesn't need to be tracked as a new subscription
+      }
+    },
     onSkip: (reason) => console.log('Paywall skipped:', reason),
     onError: (error) => console.error('Paywall error:', error),
   });
