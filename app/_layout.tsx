@@ -20,11 +20,12 @@ import {
 } from "@/services/onboardingService";
 import { initializeFacebookSDK } from "@/services/metaAnalyticsService";
 import { 
-  initializePostHog,
   forwardSuperwallEvent,
   captureEvent,
   POSTHOG_EVENTS,
+  setPostHogClient,
 } from "@/services/posthogService";
+import { usePostHog } from "posthog-react-native";
 import { useScreenTracking } from "@/hooks/useScreenTracking";
 // Note: In-app purchase tracking is handled automatically by Facebook SDK
 // Enable "Log In-App Purchases Automatically" in Facebook Developer Dashboard
@@ -74,13 +75,6 @@ function RootLayoutNav() {
       />
       <Stack.Screen 
         name="capture/[slotId]" 
-        options={{ 
-          headerShown: false,
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
-        name="adjust/[slotId]" 
         options={{ 
           headerShown: false,
           presentation: 'card',
@@ -352,6 +346,26 @@ function OnboardingFlowHandler({
 /**
  * Inner layout component that has access to auth context
  */
+/**
+ * Bridge component to connect PostHogProvider's client to our service
+ * This allows non-React code to access PostHog functions
+ */
+function PostHogBridge() {
+  const posthog = usePostHog();
+  
+  useEffect(() => {
+    if (posthog) {
+      // #region agent log - Hypothesis H: PostHog bridge connecting
+      console.log('[DEBUG-H] PostHogBridge: Setting client from provider');
+      console.log('[DEBUG-H] Session replay enabled:', posthog.isSessionReplayActive?.() ?? 'method not available');
+      // #endregion
+      setPostHogClient(posthog);
+    }
+  }, [posthog]);
+  
+  return null;
+}
+
 function RootLayoutInner() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
   const [splashComplete, setSplashComplete] = useState(false);
@@ -395,6 +409,8 @@ function RootLayoutInner() {
 
   return (
     <AppProvider>
+      {/* Bridge to connect PostHogProvider client to service layer */}
+      <PostHogBridge />
       <RootLayoutNav />
       {showAnimatedSplash && (
         <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
@@ -414,43 +430,21 @@ export default function RootLayout() {
   const [posthogReady, setPosthogReady] = useState(false);
 
   useEffect(() => {
-    // #region agent log - Hypothesis C: RootLayout mount
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:RootLayout:mount',message:'RootLayout useEffect running',data:{hasApiKey:!!POSTHOG_API_KEY,apiKeyLength:POSTHOG_API_KEY?.length,host:POSTHOG_HOST},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+    // #region agent log - Hypothesis F: Check for duplicate init
+    console.log('[DEBUG-F] RootLayout mount - PostHogProvider will handle initialization');
+    console.log('[DEBUG-F] API Key provided:', !!POSTHOG_API_KEY, 'Length:', POSTHOG_API_KEY?.length);
+    console.log('[DEBUG-F] Host:', POSTHOG_HOST);
     // #endregion
 
     // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
     
-    // Initialize PostHog analytics (before other SDKs)
-    // PostHog should be initialized first to capture all events
-    const initAnalytics = async () => {
-      try {
-        if (POSTHOG_API_KEY) {
-          // #region agent log - Hypothesis C: Calling initializePostHog
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:before',message:'About to call initializePostHog',data:{apiKeyPrefix:POSTHOG_API_KEY?.substring(0,15)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
-          await initializePostHog(POSTHOG_API_KEY, POSTHOG_HOST);
-          // #region agent log - Hypothesis C: initializePostHog completed
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:after',message:'initializePostHog completed',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
-          console.log('[Analytics] PostHog initialized');
-        } else {
-          // #region agent log - Hypothesis A: No API key in layout
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:noKey',message:'NO API KEY in RootLayout',data:{POSTHOG_API_KEY},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
-          console.warn('[Analytics] PostHog API key not configured');
-        }
-      } catch (error) {
-        // #region agent log - Hypothesis D: Init error in layout
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:initAnalytics:error',message:'PostHog init error in layout',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        console.error('[Analytics] Failed to initialize PostHog:', error);
-      } finally {
-        setPosthogReady(true);
-      }
-    };
-
-    initAnalytics();
+    // NOTE: We removed manual initializePostHog() call here
+    // PostHogProvider handles initialization automatically with session replay support
+    // Manual initialization was causing conflicts with session replay
+    
+    setPosthogReady(true);
+    console.log('[Analytics] PostHog will be initialized by PostHogProvider');
     
     // Initialize Facebook SDK for Meta Ads attribution (iOS only)
     if (Platform.OS === 'ios') {
@@ -459,36 +453,23 @@ export default function RootLayout() {
   }, []);
 
   // PostHog client configuration for the provider
+  // IMPORTANT: For React Native, session replay is configured via these options
   const posthogClientConfig = {
     host: POSTHOG_HOST,
-    // Enable session replay for mobile
-    enableSessionReplay: true,
-    // Automatically capture app lifecycle events
-    captureApplicationLifecycleEvents: true,
-    // Automatically capture deep links
-    captureDeepLinks: true,
-    // Flush events every 30 seconds
-    flushInterval: 30,
-    // Queue up to 20 events before forcing flush
-    flushAt: 20,
-    // Session replay configuration
-    sessionReplayConfig: {
-      // Mask all text inputs for privacy (passwords, emails, etc.)
-      maskAllTextInputs: true,
-      // Don't mask images - we want to see template/content UI
-      maskAllImages: false,
-      // Capture network requests for debugging
-      captureNetworkTelemetry: true,
-      // Debounce screenshots for performance
-      androidDebouncerDelayMs: 500,
-      iOSdebouncerDelayMs: 500,
-    },
-    // Enable debug logging in development
+    // Enable debug logging in development to see what's happening
     debug: __DEV__,
+    // Flush events more frequently for testing
+    flushInterval: 10,
+    flushAt: 5,
   };
 
-  // #region agent log - Hypothesis E: PostHogProvider config
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'_layout.tsx:RootLayout:render',message:'PostHogProvider about to render',data:{apiKeyProvided:!!POSTHOG_API_KEY,apiKeyLength:POSTHOG_API_KEY?.length,host:POSTHOG_HOST,enableSessionReplay:posthogClientConfig.enableSessionReplay,hasSessionReplayConfig:!!posthogClientConfig.sessionReplayConfig},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+  // #region agent log - Hypothesis G: Log PostHogProvider config
+  console.log('[DEBUG-G] PostHogProvider config:', JSON.stringify({
+    apiKeyProvided: !!POSTHOG_API_KEY,
+    apiKeyPrefix: POSTHOG_API_KEY?.substring(0, 15),
+    host: POSTHOG_HOST,
+    debug: __DEV__,
+  }));
   // #endregion
 
   return (
@@ -499,6 +480,21 @@ export default function RootLayout() {
         captureLifecycleEvents: true,
         captureScreens: true,
         captureTouches: true,
+      }}
+      // Enable session replay for React Native
+      // This must be a top-level prop, not in options
+      enableSessionReplay={true}
+      sessionReplayConfig={{
+        // Mask all text inputs for privacy
+        maskAllTextInputs: true,
+        // Don't mask images - we want to see template/content UI  
+        maskAllImages: false,
+        // Capture network requests for debugging
+        captureNetworkTelemetry: true,
+        // Screenshot capture settings for iOS
+        iOSdebouncerDelayMs: 1000,
+        // Screenshot capture settings for Android
+        androidDebouncerDelayMs: 1000,
       }}
     >
       <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>

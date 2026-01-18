@@ -106,87 +106,74 @@ export const USER_PROPERTIES = {
 
 // ============================================
 // PostHog Client Instance
+// IMPORTANT: The PostHogProvider in _layout.tsx is the PRIMARY
+// source of the PostHog instance. This service acts as a bridge
+// to allow non-React code to access PostHog functions.
 // ============================================
 let posthogClient: PostHog | null = null;
 let isInitialized = false;
 
 /**
- * Initialize PostHog analytics
- * Must be called early in app lifecycle, before other analytics
+ * Set the PostHog client instance from the PostHogProvider
+ * This should be called from a component that has access to usePostHog()
+ * 
+ * IMPORTANT: Session replay is handled by PostHogProvider, not this service.
+ * The provider creates the instance with the correct session replay config.
  */
-export async function initializePostHog(
-  apiKey: string,
-  host: string = 'https://us.i.posthog.com'
-): Promise<PostHog | null> {
-  // #region agent log - Hypothesis A: Check if already initialized
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:entry',message:'PostHog init called',data:{apiKeyProvided:!!apiKey,apiKeyPrefix:apiKey?.substring(0,10),host,isAlreadyInitialized:isInitialized,hasClient:!!posthogClient},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+export function setPostHogClient(client: PostHog | null): void {
+  // #region agent log - Hypothesis H: Setting client from provider
+  console.log('[DEBUG-H] setPostHogClient called', {
+    hasClient: !!client,
+    wasInitialized: isInitialized,
+    hadPreviousClient: !!posthogClient,
+  });
   // #endregion
-
-  if (isInitialized && posthogClient) {
-    console.log('[PostHog] Already initialized');
-    return posthogClient;
-  }
-
-  if (!apiKey) {
-    // #region agent log - Hypothesis A: No API key
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:noApiKey',message:'PostHog NO API KEY',data:{apiKey},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    console.warn('[PostHog] No API key provided, analytics disabled');
-    return null;
-  }
-
-  try {
-    // #region agent log - Hypothesis B: Creating PostHog instance
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:creating',message:'Creating PostHog instance',data:{host,enableSessionReplay:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-
-    posthogClient = new PostHog(apiKey, {
-      host,
-      // Enable session replay for mobile
-      enableSessionReplay: true,
-      // Automatically capture app lifecycle events
-      captureApplicationLifecycleEvents: true,
-      // Automatically capture screen views
-      captureDeepLinks: true,
-      // Flush events every 30 seconds
-      flushInterval: 30,
-      // Queue up to 1000 events before forcing flush
-      flushAt: 20,
-      // Session replay configuration
-      sessionReplayConfig: {
-        // Mask all text inputs for privacy
-        maskAllTextInputs: true,
-        // Mask images to protect user content
-        maskAllImages: false, // We want to see the templates/content UI
-        // Capture network requests for debugging
-        captureNetworkTelemetry: true,
-        // Android-specific: use screenshot mode for better quality
-        androidDebouncerDelayMs: 500,
-        // iOS-specific: screenshot mode for better quality
-        iOSdebouncerDelayMs: 500,
-      },
-      // Enable debug logging in development
-      debug: __DEV__,
-    });
-
+  
+  if (client) {
+    posthogClient = client;
+    isInitialized = true;
+    
     // Register super properties that persist across all events
     posthogClient.register({
       platform: Platform.OS,
       platform_version: Platform.Version,
     });
+    
+    console.log('[PostHog] Client set from PostHogProvider');
+  }
+}
 
+/**
+ * Initialize PostHog analytics
+ * @deprecated Use PostHogProvider and setPostHogClient instead for proper session replay support
+ */
+export async function initializePostHog(
+  apiKey: string,
+  host: string = 'https://us.i.posthog.com'
+): Promise<PostHog | null> {
+  console.warn('[PostHog] initializePostHog is deprecated. Use PostHogProvider instead for session replay.');
+  
+  // If already set from provider, use that instance
+  if (isInitialized && posthogClient) {
+    console.log('[PostHog] Already initialized via PostHogProvider');
+    return posthogClient;
+  }
+  
+  // Fallback initialization (without session replay working properly)
+  if (!apiKey) {
+    console.warn('[PostHog] No API key provided, analytics disabled');
+    return null;
+  }
+
+  try {
+    posthogClient = new PostHog(apiKey, {
+      host,
+      debug: __DEV__,
+    });
     isInitialized = true;
-    console.log('[PostHog] Initialized successfully');
-    
-    // #region agent log - Hypothesis B: PostHog client created successfully
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:success',message:'PostHog initialized successfully',data:{isInitialized:true,hasClient:!!posthogClient,platform:Platform.OS,platformVersion:Platform.Version},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
+    console.log('[PostHog] Initialized (fallback mode - no session replay)');
     return posthogClient;
   } catch (error) {
-    // #region agent log - Hypothesis B: PostHog initialization failed
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'posthogService.ts:initializePostHog:error',message:'PostHog initialization FAILED',data:{error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     console.error('[PostHog] Failed to initialize:', error);
     return null;
   }
