@@ -101,7 +101,6 @@ export interface PortfolioItem {
   
   // Metadata
   format: TemplateFormat;
-  hasWatermark: boolean;
   
   // Export tracking - which platforms it was published to
   publishedTo: PublishPlatform[];
@@ -122,7 +121,6 @@ export interface PortfolioRow {
   local_path: string | null;
   thumbnail_url: string | null;
   format: string;
-  has_watermark: boolean;
   published_to: string[];
   created_at: string;
 }
@@ -136,7 +134,6 @@ export interface PublishScreenParams {
   templateName: string;
   previewUri: string;
   format: TemplateFormat;
-  hasWatermark: string; // "true" or "false" as string for URL params
 }
 
 // ============================================
@@ -391,9 +388,6 @@ export interface Template {
   // Not actively used in new architecture - Templated.io handles all rendering
   framePreviewUrl?: string;
   
-  // Preview WITH watermark visible - shown to free users in Editor before adding photos
-  watermarkedPreviewUrl?: string;
-  
   // Source of truth for all layers - slots are extracted from this
   layersJson?: TemplatedLayer[];
   
@@ -452,8 +446,6 @@ export interface TemplateRow {
   templated_preview_url: string | null;
   // Frame preview URL - optional fallback
   frame_preview_url: string | null;
-  // Preview with watermark visible - shown to free users in Editor
-  watermarked_preview_url: string | null;
   // Source of truth for layers
   layers_json: TemplatedLayer[] | null;
   // Whether this template requires Pro subscription
@@ -707,7 +699,6 @@ export interface AuthResult {
 export interface AppPreferences {
   defaultFormat: '1:1' | '9:16';
   hapticFeedback: boolean;
-  showWatermarkWarning: boolean;
 }
 
 // ============================================

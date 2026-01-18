@@ -35,7 +35,6 @@ function mapRowToPortfolioItem(row: PortfolioRow): PortfolioItem {
     localPath: row.local_path || undefined,
     thumbnailUrl: row.thumbnail_url || undefined,
     format: row.format as TemplateFormat,
-    hasWatermark: row.has_watermark,
     publishedTo: row.published_to as PublishPlatform[],
     createdAt: row.created_at,
   };
@@ -112,7 +111,6 @@ export async function createPortfolioItem(item: Omit<PortfolioItem, 'id' | 'crea
       local_path: item.localPath || null,
       thumbnail_url: item.thumbnailUrl || null,
       format: item.format,
-      has_watermark: item.hasWatermark,
       published_to: item.publishedTo,
     })
     .select()

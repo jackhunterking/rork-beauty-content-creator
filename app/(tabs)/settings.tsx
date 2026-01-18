@@ -135,24 +135,10 @@ export default function SettingsScreen() {
     }
   }, [isAuthenticated]);
 
-  // Handle Upload Logo
+  // Handle Upload Logo - free for all users
   const handleUploadLogo = useCallback(async () => {
-    // Premium gate for logo upload
-    if (!isPremium) {
-      await requestPremiumAccess('brand_kit_logo', () => {
-        // Defensive check: Verify premium status again before allowing feature
-        // This protects against Superwall misconfiguration (e.g., no paywall assigned)
-        // The callback should only run if user actually subscribed
-        console.log('[Settings] Brand kit logo callback triggered, checking premium status');
-        // Note: We can't check isPremium here directly as it may not have updated yet
-        // The feature will only execute if Superwall confirms the subscription
-        pickAndUploadLogo();
-      });
-      return;
-    }
-    
     pickAndUploadLogo();
-  }, [isPremium, requestPremiumAccess]);
+  }, []);
 
   const pickAndUploadLogo = async () => {
     try {
@@ -436,11 +422,11 @@ export default function SettingsScreen() {
                     </View>
                     <View style={styles.featureItem}>
                       <Check size={16} color={Colors.light.success} />
-                      <Text style={styles.featureText}>All templates included</Text>
+                      <Text style={styles.featureText}>AI-powered enhancements</Text>
                     </View>
                     <View style={styles.featureItem}>
                       <Check size={16} color={Colors.light.success} />
-                      <Text style={styles.featureText}>No watermarks</Text>
+                      <Text style={styles.featureText}>Priority support</Text>
                     </View>
                   </View>
                   <TouchableOpacity 
@@ -585,24 +571,16 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitleInline}>Brand Kit</Text>
-              {!isPremium && (
-                <View style={styles.proBadge}>
-                  <Crown size={10} color={Colors.light.surface} />
-                  <Text style={styles.proBadgeText}>PRO</Text>
-                </View>
-              )}
               {/* Cloud sync indicator */}
-              {isPremium && (
-                <View style={styles.syncBadge}>
-                  {isSyncingBrandKit ? (
-                    <ActivityIndicator size="small" color={Colors.light.textSecondary} />
-                  ) : isAuthenticated ? (
-                    <Cloud size={12} color={Colors.light.success} />
-                  ) : (
-                    <CloudOff size={12} color={Colors.light.textTertiary} />
-                  )}
-                </View>
-              )}
+              <View style={styles.syncBadge}>
+                {isSyncingBrandKit ? (
+                  <ActivityIndicator size="small" color={Colors.light.textSecondary} />
+                ) : isAuthenticated ? (
+                  <Cloud size={12} color={Colors.light.success} />
+                ) : (
+                  <CloudOff size={12} color={Colors.light.textTertiary} />
+                )}
+              </View>
             </View>
             <View style={styles.card}>
               {/* Logo Section */}
@@ -934,21 +912,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  proBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  proBadgeText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: Colors.light.surface,
-    textTransform: 'uppercase',
   },
   syncBadge: {
     marginLeft: 'auto',

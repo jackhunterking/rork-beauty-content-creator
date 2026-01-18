@@ -28,6 +28,7 @@ import { createPortfolioItem } from '@/services/portfolioService';
 import { uploadToStorage } from '@/services/imageUploadService';
 import { getAllFormatIds, getFormatById, getDefaultFormat } from '@/constants/formats';
 import { useResponsive } from '@/hooks/useResponsive';
+import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
 
 // Platform options - simplified to Save to Photos and Share
 // Supported formats use centralized config so new formats are automatically included
@@ -123,10 +124,13 @@ export default function PublishScreen() {
     templateName: string;
     previewUri: string;
     format: string;
-    hasWatermark: string;
   }>();
 
   const { deleteDraft, resetProject, refreshPortfolio } = useApp();
+  
+  // Premium status for download paywall
+  const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
+  const { requestPremiumAccess, paywallState } = usePremiumFeature();
   
   // Responsive configuration
   const responsive = useResponsive();
@@ -137,7 +141,6 @@ export default function PublishScreen() {
   const templateName = params.templateName || 'Untitled';
   const previewUri = params.previewUri;
   const format = (params.format || getDefaultFormat()) as TemplateFormat;
-  const hasWatermark = params.hasWatermark === 'true';
 
   // State
   const [isProcessing, setIsProcessing] = useState(false);
@@ -255,7 +258,6 @@ export default function PublishScreen() {
         templateName,
         imageUrl: finalImageUrl,
         format,
-        hasWatermark,
         publishedTo: [],
       });
 
@@ -286,7 +288,7 @@ export default function PublishScreen() {
     } finally {
       setIsCreatingPortfolio(false);
     }
-  }, [previewUri, templateId, templateName, draftId, format, hasWatermark, deleteDraft, refreshPortfolio, getErrorMessage]);
+  }, [previewUri, templateId, templateName, draftId, format, deleteDraft, refreshPortfolio, getErrorMessage]);
 
   // Auto-create portfolio item on mount (draft becomes portfolio item)
   useEffect(() => {
@@ -311,8 +313,8 @@ export default function PublishScreen() {
     }
   }, [saveToPortfolio, showToastMessage]);
 
-  // Handle platform action
-  const handlePlatformAction = useCallback(async (platformId: PublishPlatform) => {
+  // Execute the actual platform action (download/share)
+  const executePlatformAction = useCallback(async (platformId: PublishPlatform) => {
     if (!previewUri) {
       Alert.alert('Error', 'No preview image available');
       return;
@@ -355,6 +357,30 @@ export default function PublishScreen() {
       setProcessingPlatform(null);
     }
   }, [previewUri, showToastMessage]);
+
+  // Handle platform action - checks premium status and shows paywall if needed
+  const handlePlatformAction = useCallback(async (platformId: PublishPlatform) => {
+    if (!previewUri) {
+      Alert.alert('Error', 'No preview image available');
+      return;
+    }
+
+    // If user is premium, execute action immediately
+    if (isPremium) {
+      await executePlatformAction(platformId);
+      return;
+    }
+
+    // User is not premium - show paywall
+    // The action name helps Superwall display relevant messaging
+    const actionName = platformId === 'download' ? 'download_image' : 'share_image';
+    
+    await requestPremiumAccess(actionName, async () => {
+      // This callback is only executed if user successfully subscribes
+      console.log(`[Publish] Premium access granted for ${actionName}, executing action`);
+      await executePlatformAction(platformId);
+    });
+  }, [previewUri, isPremium, executePlatformAction, requestPremiumAccess]);
 
   // Handle Done button - reset project and navigate to home
   const handleDone = useCallback(() => {
@@ -460,6 +486,7 @@ export default function PublishScreen() {
               <View style={styles.platformsGrid}>
                 {PLATFORM_OPTIONS.map((platform) => {
                   const isThisPlatformProcessing = processingPlatform === platform.id;
+                  const isDisabled = isProcessing || isCreatingPortfolio || isPremiumLoading || paywallState === 'presenting';
                   
                   return (
                     <TouchableOpacity
@@ -467,10 +494,10 @@ export default function PublishScreen() {
                       style={[
                         styles.platformCard,
                         dynamicStyles.platformCard,
-                        isProcessing && !isThisPlatformProcessing && styles.platformCardDisabled,
+                        isDisabled && !isThisPlatformProcessing && styles.platformCardDisabled,
                       ]}
                       onPress={() => handlePlatformAction(platform.id)}
-                      disabled={isProcessing || isCreatingPortfolio}
+                      disabled={isDisabled}
                       activeOpacity={0.7}
                     >
                       <View style={styles.platformIconContainer}>

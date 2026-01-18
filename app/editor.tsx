@@ -9,7 +9,6 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Switch,
   useWindowDimensions,
   Pressable,
 } from 'react-native';
@@ -19,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import BottomSheet from '@gorhom/bottom-sheet';
 import ViewShot from 'react-native-view-shot';
-import { Save, Sparkles, RefreshCw, Crown, ChevronLeft } from 'lucide-react-native';
+import { Save, Sparkles, RefreshCw, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -108,9 +107,9 @@ export default function EditorScreen() {
   // When true, auto-save should NOT overwrite the local preview file
   const hasManualCapturedPreviewRef = useRef(false);
 
-  // Premium status for watermark control
-  const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
-  const { requestPremiumAccess, paywallState } = usePremiumFeature();
+  // Premium status (kept for wasRenderedAsPremium tracking and paywall state)
+  const { isPremium } = usePremiumStatus();
+  const { paywallState } = usePremiumFeature();
 
   // Window dimensions for canvas sizing
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -439,7 +438,6 @@ export default function EditorScreen() {
       const result = await renderPreview({
         templateId: template.templatedId,
         slotImages: photosToRender,
-        hideWatermark: isPremium,
       });
       
       if (result.success && result.renderUrl) {
@@ -1021,14 +1019,6 @@ export default function EditorScreen() {
     triggerPreviewRender();
   }, [triggerPreviewRender]);
 
-  // Handle Remove Watermark toggle
-  const handleRemoveWatermarkToggle = useCallback(async () => {
-    if (isPremium) return;
-    
-    await requestPremiumAccess('remove_watermark', () => {
-      console.log('[Editor] Watermark removal unlocked!');
-    });
-  }, [isPremium, requestPremiumAccess]);
 
   // ============================================
   // Overlay Handlers
@@ -1099,22 +1089,6 @@ export default function EditorScreen() {
     setSelectedOverlayId(newOverlay.id);
     console.log('[Editor] Added logo overlay from picker:', newOverlay.id);
   }, []);
-
-  // Request premium for overlay feature
-  // onPremiumGranted callback is executed only if user successfully subscribes
-  const handleRequestPremiumForOverlay = useCallback(async (
-    featureName: string,
-    onPremiumGranted?: () => void
-  ) => {
-    await requestPremiumAccess(featureName, () => {
-      console.log(`[Editor] ${featureName} - premium access granted via Superwall`);
-      // Execute the feature callback if provided
-      // This allows the overlay to be added automatically after subscribing
-      if (onPremiumGranted) {
-        onPremiumGranted();
-      }
-    });
-  }, [requestPremiumAccess]);
 
   // Select an overlay
   const handleSelectOverlay = useCallback((id: string | null) => {
@@ -1497,7 +1471,6 @@ export default function EditorScreen() {
           templateName: template.name,
           previewUri: finalPreviewUri,
           format: template.format,
-          hasWatermark: (!isPremium).toString(),
         }
       });
       
@@ -1580,7 +1553,6 @@ export default function EditorScreen() {
                   renderedPreviewUri={renderedPreviewUri}
                   isRendering={isRendering}
                   onPreviewError={handlePreviewError}
-                  isPremium={isPremium}
                   onPreviewLoad={handlePreviewImageLoad}
                 />
                 
@@ -1623,43 +1595,10 @@ export default function EditorScreen() {
           {/* Overlay Action Bar - show as soon as template is selected */}
           {template && (
             <OverlayActionBar
-              isPremium={isPremium}
               disabled={isGenerating || paywallState === 'presenting'}
               onAddOverlay={handleAddOverlay}
-              onRequestPremium={handleRequestPremiumForOverlay}
               onRequestLogoModal={handleOpenLogoPickerModal}
             />
-          )}
-
-          {/* Remove Watermark Toggle - only show for FREE users when preview is ready */}
-          {allSlotsFilled && !isRendering && !isPremium && !isPremiumLoading && (
-            <TouchableOpacity
-              style={styles.watermarkToggleRow}
-              onPress={handleRemoveWatermarkToggle}
-              disabled={paywallState === 'presenting'}
-              activeOpacity={0.7}
-            >
-              <View style={styles.watermarkToggleLeft}>
-                <Crown 
-                  size={18} 
-                  color={Colors.light.textSecondary} 
-                />
-                <Text style={styles.watermarkToggleText}>
-                  Remove Watermark
-                </Text>
-              </View>
-              <Switch
-                value={false}
-                onValueChange={handleRemoveWatermarkToggle}
-                disabled={paywallState === 'presenting'}
-                trackColor={{ 
-                  false: Colors.light.border, 
-                  true: Colors.light.accent 
-                }}
-                thumbColor={Colors.light.surface}
-                ios_backgroundColor={Colors.light.border}
-              />
-            </TouchableOpacity>
           )}
 
           {/* Preview Error with Retry Button */}
@@ -1734,8 +1673,6 @@ export default function EditorScreen() {
         bottomSheetRef={logoPickerRef}
         onSelectLogo={handleLogoSelected}
         onClose={handleLogoPickerClose}
-        isPremium={isPremium}
-        onRequestPremium={handleRequestPremiumForOverlay}
       />
 
       {/* Logo Action Sheet - for resizing and deleting logo overlays */}
@@ -1860,28 +1797,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textTertiary,
     textAlign: 'center',
     marginTop: 12,
-  },
-  watermarkToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.light.surface,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  watermarkToggleLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  watermarkToggleText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: Colors.light.textSecondary,
   },
   errorContainer: {
     flexDirection: 'row',

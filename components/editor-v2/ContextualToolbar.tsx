@@ -29,7 +29,6 @@ import {
   AlignCenter,
   Image as ImageIcon,
   Circle,
-  Crown,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { SelectableType } from './types';
@@ -53,8 +52,6 @@ interface ContextualToolbarProps {
   selectionType: SelectableType | null;
   /** Whether the toolbar is visible */
   visible: boolean;
-  /** Whether user has premium access */
-  isPremium: boolean;
   /** Actions for photo selection */
   onPhotoReplace?: () => void;
   onPhotoResize?: () => void;
@@ -70,8 +67,6 @@ interface ContextualToolbarProps {
   onLogoOpacity?: () => void;
   onLogoShape?: () => void;
   onLogoDelete?: () => void;
-  /** Request premium access */
-  onRequestPremium?: (feature: string) => void;
   /** Called when user wants to deselect */
   onDeselect?: () => void;
 }
@@ -80,8 +75,6 @@ interface ToolbarButtonProps {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
-  isPro?: boolean;
-  isPremium: boolean;
   disabled?: boolean;
   variant?: 'default' | 'danger' | 'ai';
 }
@@ -90,13 +83,9 @@ function ToolbarButton({
   icon,
   label,
   onPress,
-  isPro = false,
-  isPremium,
   disabled = false,
   variant = 'default',
 }: ToolbarButtonProps) {
-  const showProBadge = isPro && !isPremium;
-
   const buttonStyle: ViewStyle[] = [
     styles.button,
     variant === 'danger' && styles.buttonDanger,
@@ -111,11 +100,6 @@ function ToolbarButton({
       disabled={disabled}
       activeOpacity={0.7}
     >
-      {showProBadge && (
-        <View style={styles.proBadge}>
-          <Crown size={8} color={Colors.light.surface} />
-        </View>
-      )}
       <View style={[
         styles.iconWrapper,
         variant === 'ai' && styles.iconWrapperAI,
@@ -136,7 +120,6 @@ function ToolbarButton({
 export function ContextualToolbar({
   selectionType,
   visible,
-  isPremium,
   onPhotoReplace,
   onPhotoResize,
   onPhotoAI,
@@ -149,7 +132,6 @@ export function ContextualToolbar({
   onLogoOpacity,
   onLogoShape,
   onLogoDelete,
-  onRequestPremium,
   onDeselect,
 }: ContextualToolbarProps) {
   const insets = useSafeAreaInsets();
@@ -252,27 +234,22 @@ export function ContextualToolbar({
         icon={<RefreshCw size={22} color={TOOLBAR_COLORS.primary} strokeWidth={2} />}
         label="Replace"
         onPress={onPhotoReplace || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Maximize2 size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
         label="Resize"
         onPress={onPhotoResize || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Sparkles size={22} color={TOOLBAR_COLORS.ai} strokeWidth={2} />}
         label="AI Edit"
         onPress={onPhotoAI || (() => {})}
-        isPro
-        isPremium={isPremium}
         variant="ai"
       />
       <ToolbarButton
         icon={<Trash2 size={22} color={TOOLBAR_COLORS.destructive} strokeWidth={2} />}
         label="Delete"
         onPress={onPhotoDelete || (() => {})}
-        isPremium={isPremium}
         variant="danger"
       />
     </>
@@ -284,25 +261,21 @@ export function ContextualToolbar({
         icon={<Type size={22} color={TOOLBAR_COLORS.primary} strokeWidth={2} />}
         label="Font"
         onPress={onTextFont || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Palette size={22} color={TOOLBAR_COLORS.primary} strokeWidth={2} />}
         label="Color"
         onPress={onTextColor || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<AlignCenter size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
         label="Style"
         onPress={onTextStyle || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Trash2 size={22} color={TOOLBAR_COLORS.destructive} strokeWidth={2} />}
         label="Delete"
         onPress={onTextDelete || (() => {})}
-        isPremium={isPremium}
         variant="danger"
       />
     </>
@@ -314,25 +287,21 @@ export function ContextualToolbar({
         icon={<RefreshCw size={22} color={TOOLBAR_COLORS.primary} strokeWidth={2} />}
         label="Replace"
         onPress={onLogoReplace || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Circle size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
         label="Opacity"
         onPress={onLogoOpacity || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<ImageIcon size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
         label="Shape"
         onPress={onLogoShape || (() => {})}
-        isPremium={isPremium}
       />
       <ToolbarButton
         icon={<Trash2 size={22} color={TOOLBAR_COLORS.destructive} strokeWidth={2} />}
         label="Delete"
         onPress={onLogoDelete || (() => {})}
-        isPremium={isPremium}
         variant="danger"
       />
     </>
@@ -520,18 +489,6 @@ const styles = StyleSheet.create({
   },
   buttonLabelAI: {
     color: Colors.light.accent,
-  },
-  proBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: Colors.light.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
   },
 });
 

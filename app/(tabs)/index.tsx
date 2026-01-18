@@ -2,13 +2,12 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, Activi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal, Clock, Lock } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal, Clock } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
 import { ContentType, Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
-import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
 import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
 import { useResponsive, getResponsiveTileHeight } from "@/hooks/useResponsive";
 
@@ -57,10 +56,6 @@ export default function CreateScreen() {
   // Responsive configuration for iPad/iPhone
   const responsive = useResponsive();
 
-  // Premium status for template gating
-  const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
-  const { requestPremiumAccess } = usePremiumFeature();
-
   // Local state for favorites filter
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   
@@ -107,21 +102,11 @@ export default function CreateScreen() {
     setFormat(format);
   }, [setFormat]);
 
-  const handleTemplateSelect = useCallback(async (template: Template) => {
-    // If template is premium and user is not subscribed, show paywall
-    if (template.isPremium && !isPremium) {
-      await requestPremiumAccess('template_premium', () => {
-        // User subscribed - proceed to editor
-        selectTemplate(template);
-        router.push('/editor-v2');
-      });
-      return;
-    }
-    
-    // User is premium or template is free - proceed normally
+  const handleTemplateSelect = useCallback((template: Template) => {
+    // All templates are freely accessible - paywall is at download time
     selectTemplate(template);
     router.push('/editor-v2');
-  }, [selectTemplate, router, isPremium, requestPremiumAccess]);
+  }, [selectTemplate, router]);
 
   const handleToggleFavourite = useCallback((e: any, templateId: string) => {
     e.stopPropagation();
@@ -306,49 +291,36 @@ export default function CreateScreen() {
               </View>
             ) : (
               <View style={[styles.grid, dynamicStyles.grid]}>
-                {displayedTemplates.map((template) => {
-                  // Show premium badge if template is premium and user is not subscribed
-                  const showPremiumBadge = template.isPremium && !isPremium;
-                  
-                  return (
-                    <Pressable
-                      key={template.id}
-                      style={[
-                        styles.templateTile,
-                        dynamicStyles.templateTile,
-                        { height: getTileHeight(template.format) }
-                      ]}
-                      onPress={() => handleTemplateSelect(template)}
+                {displayedTemplates.map((template) => (
+                  <Pressable
+                    key={template.id}
+                    style={[
+                      styles.templateTile,
+                      dynamicStyles.templateTile,
+                      { height: getTileHeight(template.format) }
+                    ]}
+                    onPress={() => handleTemplateSelect(template)}
+                  >
+                    <Image
+                      source={{ uri: template.thumbnail }}
+                      style={styles.templateThumbnail}
+                      contentFit="cover"
+                      transition={200}
+                    />
+                    
+                    <TouchableOpacity
+                      style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}
+                      onPress={(e) => handleToggleFavourite(e, template.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <Image
-                        source={{ uri: template.thumbnail }}
-                        style={styles.templateThumbnail}
-                        contentFit="cover"
-                        transition={200}
+                      <Star
+                        size={16}
+                        color={template.isFavourite ? Colors.light.accent : Colors.light.surface}
+                        fill={template.isFavourite ? Colors.light.accent : 'transparent'}
                       />
-                      
-                      {/* Premium Badge - shown for locked templates */}
-                      {showPremiumBadge && (
-                        <View style={styles.premiumBadge}>
-                          <Lock size={10} color={Colors.light.surface} />
-                          <Text style={styles.premiumBadgeText}>PRO</Text>
-                        </View>
-                      )}
-                      
-                      <TouchableOpacity
-                        style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}
-                        onPress={(e) => handleToggleFavourite(e, template.id)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      >
-                        <Star
-                          size={16}
-                          color={template.isFavourite ? Colors.light.accent : Colors.light.surface}
-                          fill={template.isFavourite ? Colors.light.accent : 'transparent'}
-                        />
-                      </TouchableOpacity>
-                    </Pressable>
-                  );
-                })}
+                    </TouchableOpacity>
+                  </Pressable>
+                ))}
               </View>
             )}
           </View>
@@ -587,25 +559,5 @@ const styles = StyleSheet.create({
   },
   favouriteButtonActive: {
     backgroundColor: Colors.light.surface,
-  },
-  
-  // Premium Badge styles
-  premiumBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.light.text,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  premiumBadgeText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: Colors.light.surface,
-    letterSpacing: 0.5,
   },
 });

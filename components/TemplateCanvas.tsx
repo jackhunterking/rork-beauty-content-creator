@@ -51,8 +51,6 @@ interface TemplateCanvasProps {
   isRendering?: boolean;
   /** Called when the cached preview image fails to load (e.g., expired URL) */
   onPreviewError?: () => void;
-  /** Whether user has premium status - affects which preview is shown */
-  isPremium?: boolean;
   /** Called when the preview image has loaded and is ready for capture */
   onPreviewLoad?: () => void;
   /** Currently selected slot ID for selection highlight */
@@ -445,11 +443,10 @@ function CropOverlay({
 /**
  * TemplateCanvas - Renders template preview with invisible slot tap targets
  * 
- * Preview Priority (based on premium status):
- * 1. renderedPreviewUri (if user has added photos - watermark controlled by isPremium)
- * 2. For FREE users: watermarkedPreviewUrl (shows watermark upfront in editor)
- * 3. For PRO users: templatedPreviewUrl (clean preview)
- * 4. Fallback: thumbnail
+ * Preview Priority:
+ * 1. renderedPreviewUri (if user has added photos)
+ * 2. templatedPreviewUrl (template preview)
+ * 3. Fallback: thumbnail
  * 
  * Slot regions are invisible tap targets - template design shows through
  */
@@ -459,7 +456,6 @@ export function TemplateCanvas({
   renderedPreviewUri,
   isRendering = false,
   onPreviewError,
-  isPremium = false,
   onPreviewLoad,
   selectedSlotId = null,
   cropMode = null,
@@ -506,17 +502,14 @@ export function TemplateCanvas({
     return scaledSlots.find(s => s.layerId === cropMode.slotId) || null;
   }, [cropMode, scaledSlots]);
 
-  // Preview priority based on premium status:
+  // Preview priority:
   // 1. renderedPreviewUri (if user has added photos)
-  // 2. For FREE users: watermarkedPreviewUrl (shows watermark upfront)
-  // 3. For PRO users: templatedPreviewUrl (clean)
-  // 4. Fallback: thumbnail
+  // 2. templatedPreviewUrl (template preview)
+  // 3. Fallback: thumbnail
   //
   // Cache busting is applied to local files (file://) to ensure
   // updated content (e.g., with overlays) is displayed correctly.
   const previewUrl = useMemo(() => {
-    let url: string;
-    
     // If we have a rendered preview (user added photos), use it
     if (renderedPreviewUri) {
       // Apply cache busting for local files
@@ -525,17 +518,9 @@ export function TemplateCanvas({
       return cacheBusted || renderedPreviewUri;
     }
     
-    // Before photos are added, show appropriate preview based on premium status
-    if (isPremium) {
-      // Pro users see clean preview
-      url = template.templatedPreviewUrl || template.thumbnail;
-    } else {
-      // Free users see watermarked preview so they know upfront
-      url = template.watermarkedPreviewUrl || template.templatedPreviewUrl || template.thumbnail;
-    }
-    
-    return url;
-  }, [renderedPreviewUri, isPremium, template.watermarkedPreviewUrl, template.templatedPreviewUrl, template.thumbnail]);
+    // Before photos are added, show template preview
+    return template.templatedPreviewUrl || template.thumbnail;
+  }, [renderedPreviewUri, template.templatedPreviewUrl, template.thumbnail]);
 
   return (
     <View style={styles.wrapper}>

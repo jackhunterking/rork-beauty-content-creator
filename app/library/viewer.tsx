@@ -157,11 +157,6 @@ export default function PortfolioViewerScreen() {
                 style={styles.image}
                 contentFit="contain"
               />
-              {item.hasWatermark && (
-                <View style={styles.watermarkBadge}>
-                  <Text style={styles.watermarkText}>Watermarked</Text>
-                </View>
-              )}
             </View>
           </View>
 
@@ -248,20 +243,6 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
-  },
-  watermarkBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  watermarkText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.light.surface,
   },
   infoSection: {
     padding: 16,

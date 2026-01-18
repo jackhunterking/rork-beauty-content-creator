@@ -61,8 +61,6 @@ export interface PreviewRenderOptions {
   templateId: string;       // Templated.io template ID
   /** Map of slotId -> local URI for photos to include */
   slotImages: Record<string, string>;
-  /** Whether to hide watermark (premium users only) */
-  hideWatermark?: boolean;
   /** Overlays to render (handled client-side) */
   overlays?: Overlay[];
 }
@@ -94,7 +92,7 @@ export type RenderProgressCallback = (progress: RenderProgress) => void;
 export async function renderPreview(
   options: PreviewRenderOptions
 ): Promise<PreviewRenderResult> {
-  const { templateId, slotImages, hideWatermark = false } = options;
+  const { templateId, slotImages } = options;
   
   try {
     // Validate API key
@@ -118,12 +116,6 @@ export async function renderPreview(
     // Add slot images
     for (const [slotId, publicUrl] of Object.entries(publicUrls)) {
       layerPayload[slotId] = { image_url: publicUrl };
-    }
-    
-    // Handle watermark visibility
-    // Watermark layer should be named 'watermark' or contain 'watermark' in template
-    if (hideWatermark) {
-      layerPayload['watermark'] = { hide: true };
     }
     
     // Call Templated.io API
@@ -180,14 +172,12 @@ export async function renderPreview(
  * @param slotId - The slot ID for the new photo
  * @param photoUri - Local URI of the captured photo
  * @param existingPhotos - Map of other slots that already have photos
- * @param hideWatermark - Whether to hide watermark (premium)
  */
 export async function renderPreviewWithNewPhoto(
   templateId: string,
   slotId: string,
   photoUri: string,
-  existingPhotos: Record<string, string> = {},
-  hideWatermark: boolean = false
+  existingPhotos: Record<string, string> = {}
 ): Promise<PreviewRenderResult> {
   // Combine new photo with existing
   const allPhotos = {
@@ -198,7 +188,6 @@ export async function renderPreviewWithNewPhoto(
   return renderPreview({
     templateId,
     slotImages: allPhotos,
-    hideWatermark,
   });
 }
 

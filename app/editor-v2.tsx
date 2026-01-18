@@ -213,7 +213,6 @@ export default function EditorV2Screen() {
       const result = await renderPreview({
         templateId: template.templatedId,
         slotImages: photosToRender,
-        hideWatermark: isPremium,
       });
       
       if (result.success && result.renderUrl) {
@@ -230,7 +229,7 @@ export default function EditorV2Screen() {
     } finally {
       setIsRendering(false);
     }
-  }, [template?.templatedId, capturedImages, slots, isPremium]);
+  }, [template?.templatedId, capturedImages, slots]);
 
   // Helper to serialize adjustments for comparison
   const serializeAdjustments = useCallback((adj: any) => {
@@ -297,41 +296,23 @@ export default function EditorV2Screen() {
     setSelection(DEFAULT_SELECTION);
 
     if (tool === 'enhance') {
-      // Open AI panel
+      // Open AI panel (AI features remain premium-gated)
       aiPanelRef.current?.snapToIndex(0);
     } else if (tool === 'text') {
-      // Add text overlay (premium check)
-      if (!isPremium) {
-        requestPremiumAccess('add_text_overlay', () => {
-          const newOverlay = createTextOverlay();
-          setOverlays(prev => [...prev, newOverlay]);
-        });
-      } else {
-        const newOverlay = createTextOverlay();
-        setOverlays(prev => [...prev, newOverlay]);
-      }
+      // Add text overlay (free for all users)
+      const newOverlay = createTextOverlay();
+      setOverlays(prev => [...prev, newOverlay]);
     } else if (tool === 'date') {
-      // Add date overlay (premium check)
-      if (!isPremium) {
-        requestPremiumAccess('add_date_overlay', () => {
-          const newOverlay = createDateOverlay();
-          setOverlays(prev => [...prev, newOverlay]);
-        });
-      } else {
-        const newOverlay = createDateOverlay();
-        setOverlays(prev => [...prev, newOverlay]);
-      }
+      // Add date overlay (free for all users)
+      const newOverlay = createDateOverlay();
+      setOverlays(prev => [...prev, newOverlay]);
     } else if (tool === 'logo') {
-      // TODO: Open logo picker
-      if (!isPremium) {
-        requestPremiumAccess('add_logo_overlay');
-      } else {
-        Alert.alert('Logo', 'Logo picker coming soon');
-      }
+      // TODO: Open logo picker (free for all users)
+      Alert.alert('Logo', 'Logo picker coming soon');
     }
 
     setActiveTool(tool);
-  }, [isPremium, requestPremiumAccess]);
+  }, []);
 
   // Handle slot press (from TemplateCanvas)
   const handleSlotPress = useCallback((slotId: string) => {
@@ -574,7 +555,6 @@ export default function EditorV2Screen() {
             renderedPreviewUri={renderedPreviewUri}
             isRendering={isRendering}
             onPreviewError={handlePreviewError}
-            isPremium={isPremium}
             selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
             cropMode={isCropMode && cropSlotData ? {
               slotId: cropSlotId!,
@@ -616,7 +596,6 @@ export default function EditorV2Screen() {
           <ContextualToolbar
             selectionType={selection.type}
             visible={true}
-            isPremium={isPremium}
             onPhotoReplace={handlePhotoReplace}
             onPhotoResize={handlePhotoResize}
             onPhotoAI={handlePhotoAI}
@@ -627,7 +606,6 @@ export default function EditorV2Screen() {
           <ToolDock
             activeTool={activeTool}
             onToolSelect={handleToolSelect}
-            isPremium={isPremium}
           />
         )}
       </SafeAreaView>

@@ -36,7 +36,6 @@ export function mapRowToTemplate(row: TemplateRow): Template {
   // Apply cache-busting to image URLs
   const thumbnail = addCacheBuster(row.thumbnail, cacheBuster);
   const templatedPreviewUrl = addCacheBuster(row.templated_preview_url, cacheBuster);
-  const watermarkedPreviewUrl = addCacheBuster(row.watermarked_preview_url, cacheBuster);
   const backgroundUrl = addCacheBuster(row.background_url, cacheBuster);
   const framePreviewUrl = addCacheBuster(row.frame_preview_url, cacheBuster);
   
@@ -72,10 +71,8 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     updatedAt: row.updated_at,
     // Templated.io integration fields
     templatedId: row.templated_id || undefined,
-    // Clean preview (no watermark) - used for Pro users in Editor
+    // Preview URL for Editor
     templatedPreviewUrl,
-    // Watermarked preview - shown to Free users in Editor before adding photos
-    watermarkedPreviewUrl,
     // Frame preview URL - optional fallback
     framePreviewUrl,
     // Source of truth for dynamic slots

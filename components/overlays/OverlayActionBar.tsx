@@ -3,24 +3,20 @@
  * 
  * Action bar displayed above the Generate button in the Editor.
  * Contains compact horizontal buttons to add Date, Text, and Logo overlays.
- * Features premium gating via Superwall.
+ * All overlay features are free - paywall is at download time.
  */
 
 import React, { useCallback } from 'react';
 import { StyleSheet, View, TouchableOpacity, Text } from 'react-native';
-import { Calendar, Type, Image as ImageIcon, Crown } from 'lucide-react-native';
+import { Calendar, Type, Image as ImageIcon } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { OverlayType } from '@/types/overlays';
 
 interface OverlayActionBarProps {
-  /** Whether the user has premium status */
-  isPremium: boolean;
   /** Whether overlays are currently disabled (e.g., during rendering) */
   disabled?: boolean;
   /** Called when user wants to add an overlay */
   onAddOverlay: (type: OverlayType, imageData?: { uri: string; width: number; height: number }) => void;
-  /** Called when premium feature is requested by free user. Includes callback to execute if premium is granted. */
-  onRequestPremium: (featureName: string, onPremiumGranted?: () => void) => void;
   /** Called when user wants to open the logo picker modal */
   onRequestLogoModal: () => void;
 }
@@ -29,11 +25,10 @@ interface OverlayButtonProps {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
-  isPremium: boolean;
   disabled?: boolean;
 }
 
-function OverlayButton({ icon, label, onPress, isPremium, disabled }: OverlayButtonProps) {
+function OverlayButton({ icon, label, onPress, disabled }: OverlayButtonProps) {
   return (
     <TouchableOpacity
       style={[
@@ -44,12 +39,6 @@ function OverlayButton({ icon, label, onPress, isPremium, disabled }: OverlayBut
       disabled={disabled}
       activeOpacity={0.7}
     >
-      {/* Crown badge for non-premium users */}
-      {!isPremium && (
-        <View style={styles.crownBadge}>
-          <Crown size={10} color={Colors.light.surface} />
-        </View>
-      )}
       <View style={styles.iconContainer}>
         {icon}
       </View>
@@ -64,55 +53,30 @@ function OverlayButton({ icon, label, onPress, isPremium, disabled }: OverlayBut
 }
 
 export function OverlayActionBar({
-  isPremium,
   disabled = false,
   onAddOverlay,
-  onRequestPremium,
   onRequestLogoModal,
 }: OverlayActionBarProps) {
   // Handle Date overlay button press
   const handleAddDate = useCallback(() => {
-    if (!isPremium) {
-      // Pass callback to add overlay after subscription is granted
-      onRequestPremium('add_date_overlay', () => onAddOverlay('date'));
-      return;
-    }
     onAddOverlay('date');
-  }, [isPremium, onAddOverlay, onRequestPremium]);
+  }, [onAddOverlay]);
 
   // Handle Text overlay button press
   const handleAddText = useCallback(() => {
-    if (!isPremium) {
-      // Pass callback to add overlay after subscription is granted
-      onRequestPremium('add_text_overlay', () => onAddOverlay('text'));
-      return;
-    }
     onAddOverlay('text');
-  }, [isPremium, onAddOverlay, onRequestPremium]);
+  }, [onAddOverlay]);
 
-  // Handle Logo overlay button press
+  // Handle Logo overlay button press - opens logo picker modal
   const handleAddLogo = useCallback(() => {
-    if (!isPremium) {
-      // Pass callback to open logo picker modal after subscription is granted
-      onRequestPremium('add_logo_overlay', onRequestLogoModal);
-      return;
-    }
-
-    // User is premium, request to open logo picker modal
     onRequestLogoModal();
-  }, [isPremium, onRequestPremium, onRequestLogoModal]);
+  }, [onRequestLogoModal]);
 
   return (
     <View style={styles.container}>
       {/* Section Header */}
       <View style={styles.headerRow}>
         <Text style={styles.sectionLabel}>Add Overlay</Text>
-        {!isPremium && (
-          <View style={styles.proBadge}>
-            <Crown size={10} color={Colors.light.surface} />
-            <Text style={styles.proBadgeText}>PRO</Text>
-          </View>
-        )}
       </View>
 
       {/* Overlay Options as Horizontal Buttons */}
@@ -121,7 +85,6 @@ export function OverlayActionBar({
           icon={<Calendar size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
           label="Date"
           onPress={handleAddDate}
-          isPremium={isPremium}
           disabled={disabled}
         />
         
@@ -129,7 +92,6 @@ export function OverlayActionBar({
           icon={<Type size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
           label="Text"
           onPress={handleAddText}
-          isPremium={isPremium}
           disabled={disabled}
         />
         
@@ -137,7 +99,6 @@ export function OverlayActionBar({
           icon={<ImageIcon size={20} color={disabled ? Colors.light.textTertiary : Colors.light.accent} />}
           label="Logo"
           onPress={handleAddLogo}
-          isPremium={isPremium}
           disabled={disabled}
         />
       </View>
@@ -161,21 +122,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.light.textSecondary,
   },
-  proBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  proBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.light.surface,
-    letterSpacing: 0.5,
-  },
   buttonsRow: {
     flexDirection: 'row',
     gap: 10,
@@ -194,17 +140,6 @@ const styles = StyleSheet.create({
   },
   overlayButtonDisabled: {
     opacity: 0.5,
-  },
-  crownBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.light.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   iconContainer: {
     width: 40,

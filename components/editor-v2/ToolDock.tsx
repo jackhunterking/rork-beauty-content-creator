@@ -14,7 +14,6 @@ import {
   Calendar, 
   Image as ImageIcon, 
   Sparkles,
-  Crown,
 } from 'lucide-react-native';
 import Animated, { 
   useAnimatedStyle, 
@@ -33,8 +32,6 @@ interface ToolDockProps {
   activeTool: ToolType;
   /** Callback when a tool is selected */
   onToolSelect: (tool: ToolType) => void;
-  /** Whether the user has premium status */
-  isPremium: boolean;
   /** Whether tools are disabled (e.g., during processing) */
   disabled?: boolean;
 }
@@ -44,8 +41,6 @@ interface ToolButtonProps {
   icon: React.ReactNode;
   label: string;
   isActive: boolean;
-  isPro?: boolean;
-  isPremium: boolean;
   disabled?: boolean;
   onPress: () => void;
 }
@@ -55,8 +50,6 @@ function ToolButton({
   icon, 
   label, 
   isActive, 
-  isPro = false,
-  isPremium,
   disabled,
   onPress,
 }: ToolButtonProps) {
@@ -74,8 +67,6 @@ function ToolButton({
     transform: [{ scale: scale.value }],
   }));
 
-  const showProBadge = isPro && !isPremium;
-
   return (
     <AnimatedTouchable
       style={[styles.toolButton, animatedStyle]}
@@ -85,13 +76,6 @@ function ToolButton({
       disabled={disabled}
       activeOpacity={0.8}
     >
-      {/* PRO Badge */}
-      {showProBadge && (
-        <View style={styles.proBadge}>
-          <Crown size={8} color={Colors.light.surface} />
-        </View>
-      )}
-      
       {/* Icon Container */}
       <View style={[
         styles.iconContainer,
@@ -118,7 +102,6 @@ function ToolButton({
 export function ToolDock({ 
   activeTool, 
   onToolSelect, 
-  isPremium,
   disabled = false,
 }: ToolDockProps) {
   const insets = useSafeAreaInsets();
@@ -127,7 +110,6 @@ export function ToolDock({
     id: ToolType;
     icon: (active: boolean) => React.ReactNode;
     label: string;
-    isPro?: boolean;
   }> = [
     {
       id: 'photo',
@@ -148,7 +130,6 @@ export function ToolDock({
         />
       ),
       label: 'Text',
-      isPro: true,
     },
     {
       id: 'date',
@@ -159,7 +140,6 @@ export function ToolDock({
         />
       ),
       label: 'Date',
-      isPro: true,
     },
     {
       id: 'logo',
@@ -170,7 +150,6 @@ export function ToolDock({
         />
       ),
       label: 'Logo',
-      isPro: true,
     },
     {
       id: 'enhance',
@@ -181,7 +160,6 @@ export function ToolDock({
         />
       ),
       label: 'AI',
-      isPro: true,
     },
   ];
 
@@ -198,8 +176,6 @@ export function ToolDock({
             icon={tool.icon(activeTool === tool.id)}
             label={tool.label}
             isActive={activeTool === tool.id}
-            isPro={tool.isPro}
-            isPremium={isPremium}
             disabled={disabled}
             onPress={() => onToolSelect(tool.id)}
           />
@@ -262,18 +238,6 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: Colors.light.accent,
-  },
-  proBadge: {
-    position: 'absolute',
-    top: 2,
-    right: 8,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.light.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
   },
 });
 
