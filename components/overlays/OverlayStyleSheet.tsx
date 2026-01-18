@@ -16,7 +16,7 @@ import {
   Platform,
   Keyboard,
 } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { Check, Trash2 } from 'lucide-react-native';
@@ -52,9 +52,10 @@ interface SizeSliderProps {
   max: number;
   step: number;
   onChange: (value: number) => void;
+  onInputFocus?: () => void;
 }
 
-function SizeSlider({ value, min, max, step, onChange }: SizeSliderProps) {
+function SizeSlider({ value, min, max, step, onChange, onInputFocus }: SizeSliderProps) {
   const [inputValue, setInputValue] = useState(value.toString());
   const [isEditing, setIsEditing] = useState(false);
 
@@ -71,6 +72,12 @@ function SizeSlider({ value, min, max, step, onChange }: SizeSliderProps) {
     const numericText = text.replace(/[^0-9]/g, '');
     setInputValue(numericText);
   }, []);
+
+  // Handle input focus
+  const handleInputFocus = useCallback(() => {
+    setIsEditing(true);
+    onInputFocus?.();
+  }, [onInputFocus]);
 
   // Handle input submit/blur
   const handleInputSubmit = useCallback(() => {
@@ -113,7 +120,7 @@ function SizeSlider({ value, min, max, step, onChange }: SizeSliderProps) {
           style={styles.sizeInput}
           value={inputValue}
           onChangeText={handleInputChange}
-          onFocus={() => setIsEditing(true)}
+          onFocus={handleInputFocus}
           onBlur={handleInputSubmit}
           onSubmitEditing={handleInputSubmit}
           keyboardType="number-pad"
@@ -135,8 +142,9 @@ export function OverlayStyleSheet({
 }: OverlayStyleSheetProps) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   
-  // Snap points for bottom sheet - lower initial height so canvas remains visible
-  const snapPoints = useMemo(() => ['30%', '60%'], []);
+  // Snap points for bottom sheet - includes higher snap point for keyboard visibility
+  // 30% for compact view, 60% for expanded, 90% when keyboard is active
+  const snapPoints = useMemo(() => ['30%', '60%', '90%'], []);
 
   // Check if overlay is text-based
   const isTextBased = overlay ? isTextBasedOverlay(overlay) : false;
@@ -218,8 +226,9 @@ export function OverlayStyleSheet({
       snapPoints={snapPoints}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
-      keyboardBehavior="interactive"
+      keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
+      android_keyboardInputMode="adjustResize"
     >
       <BottomSheetScrollView 
         style={styles.content}
@@ -245,7 +254,7 @@ export function OverlayStyleSheet({
         {overlay.type === 'text' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Text</Text>
-            <TextInput
+            <BottomSheetTextInput
               style={styles.textInput}
               value={(overlay as TextOverlay).content}
               onChangeText={handleTextChange}
@@ -253,6 +262,7 @@ export function OverlayStyleSheet({
               placeholderTextColor={Colors.light.textTertiary}
               multiline
               maxLength={100}
+              onFocus={() => bottomSheetRef.current?.snapToIndex(2)}
             />
           </View>
         )}
@@ -373,6 +383,7 @@ export function OverlayStyleSheet({
             max={FONT_SIZE_CONSTRAINTS.max}
             step={FONT_SIZE_CONSTRAINTS.step}
             onChange={handleFontSizeChange}
+            onInputFocus={() => bottomSheetRef.current?.snapToIndex(2)}
           />
         </View>
 

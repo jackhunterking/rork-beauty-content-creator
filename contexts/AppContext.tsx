@@ -4,9 +4,10 @@ import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
-import { fetchDrafts, deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
+import { deleteDraft as deleteDraftService, saveDraftWithImages } from '@/services/draftService';
 import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as deletePortfolioItemService } from '@/services/portfolioService';
 import { useRealtimeTemplates, optimisticUpdateTemplate } from '@/hooks/useRealtimeTemplates';
+import { useRealtimeDrafts } from '@/hooks/useRealtimeDrafts';
 import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -30,11 +31,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
     error: templatesError,
     refetch: refetchTemplates 
   } = useRealtimeTemplates();
+
+  // Use real-time drafts hook - single source of truth, no dual caching
+  const {
+    drafts: realtimeDrafts,
+    isLoading: isDraftsLoading,
+    refetch: refetchDrafts,
+  } = useRealtimeDrafts(isAuthenticated);
   
   // Local state for optimistic updates
   const [templates, setTemplates] = useState<Template[]>([]);
   const [legacyPortfolio, setLegacyPortfolio] = useState<SavedAsset[]>([]);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [brandKit, setBrandKit] = useState<BrandKit>({
     applyLogoAutomatically: false,
@@ -82,14 +89,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Sync real-time templates to local state
   useEffect(() => {
-    console.log('[AppContext] Syncing templates from realtime:', {
-      count: realtimeTemplates.length,
-      templateIds: realtimeTemplates.slice(0, 5).map(t => t.id.substring(0, 8)),
-      formats: realtimeTemplates.reduce((acc, t) => {
-        acc[t.format] = (acc[t.format] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-    });
     setTemplates(realtimeTemplates);
   }, [realtimeTemplates]);
 
@@ -113,14 +112,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
-  // Fetch drafts from Supabase - only when user is authenticated
-  const draftsQuery = useQuery({
-    queryKey: ['drafts', isAuthenticated],
-    queryFn: fetchDrafts,
-    staleTime: 30 * 1000,
-    enabled: isAuthenticated, // Only fetch when user is logged in
-  });
-
   // Fetch portfolio from Supabase - only when user is authenticated
   const portfolioQuery = useQuery({
     queryKey: ['portfolio', isAuthenticated],
@@ -129,10 +120,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     enabled: isAuthenticated, // Only fetch when user is logged in
   });
 
-  // Clear drafts and portfolio when user logs out
+  // Clear portfolio when user logs out (drafts handled by useRealtimeDrafts)
   useEffect(() => {
     if (!isAuthenticated) {
-      setDrafts([]);
       setPortfolio([]);
     }
   }, [isAuthenticated]);
@@ -144,18 +134,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     if (brandKitQuery.data) setBrandKit(brandKitQuery.data);
   }, [brandKitQuery.data]);
-
-  useEffect(() => {
-    if (draftsQuery.data) {
-      console.log('[AppContext] Updating drafts from query:', {
-        count: draftsQuery.data.length,
-        draftIds: draftsQuery.data.map(d => d.id.substring(0, 8)),
-        isStale: draftsQuery.isStale,
-        isFetching: draftsQuery.isFetching,
-      });
-      setDrafts(draftsQuery.data);
-    }
-  }, [draftsQuery.data, draftsQuery.isStale, draftsQuery.isFetching]);
 
   useEffect(() => {
     if (portfolioQuery.data) setPortfolio(portfolioQuery.data);
@@ -248,10 +226,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       );
     },
     onSuccess: (savedDraft) => {
-      console.log('[AppContext] Draft saved successfully, invalidating queries:', {
-        draftId: savedDraft.id,
-        templateId: savedDraft.templateId,
-      });
+      // Update current project with the saved draft info
       setCurrentProject(prev => ({ 
         ...prev, 
         draftId: savedDraft.id,
@@ -259,8 +234,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         wasRenderedAsPremium: savedDraft.wasRenderedAsPremium ?? null,
         localPreviewPath: savedDraft.localPreviewPath || null,
       }));
-      queryClient.invalidateQueries({ queryKey: ['drafts'] });
-      console.log('[AppContext] Drafts query invalidated');
+      // Note: No manual cache updates needed - useRealtimeDrafts will receive
+      // the INSERT/UPDATE event from Supabase and update automatically
     },
   });
 
@@ -270,10 +245,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       await deleteDraftService(draftId);
       return draftId;
     },
-    onSuccess: (deletedId) => {
-      setDrafts(prev => prev.filter(d => d.id !== deletedId));
-      queryClient.invalidateQueries({ queryKey: ['drafts'] });
-    },
+    // Note: No onSuccess needed - useRealtimeDrafts will receive
+    // the DELETE event from Supabase and remove the draft automatically
   });
 
   // Add to portfolio mutation
@@ -359,24 +332,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Set captured image
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
-    console.log('[AppContext] setCapturedImage called:', {
-      layerId,
-      hasMedia: !!media,
-      uri: media?.uri?.substring(0, 50) + (media?.uri && media.uri.length > 50 ? '...' : ''),
-      adjustments: media?.adjustments,
-    });
-    
-    setCurrentProject(prev => {
-      const newCapturedImages = {
+    setCurrentProject(prev => ({
+      ...prev,
+      capturedImages: {
         ...prev.capturedImages,
         [layerId]: media,
-      };
-      console.log('[AppContext] Updated capturedImages slots:', Object.keys(newCapturedImages).filter(k => newCapturedImages[k]?.uri));
-      return {
-        ...prev,
-        capturedImages: newCapturedImages,
-      };
-    });
+      },
+    }));
     
     if (media) {
       setSlotState(layerId, 'ready');
@@ -446,14 +408,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Load a draft into the current project
   const loadDraft = useCallback((draft: Draft, template: Template) => {
-    console.log('[AppContext] Loading draft:', {
-      draftId: draft.id,
-      templateId: template.id,
-      beforeImageUrl: draft.beforeImageUrl?.substring(0, 50),
-      afterImageUrl: draft.afterImageUrl?.substring(0, 50),
-      capturedImageUrls: draft.capturedImageUrls ? Object.keys(draft.capturedImageUrls) : [],
-    });
-    
     const slots = extractSlots(template);
     
     const capturedImages: CapturedImages = {};
@@ -488,6 +442,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Step 2: Load from capturedImageUrls (overrides legacy fields for newer drafts)
     // This ensures the most recent saved data takes precedence
+    // BUG: Adjustments are NOT stored in the database, so they're lost when loading!
     if (draft.capturedImageUrls) {
       for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
         const slot = slots.find(s => s.layerId === layerId);
@@ -496,6 +451,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
             uri: url,
             width: slot.width,
             height: slot.height,
+            // MISSING: No adjustments loaded! They were never saved.
           };
           slotStates[layerId] = { state: 'ready' };
         }
@@ -515,12 +471,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       height: afterSlot.height,
     } : null;
     
-    console.log('[AppContext] Draft loaded - capturedImages:', {
-      slotIds: Object.keys(capturedImages),
-      beforeSlotHasImage: beforeSlot ? !!capturedImages[beforeSlot.layerId]?.uri : 'no before slot',
-      afterSlotHasImage: afterSlot ? !!capturedImages[afterSlot.layerId]?.uri : 'no after slot',
-    });
-    
     setSlotStatesMap(slotStates);
     setComposedPreviewUri(null);
     
@@ -537,10 +487,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     });
   }, []);
 
-  // Refresh drafts
-  const refreshDrafts = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['drafts'] });
-  }, [queryClient]);
+  // Refresh drafts - simply delegates to the realtime hook's refetch
+  const refreshDrafts = useCallback(async () => {
+    await refetchDrafts();
+  }, [refetchDrafts]);
 
   // Refresh portfolio
   const refreshPortfolio = useCallback(() => {
@@ -562,9 +512,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     portfolio,
     isPortfolioLoading: portfolioQuery.isLoading,
     
-    // Drafts
-    drafts,
-    isDraftsLoading: draftsQuery.isLoading,
+    // Drafts - single source of truth from realtime hook
+    drafts: realtimeDrafts,
+    isDraftsLoading,
     
     // Other state
     brandKit,

@@ -205,14 +205,11 @@ function CropOverlay({
   }, [currentRotation, minScaleForRotation]);
 
   // Initialize with saved adjustments (only once)
+  // Note: initialTranslateX/Y are normalized values in ROTATED coordinates (u/maxU, v/maxV)
   const hasInitialized = React.useRef(false);
   React.useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
-    // #region agent log - debug init
-    console.log('[DEBUG-INIT] CropOverlay initialized', { slotWidth, slotHeight, baseW: baseImageSize.width, baseH: baseImageSize.height });
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:init',message:'crop_overlay_init',data:{slotWidth,slotHeight,baseW:baseImageSize.width,baseH:baseImageSize.height,initialRotation,initialScale},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'INIT'})}).catch(()=>{});
-    // #endregion
     
     // Determine initial min scale based on initial rotation
     const minScale = initialRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
@@ -220,22 +217,33 @@ function CropOverlay({
     scale.value = effectiveScale;
     rotation.value = initialRotation;
     
-    // Calculate translation from normalized values using rotated bounding box
+    // Calculate max translation in rotated coordinate system
     const scaledWidth = baseImageSize.width * effectiveScale;
     const scaledHeight = baseImageSize.height * effectiveScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
     
-    // Account for rotation when calculating max translation
-    const angleRad = (Math.abs(initialRotation) * Math.PI) / 180;
+    const angleRad = (initialRotation * Math.PI) / 180;
     const cos = Math.cos(angleRad);
     const sin = Math.sin(angleRad);
-    const boundingWidth = Math.abs(scaledWidth * cos) + Math.abs(scaledHeight * sin);
-    const boundingHeight = Math.abs(scaledWidth * sin) + Math.abs(scaledHeight * cos);
+    const absCos = Math.abs(cos);
+    const absSin = Math.abs(sin);
     
-    const maxTx = Math.max(0, (boundingWidth - slotWidth) / 2);
-    const maxTy = Math.max(0, (boundingHeight - slotHeight) / 2);
+    // Max translation in rotated coordinates
+    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
     
-    translateX.value = initialTranslateX * maxTx;
-    translateY.value = initialTranslateY * maxTy;
+    // Denormalize: convert normalized rotated coords to actual rotated coords (u, v)
+    const u = initialTranslateX * maxU;
+    const v = initialTranslateY * maxV;
+    
+    // Convert rotated coords (u, v) back to screen coords (tx, ty)
+    // Inverse of: u = tx*cos + ty*sin, v = -tx*sin + ty*cos
+    // So: tx = u*cos - v*sin, ty = u*sin + v*cos
+    translateX.value = u * cos - v * sin;
+    translateY.value = u * sin + v * cos;
   }, []);
   
   // Respond to rotation changes from slider
@@ -245,145 +253,180 @@ function CropOverlay({
     // Update rotation value
     rotation.value = currentRotation;
     
-    // Determine required minimum scale
-    const requiredMinScale = currentRotation === 0 ? BASE_MIN_SCALE : minScaleForRotation;
+    // Calculate dynamic minimum scale for current position and new rotation
+    const tx = translateX.value;
+    const ty = translateY.value;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    const baseHalfW = baseImageSize.width / 2;
+    const baseHalfH = baseImageSize.height / 2;
     
-    // Get current scale (may need to increase if below minimum)
-    const effectiveScale = Math.max(scale.value, requiredMinScale);
+    const angleRad = (currentRotation * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
     
-    // If current scale is below required minimum, scale up immediately
-    if (scale.value < requiredMinScale) {
-      scale.value = requiredMinScale;
+    // Calculate minimum scale needed for current position at new rotation
+    const corners = [
+      { x: halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: -halfSlotH },
+      { x: halfSlotW, y: -halfSlotH },
+    ];
+    
+    let dynamicMinScale = BASE_MIN_SCALE;
+    for (const corner of corners) {
+      const cx = corner.x - tx;
+      const cy = corner.y - ty;
+      const localX = cx * cos + cy * sin;
+      const localY = -cx * sin + cy * cos;
+      const scaleForX = Math.abs(localX) / baseHalfW;
+      const scaleForY = Math.abs(localY) / baseHalfH;
+      dynamicMinScale = Math.max(dynamicMinScale, scaleForX, scaleForY);
     }
     
-    // Re-clamp translation after rotation change using rotated bounding box
+    // If current scale is below the required minimum, scale up
+    const effectiveScale = Math.max(scale.value, dynamicMinScale);
+    const scaleWasAdjusted = scale.value < dynamicMinScale;
+    if (scaleWasAdjusted) {
+      scale.value = dynamicMinScale;
+    }
+    
+    // Re-clamp translation using ROTATED coordinate system
     const scaledWidth = baseImageSize.width * effectiveScale;
     const scaledHeight = baseImageSize.height * effectiveScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const absCos = Math.abs(cos);
+    const absSin = Math.abs(sin);
     
-    // Calculate rotated bounding box
-    const angleRad = (Math.abs(currentRotation) * Math.PI) / 180;
-    const cos = Math.cos(angleRad);
-    const sin = Math.sin(angleRad);
-    const boundingWidth = Math.abs(scaledWidth * cos) + Math.abs(scaledHeight * sin);
-    const boundingHeight = Math.abs(scaledWidth * sin) + Math.abs(scaledHeight * cos);
+    // Max translation in rotated coordinates
+    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
     
-    const maxTx = Math.max(0, (boundingWidth - slotWidth) / 2);
-    const maxTy = Math.max(0, (boundingHeight - slotHeight) / 2);
+    // Convert current (tx, ty) to rotated coordinates
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
     
-    // Clamp current translation to new bounds
-    const oldTx = translateX.value;
-    const oldTy = translateY.value;
-    translateX.value = Math.max(-maxTx, Math.min(maxTx, translateX.value));
-    translateY.value = Math.max(-maxTy, Math.min(maxTy, translateY.value));
+    // Clamp in rotated coordinates
+    const uClamped = Math.max(-maxU, Math.min(maxU, u));
+    const vClamped = Math.max(-maxV, Math.min(maxV, v));
     
-    // #region agent log - debug rotation change
-    console.log('[DEBUG-ROTATION]', JSON.stringify({currentRotation,effectiveScale,boundingWidth,boundingHeight,slotWidth,slotHeight,maxTx,maxTy}));
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:rotationEffect',message:'rotation_changed',data:{currentRotation,effectiveScale,scaledWidth,scaledHeight,boundingWidth,boundingHeight,slotWidth,slotHeight,maxTx,maxTy,oldTx,oldTy,newTx:translateX.value,newTy:translateY.value},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B-E'})}).catch(()=>{});
-    // #endregion
-  }, [currentRotation, minScaleForRotation, baseImageSize, slotWidth, slotHeight]);
+    // Convert back to (tx, ty)
+    translateX.value = uClamped * cos - vClamped * sin;
+    translateY.value = uClamped * sin + vClamped * cos;
+    
+    // CRITICAL FIX: Report the adjusted values back to parent!
+    // This ensures the corrected scale (to prevent black corners) is used when saving
+    reportAdjustment();
+  }, [currentRotation, baseImageSize, slotWidth, slotHeight, reportAdjustment]);
 
-  // Calculate the bounding box of the rotated image
-  // When a rectangle is rotated, its axis-aligned bounding box changes
-  const getRotatedBoundingBox = useCallback((width: number, height: number, angleDeg: number) => {
-    'worklet';
-    const angleRad = (Math.abs(angleDeg) * Math.PI) / 180;
-    const cos = Math.cos(angleRad);
-    const sin = Math.sin(angleRad);
-    
-    // Rotated bounding box dimensions
-    const boundingWidth = Math.abs(width * cos) + Math.abs(height * sin);
-    const boundingHeight = Math.abs(width * sin) + Math.abs(height * cos);
-    
-    return { boundingWidth, boundingHeight };
-  }, []);
-
-  // #region agent log - debug bounding box
-  const debugBoundingBox = useCallback((msg: string, data: any) => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:getMaxTranslation',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-D-E'})}).catch(()=>{});
-  }, []);
-  // #endregion
-
-  // Get max translation for current scale AND rotation
-  // This accounts for the rotated bounding box so the image always covers the slot
-  const getMaxTranslation = useCallback((currentScale: number, rotationDeg: number) => {
+  // Clamp translation to keep ROTATED image covering slot
+  // 
+  // KEY INSIGHT: When an image is rotated, the valid translation region is NOT
+  // an axis-aligned rectangle in (tx, ty) space - it's a ROTATED rectangle!
+  // Clamping tx and ty independently doesn't work because they're coupled through rotation.
+  // 
+  // CORRECT APPROACH: Clamp in the ROTATED coordinate system, then convert back.
+  // 
+  // For a slot corner to be inside the rotated image, we transform it to image-local coords.
+  // The valid (tx, ty) region forms a rectangle in ROTATED coordinates (u, v):
+  //   u = tx * cos(θ) + ty * sin(θ)     (translation along rotated X axis)
+  //   v = -tx * sin(θ) + ty * cos(θ)    (translation along rotated Y axis)
+  //
+  // Bounds in rotated coordinates:
+  //   |u| ≤ maxU = halfW - (halfSlotW * |cos| + halfSlotH * |sin|)
+  //   |v| ≤ maxV = halfH - (halfSlotW * |sin| + halfSlotH * |cos|)
+  
+  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number, rotationDeg: number) => {
     'worklet';
     const scaledWidth = baseImageSize.width * currentScale;
     const scaledHeight = baseImageSize.height * currentScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
     
-    // Get the bounding box of the rotated image
-    const { boundingWidth, boundingHeight } = getRotatedBoundingBox(scaledWidth, scaledHeight, rotationDeg);
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const absCos = Math.abs(cos);
+    const absSin = Math.abs(sin);
     
-    // Calculate max translation based on rotated bounding box
-    // The image center can move as far as half the difference between bounding box and slot
-    const result = {
-      maxX: Math.max(0, (boundingWidth - slotWidth) / 2),
-      maxY: Math.max(0, (boundingHeight - slotHeight) / 2),
+    // Maximum safe translation in ROTATED coordinates
+    // This represents how far the image extends past the slot in each rotated axis
+    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
+    
+    // Convert (tx, ty) to rotated coordinates (u, v)
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
+    
+    // Clamp in rotated coordinate system
+    const uClamped = Math.max(-maxU, Math.min(maxU, u));
+    const vClamped = Math.max(-maxV, Math.min(maxV, v));
+    
+    // Convert back to (tx, ty) using inverse rotation
+    // tx = u * cos - v * sin
+    // ty = u * sin + v * cos
+    return {
+      x: uClamped * cos - vClamped * sin,
+      y: uClamped * sin + vClamped * cos,
     };
-    // #region agent log - debug max translation
-    runOnJS(debugBoundingBox)('max_translation', {
-      scaledWidth,
-      scaledHeight,
-      boundingWidth,
-      boundingHeight,
-      slotWidth,
-      slotHeight,
-      rotation: rotationDeg,
-      maxX: result.maxX,
-      maxY: result.maxY
-    });
-    // #endregion
-    return result;
-  }, [baseImageSize, slotWidth, slotHeight, getRotatedBoundingBox, debugBoundingBox]);
-
-  // #region agent log - debug clamp calculation
-  const debugClamp = useCallback((msg: string, data: any) => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:clampTranslation',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-C'})}).catch(()=>{});
-  }, []);
-  // #endregion
-
-  // Clamp translation to keep ROTATED image covering slot
-  const clampTranslation = useCallback((tx: number, ty: number, currentScale: number, rotationDeg: number) => {
+  }, [baseImageSize, slotWidth, slotHeight]);
+  
+  // Get max translation in rotated coordinates for normalization
+  const getMaxUV = useCallback((currentScale: number, rotationDeg: number) => {
     'worklet';
-    const { maxX, maxY } = getMaxTranslation(currentScale, rotationDeg);
-    const result = {
-      x: Math.max(-maxX, Math.min(maxX, tx)),
-      y: Math.max(-maxY, Math.min(maxY, ty)),
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const absCos = Math.abs(Math.cos(angleRad));
+    const absSin = Math.abs(Math.sin(angleRad));
+    
+    return {
+      maxU: Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin)),
+      maxV: Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos)),
     };
-    // #region agent log - debug clamp values
-    runOnJS(debugClamp)('clamp_values', {
-      inputTx: tx,
-      inputTy: ty,
-      scale: currentScale,
-      rotation: rotationDeg,
-      maxX,
-      maxY,
-      outputX: result.x,
-      outputY: result.y
-    });
-    // #endregion
-    return result;
-  }, [getMaxTranslation, debugClamp]);
+  }, [baseImageSize, slotWidth, slotHeight]);
 
-  // Report adjustment to parent
+  // Report adjustment to parent - normalize in ROTATED coordinates
+  // This ensures the saved values can be properly reconstructed
   const reportAdjustment = useCallback(() => {
     const currentScale = scale.value;
     const currentRot = rotation.value;
-    const { maxX, maxY } = getMaxTranslation(currentScale, currentRot);
+    const tx = translateX.value;
+    const ty = translateY.value;
     
-    onAdjustmentChange({
+    // Convert screen coords (tx, ty) to rotated coords (u, v)
+    const angleRad = (currentRot * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
+    
+    // Get max values in rotated coordinates
+    const { maxU, maxV } = getMaxUV(currentScale, currentRot);
+    
+    const adjustments = {
       scale: currentScale,
-      translateX: maxX > 0 ? translateX.value / maxX : 0,
-      translateY: maxY > 0 ? translateY.value / maxY : 0,
+      translateX: maxU > 0 ? u / maxU : 0,
+      translateY: maxV > 0 ? v / maxV : 0,
       rotation: currentRot,
-    });
-  }, [getMaxTranslation, onAdjustmentChange, scale, translateX, translateY, rotation]);
-
-  // #region agent log - debug pan gesture
-  const debugPanGesture = useCallback((msg: string, data: any) => {
-    console.log('[DEBUG-PAN]', msg, JSON.stringify(data));
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:panGesture',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A-B-C'})}).catch(()=>{});
-  }, []);
-  // #endregion
+    };
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:reportAdjustment',message:'Reporting adjustments to parent',data:{adjustments,maxU,maxV},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'scale-fix'})}).catch(()=>{});
+    // #endregion
+    
+    // Report normalized values in rotated coordinate system
+    // translateX now represents normalized U, translateY represents normalized V
+    onAdjustmentChange(adjustments);
+  }, [getMaxUV, onAdjustmentChange, scale, translateX, translateY, rotation, baseImageSize, slotWidth, slotHeight]);
 
   // Pan gesture - drag to reposition
   const panGesture = useMemo(() =>
@@ -395,7 +438,7 @@ function CropOverlay({
       })
       .onUpdate((event) => {
         'worklet';
-        // Pass rotation to clampTranslation to account for rotated bounding box
+        // Pass rotation to clampTranslation to account for rotated image coverage
         const clamped = clampTranslation(
           startTranslateX.value + event.translationX,
           startTranslateY.value + event.translationY,
@@ -407,24 +450,56 @@ function CropOverlay({
       })
       .onEnd(() => {
         'worklet';
-        // #region agent log - debug pan end
-        runOnJS(debugPanGesture)('pan_end', {
-          finalTx: translateX.value,
-          finalTy: translateY.value,
-          scale: scale.value,
-          rotation: rotation.value,
-          slotWidth,
-          slotHeight,
-          baseW: baseImageSize.width,
-          baseH: baseImageSize.height
-        });
-        // #endregion
         runOnJS(reportAdjustment)();
       }),
-    [clampTranslation, reportAdjustment, debugPanGesture, slotWidth, slotHeight, baseImageSize]
+    [clampTranslation, reportAdjustment]
   );
 
-  // Pinch gesture - zoom in/out (minimum scale depends on rotation state)
+  // Calculate the minimum scale needed for the rotated image to cover the slot
+  // at the current translation position. This allows zooming out until an edge touches.
+  const getMinScaleForPosition = useCallback((tx: number, ty: number, rotationDeg: number) => {
+    'worklet';
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    const baseHalfW = baseImageSize.width / 2;
+    const baseHalfH = baseImageSize.height / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    
+    // For each slot corner, calculate the minimum scale needed
+    // Slot corners relative to slot center (which is image center at tx=ty=0)
+    const corners = [
+      { x: halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: halfSlotH },
+      { x: -halfSlotW, y: -halfSlotH },
+      { x: halfSlotW, y: -halfSlotH },
+    ];
+    
+    let minScale = BASE_MIN_SCALE; // Absolute minimum
+    
+    for (const corner of corners) {
+      // Corner position relative to image center (accounting for translation)
+      const cx = corner.x - tx;
+      const cy = corner.y - ty;
+      
+      // Transform to image-local coordinates (rotate back)
+      const localX = cx * cos + cy * sin;
+      const localY = -cx * sin + cy * cos;
+      
+      // For corner to be inside image: |localX| ≤ halfW * scale, |localY| ≤ halfH * scale
+      // So: scale ≥ |localX| / baseHalfW and scale ≥ |localY| / baseHalfH
+      const scaleForX = Math.abs(localX) / baseHalfW;
+      const scaleForY = Math.abs(localY) / baseHalfH;
+      
+      minScale = Math.max(minScale, scaleForX, scaleForY);
+    }
+    
+    return minScale;
+  }, [slotWidth, slotHeight, baseImageSize]);
+
+  // Pinch gesture - zoom in/out with DYNAMIC minimum scale based on position
   const pinchGesture = useMemo(() =>
     Gesture.Pinch()
       .onStart(() => {
@@ -435,12 +510,21 @@ function CropOverlay({
       })
       .onUpdate((event) => {
         'worklet';
-        // Enforce current minimum scale (depends on whether rotating)
-        const newScale = Math.max(currentMinScale, Math.min(MAX_SCALE, startScale.value * event.scale));
+        const proposedScale = startScale.value * event.scale;
+        
+        // Calculate the minimum scale needed at current position
+        // This allows zooming out until an edge touches the slot
+        const dynamicMinScale = getMinScaleForPosition(
+          startTranslateX.value,
+          startTranslateY.value,
+          rotation.value
+        );
+        
+        // Clamp scale between dynamic minimum and maximum
+        const newScale = Math.max(dynamicMinScale, Math.min(MAX_SCALE, proposedScale));
         scale.value = newScale;
         
         // Adjust translation proportionally and clamp
-        // Pass rotation to account for rotated bounding box
         const scaleRatio = newScale / startScale.value;
         const clamped = clampTranslation(
           startTranslateX.value * scaleRatio,
@@ -455,7 +539,7 @@ function CropOverlay({
         'worklet';
         runOnJS(reportAdjustment)();
       }),
-    [clampTranslation, reportAdjustment, currentMinScale]
+    [clampTranslation, reportAdjustment, getMinScaleForPosition]
   );
 
   // Combine gestures (pan + pinch only, rotation via slider)
@@ -463,12 +547,6 @@ function CropOverlay({
     Gesture.Simultaneous(panGesture, pinchGesture),
     [panGesture, pinchGesture]
   );
-
-  // #region agent log - debug image bounds
-  const debugImageBounds = useCallback((msg: string, data: any) => {
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:getImageBounds',message:msg,data,timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C-D'})}).catch(()=>{});
-  }, []);
-  // #endregion
 
   // Calculate image bounds for rendering
   const getImageBounds = useCallback((s: number, tx: number, ty: number) => {

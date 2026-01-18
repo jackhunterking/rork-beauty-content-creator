@@ -72,8 +72,7 @@ function mapRowToDraft(row: DraftRow): Draft {
  */
 export async function fetchDrafts(): Promise<Draft[]> {
   // Ensure user is authenticated (RLS will handle filtering)
-  const userId = await getCurrentUserId();
-  console.log('[DraftService] Fetching drafts for user:', userId.substring(0, 8));
+  await getCurrentUserId();
   
   const { data, error } = await supabase
     .from('drafts')
@@ -84,12 +83,6 @@ export async function fetchDrafts(): Promise<Draft[]> {
     console.error('Error fetching drafts:', error);
     throw error;
   }
-
-  console.log('[DraftService] Fetched drafts from Supabase:', {
-    count: data?.length || 0,
-    draftIds: data?.map(d => d.id.substring(0, 8)) || [],
-    templateIds: data?.map(d => d.template_id.substring(0, 8)) || [],
-  });
 
   // Map database rows to Draft objects and check for local preview files
   const drafts = (data as DraftRow[]).map(mapRowToDraft);
@@ -289,20 +282,16 @@ export async function saveDraftWithImages(
 
     // Create or get existing draft
     if (existingDraftId) {
+      // Update existing draft (user explicitly editing a saved draft)
       const existingDraft = await fetchDraftById(existingDraftId);
       if (!existingDraft) {
         throw new Error('Draft not found');
       }
       draft = existingDraft;
     } else {
-      // Check if there's an existing draft for this template (for current user)
-      const existingDraft = await fetchDraftByTemplateId(templateId);
-      if (existingDraft) {
-        draft = existingDraft;
-      } else {
-        // Create a new draft first to get the ID (user_id will be set automatically)
-        draft = await createDraft(templateId);
-      }
+      // Always create a new draft when no existingDraftId is provided
+      // This allows multiple drafts per template and prevents overwriting old drafts
+      draft = await createDraft(templateId);
     }
 
     // Upload images if they are local URIs (not already Supabase URLs)
@@ -313,23 +302,19 @@ export async function saveDraftWithImages(
     // Handle legacy before/after format
     // Upload before image if it's a new local file
     if (beforeImageUri && !isSupabaseStorageUrl(beforeImageUri)) {
-      console.log('[DraftService] Uploading before image from local:', beforeImageUri.substring(0, 50));
       beforeImageUrl = await uploadDraftImage(draft.id, beforeImageUri, 'before');
     } else if (beforeImageUri === null) {
       beforeImageUrl = null;
     } else if (beforeImageUri) {
-      // Keep existing Supabase URL
       beforeImageUrl = beforeImageUri;
     }
 
     // Upload after image if it's a new local file
     if (afterImageUri && !isSupabaseStorageUrl(afterImageUri)) {
-      console.log('[DraftService] Uploading after image from local:', afterImageUri.substring(0, 50));
       afterImageUrl = await uploadDraftImage(draft.id, afterImageUri, 'after');
     } else if (afterImageUri === null) {
       afterImageUrl = null;
     } else if (afterImageUri) {
-      // Keep existing Supabase URL
       afterImageUrl = afterImageUri;
     }
 
@@ -342,15 +327,11 @@ export async function saveDraftWithImages(
       
       for (const [slotId, uri] of Object.entries(capturedImageUris)) {
         if (uri && !isSupabaseStorageUrl(uri)) {
-          // Upload new local image
-          console.log(`[DraftService] Uploading slot ${slotId} from local:`, uri.substring(0, 50));
           const publicUrl = await uploadDraftImage(draft.id, uri, slotId);
           newCapturedImageUrls[slotId] = publicUrl;
         } else if (uri) {
-          // Keep existing Supabase URL
           newCapturedImageUrls[slotId] = uri;
         }
-        // If uri is empty/null/undefined, the slot won't be included
       }
       
       capturedImageUrls = newCapturedImageUrls;
@@ -393,10 +374,8 @@ export async function deleteDraft(id: string): Promise<void> {
     try {
       const localDraftDir = getDraftDirectory(id);
       await deleteDirectory(localDraftDir);
-      console.log('[DraftService] Deleted local draft directory:', localDraftDir);
-    } catch (localError) {
+    } catch {
       // Non-critical - local files may not exist
-      console.warn('[DraftService] Failed to delete local files:', localError);
     }
 
     // Then delete the draft record from database

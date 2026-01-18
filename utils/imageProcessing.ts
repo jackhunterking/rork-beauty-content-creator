@@ -537,7 +537,54 @@ export async function applyAdjustmentsAndCrop(
 ): Promise<{ uri: string; width: number; height: number }> {
   const { translateX, translateY, scale, rotation = 0 } = adjustments;
   
-  // First, apply rotation if needed
+  // IMPORTANT: translateX and translateY are NORMALIZED values in ROTATED coordinates
+  // They were normalized using the ORIGINAL image's baseImageSize in the UI
+  // We must use the SAME base calculations here
+  
+  // Calculate baseImageSize the SAME way as the UI does (using ORIGINAL image dimensions)
+  // This is the "cover fit" size for the unrotated image
+  const originalAspect = imageWidth / imageHeight;
+  const slotAspect = targetWidth / targetHeight;
+  
+  let baseW: number, baseH: number;
+  if (originalAspect > slotAspect) {
+    // Image is wider - height fits slot, width overflows
+    baseH = targetHeight;
+    baseW = baseH * originalAspect;
+  } else {
+    // Image is taller - width fits slot, height overflows
+    baseW = targetWidth;
+    baseH = baseW / originalAspect;
+  }
+  
+  // The scaled base size (what the UI displays at the given scale)
+  const scaledBaseW = baseW * scale;
+  const scaledBaseH = baseH * scale;
+  
+  // Calculate maxU/maxV the SAME way as the UI
+  const halfW = scaledBaseW / 2;
+  const halfH = scaledBaseH / 2;
+  const halfSlotW = targetWidth / 2;
+  const halfSlotH = targetHeight / 2;
+  
+  const angleRad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const absCos = Math.abs(cos);
+  const absSin = Math.abs(sin);
+  
+  const maxU = Math.max(0.001, halfW - (halfSlotW * absCos + halfSlotH * absSin));
+  const maxV = Math.max(0.001, halfH - (halfSlotW * absSin + halfSlotH * absCos));
+  
+  // Denormalize: get actual translation in rotated coordinates (u, v)
+  const u = translateX * maxU;
+  const v = translateY * maxV;
+  
+  // Convert rotated coords (u, v) to screen coords (tx, ty)
+  const tx = u * cos - v * sin;
+  const ty = u * sin + v * cos;
+  
+  // Now apply rotation to the source image
   let currentUri = uri;
   let currentWidth = imageWidth;
   let currentHeight = imageHeight;
@@ -551,52 +598,33 @@ export async function applyAdjustmentsAndCrop(
     currentUri = rotated.uri;
     currentWidth = rotated.width;
     currentHeight = rotated.height;
-    
   }
   
-  // Calculate the visible region based on adjustments
-  // The adjustments are relative to the display frame:
-  // - scale: how much the image is zoomed (1.0 = fill frame exactly)
-  // - translateX/Y: offset from center (in frame-relative coordinates, -0.5 to 0.5)
+  // The displayed image is ROTATED, so its bounding box is larger than scaledBase
+  // Calculate the displayed rotated image size in slot pixel coordinates
+  const displayedRotatedW = scaledBaseW * absCos + scaledBaseH * absSin;
+  const displayedRotatedH = scaledBaseW * absSin + scaledBaseH * absCos;
   
-  // The "virtual" size of the image as displayed (scaled)
-  const scaledWidth = currentWidth * scale;
-  const scaledHeight = currentHeight * scale;
+  // Ratio from slot pixels to rotated source pixels (should be ~equal for W and H)
+  const displayToSourceRatio = currentWidth / displayedRotatedW;
+  // Note: currentHeight / displayedRotatedH should give the same ratio
   
-  // The visible frame dimensions relative to the scaled image
-  const frameWidth = currentWidth / (scale * (currentWidth / targetWidth));
-  const frameHeight = currentHeight / (scale * (currentHeight / targetHeight));
+  // Convert tx/ty to rotated source image pixel offsets
+  const pixelOffsetX = tx * displayToSourceRatio;
+  const pixelOffsetY = ty * displayToSourceRatio;
   
-  // Calculate the visible region's top-left corner
-  // translateX/Y are relative offsets (-0.5 to 0.5 of the available movement range)
-  const maxOffsetX = (scaledWidth - targetWidth) / 2;
-  const maxOffsetY = (scaledHeight - targetHeight) / 2;
-  
-  // Convert relative offsets to pixel offsets on the source image
-  const pixelOffsetX = translateX * maxOffsetX * 2 / scale;
-  const pixelOffsetY = translateY * maxOffsetY * 2 / scale;
-  
-  // Calculate crop region
-  // Center of the image plus offset, then calculate top-left corner
-  const cropWidth = currentWidth / scale;
-  const cropHeight = currentHeight / scale;
-  
-  // Ensure crop dimensions match target aspect ratio
-  const targetAspectRatio = targetWidth / targetHeight;
-  let finalCropWidth = cropWidth;
-  let finalCropHeight = cropHeight;
-  
-  if (cropWidth / cropHeight > targetAspectRatio) {
-    finalCropWidth = cropHeight * targetAspectRatio;
-  } else {
-    finalCropHeight = cropWidth / targetAspectRatio;
-  }
+  // Crop dimensions: the slot (targetWidth × targetHeight) converted to source pixels
+  const cropWidth = targetWidth * displayToSourceRatio;
+  const cropHeight = targetHeight * displayToSourceRatio;
   
   // Calculate origin (top-left corner of crop region)
-  let originX = (currentWidth - finalCropWidth) / 2 - pixelOffsetX;
-  let originY = (currentHeight - finalCropHeight) / 2 - pixelOffsetY;
+  // Positive tx means image moved right → visible region is to the LEFT of center → subtract offset
+  let originX = (currentWidth - cropWidth) / 2 - pixelOffsetX;
+  let originY = (currentHeight - cropHeight) / 2 - pixelOffsetY;
   
   // Clamp to valid bounds
+  const finalCropWidth = Math.min(Math.max(1, cropWidth), currentWidth);
+  const finalCropHeight = Math.min(Math.max(1, cropHeight), currentHeight);
   originX = Math.max(0, Math.min(currentWidth - finalCropWidth, originX));
   originY = Math.max(0, Math.min(currentHeight - finalCropHeight, originY));
   

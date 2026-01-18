@@ -87,6 +87,7 @@ export async function loadOverlays(draftId: string): Promise<Overlay[]> {
     });
     
     const overlays = JSON.parse(data) as Overlay[];
+    
     console.log(`[OverlayPersistence] Successfully loaded ${overlays.length} overlays for draft:`, draftId, {
       overlayTypes: overlays.map(o => o.type),
       overlayIds: overlays.map(o => o.id),

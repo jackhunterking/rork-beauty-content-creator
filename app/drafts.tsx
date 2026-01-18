@@ -15,8 +15,7 @@ import { useRouter, Stack } from 'expo-router';
 import { Image as ImageIcon, Square, RectangleVertical, RectangleHorizontal, Clock, ChevronLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { Draft, Template, TemplateFormat } from '@/types';
-import { extractSlots } from '@/utils/slotParser';
+import { Draft, TemplateFormat } from '@/types';
 import { getDraftPreviewUri } from '@/services/imageUtils';
 import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
 import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
@@ -42,23 +41,6 @@ const formatFilters = getAllFormats().map(config => ({
   label: config.id,
 }));
 
-// Format relative time
-const formatTimeAgo = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
 export default function DraftsScreen() {
   const router = useRouter();
   const { 
@@ -72,19 +54,9 @@ export default function DraftsScreen() {
   // Responsive configuration
   const responsive = useResponsive();
 
-  // DEBUG: Log drafts and templates on every render
-  console.log('[DraftsScreen] Render:', {
-    draftsCount: drafts.length,
-    templatesCount: templates.length,
-    isDraftsLoading,
-    draftIds: drafts.map(d => d.id.substring(0, 8)),
-    draftTemplateIds: drafts.map(d => d.templateId.substring(0, 8)),
-  });
-
   // Refresh drafts whenever the screen gains focus
   useFocusEffect(
     useCallback(() => {
-      console.log('[DraftsScreen] Screen focused - refreshing drafts');
       refreshDrafts();
     }, [refreshDrafts])
   );
@@ -103,25 +75,6 @@ export default function DraftsScreen() {
     [templates]
   );
 
-  // Get slot progress for a draft
-  const getDraftSlotProgress = useCallback((draft: Draft, template: Template | undefined) => {
-    if (!template) return { filled: 0, total: 2 };
-    const slots = extractSlots(template);
-    const total = slots.length;
-    let filled = 0;
-    
-    // Check new format
-    if (draft.capturedImageUrls) {
-      filled = Object.keys(draft.capturedImageUrls).length;
-    } else {
-      // Legacy format
-      if (draft.beforeImageUrl) filled++;
-      if (draft.afterImageUrl) filled++;
-    }
-    
-    return { filled, total };
-  }, []);
-
   // Dynamic tile height calculation
   const getTileHeight = useCallback((format: TemplateFormat) => {
     const config = getFormatById(format);
@@ -133,30 +86,11 @@ export default function DraftsScreen() {
 
   // Filter drafts by format
   const filteredDrafts = useMemo(() => {
-    // DEBUG: Log each draft's template matching
-    const results = drafts.map(draft => {
+    return drafts.filter(draft => {
       const template = getTemplateForDraft(draft.templateId);
-      const matches = template?.format === selectedFormat;
-      console.log('[DraftsScreen] Draft filter:', {
-        draftId: draft.id.substring(0, 8),
-        templateId: draft.templateId.substring(0, 8),
-        templateFound: !!template,
-        templateFormat: template?.format,
-        selectedFormat,
-        matches,
-      });
-      return { draft, matches };
+      return template?.format === selectedFormat;
     });
-    
-    const filtered = results.filter(r => r.matches).map(r => r.draft);
-    console.log('[DraftsScreen] Filter result:', {
-      selectedFormat,
-      totalDrafts: drafts.length,
-      matchingDrafts: filtered.length,
-    });
-    
-    return filtered;
-  }, [drafts, selectedFormat, getTemplateForDraft]);
+  }, [drafts, selectedFormat, getTemplateForDraft, templates.length]);
 
   // Handle format filter selection
   const handleFormatSelect = useCallback((format: TemplateFormat) => {
@@ -169,7 +103,7 @@ export default function DraftsScreen() {
     if (!template) return;
     
     loadDraft(draft, template);
-    router.push('/editor');
+    router.push('/editor-v2');
   }, [getTemplateForDraft, loadDraft, router]);
 
   // Dynamic styles
@@ -294,7 +228,6 @@ export default function DraftsScreen() {
             {filteredDrafts.map((draft) => {
               const template = getTemplateForDraft(draft.templateId);
               const previewUri = getDraftPreviewUri(draft);
-              const progress = getDraftSlotProgress(draft, template);
               const format = template?.format || '1:1';
               
               return (
@@ -314,26 +247,15 @@ export default function DraftsScreen() {
                       style={styles.draftThumbnail}
                       contentFit="cover"
                       transition={200}
+                      // For local files, disable disk caching to ensure fresh content
+                      // Local preview files change content without changing path
+                      cachePolicy={previewUri.startsWith('file://') ? 'memory' : 'memory-disk'}
                     />
                   ) : (
                     <View style={styles.draftPlaceholder}>
                       <ImageIcon size={32} color={Colors.light.textTertiary} />
                     </View>
                   )}
-                  
-                  {/* Progress badge */}
-                  <View style={styles.progressBadge}>
-                    <Text style={styles.progressText}>
-                      {progress.filled}/{progress.total}
-                    </Text>
-                  </View>
-                  
-                  {/* Time overlay */}
-                  <View style={styles.timeOverlay}>
-                    <Text style={styles.timeText} numberOfLines={1}>
-                      {formatTimeAgo(draft.updatedAt)}
-                    </Text>
-                  </View>
                 </Pressable>
               );
             })}
@@ -470,33 +392,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  progressBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  progressText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
-  },
-  timeOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  timeText: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: Colors.light.surface,
   },
 });

@@ -84,23 +84,32 @@ export function withCacheBust(
  */
 export function getDraftPreviewUri(draft: Draft): string | null {
   let uri: string | null = null;
+  let source: string = 'none';
   
   // Priority: localPreviewPath > renderedPreviewUrl > captured images
   if (draft.localPreviewPath) {
     uri = draft.localPreviewPath;
+    source = 'localPreviewPath';
   } else if (draft.renderedPreviewUrl) {
     uri = draft.renderedPreviewUrl;
+    source = 'renderedPreviewUrl';
   } else if (draft.beforeImageUrl) {
     uri = draft.beforeImageUrl;
+    source = 'beforeImageUrl';
   } else if (draft.afterImageUrl) {
     uri = draft.afterImageUrl;
+    source = 'afterImageUrl';
   } else if (draft.capturedImageUrls) {
     const firstImage = Object.values(draft.capturedImageUrls)[0];
-    if (firstImage) uri = firstImage;
+    if (firstImage) {
+      uri = firstImage;
+      source = 'capturedImageUrls';
+    }
   }
   
   // Apply cache busting using the draft's updatedAt timestamp
-  // This ensures the cache is invalidated when the draft is updated
+  // Note: For local files, the drafts screen also uses cachePolicy="memory" 
+  // to prevent aggressive disk caching of files that change content
   return withCacheBust(uri, draft.updatedAt);
 }
 
