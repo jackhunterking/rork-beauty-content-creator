@@ -203,14 +203,14 @@ export default function PublishScreen() {
       if (msg.includes('format')) {
         return 'This format is not supported. Please try again.';
       } else if (msg.includes('authenticated') || msg.includes('user must be')) {
-        return 'Please sign in to save to your portfolio.';
+        return 'Please sign in to save to your projects.';
       } else if (msg.includes('storage') || msg.includes('upload')) {
         return 'Failed to upload image. Please check your connection.';
       } else if (msg.includes('network') || msg.includes('fetch')) {
         return 'Network error. Please check your connection and try again.';
       }
     }
-    return 'Failed to save to your portfolio. Please try again.';
+    return 'Failed to save to your projects. Please try again.';
   }, []);
 
   // Show toast and auto-hide
@@ -309,7 +309,7 @@ export default function PublishScreen() {
   const handleRetryPortfolioSave = useCallback(async () => {
     const success = await saveToPortfolio();
     if (success) {
-      showToastMessage('Saved to portfolio!');
+      showToastMessage('Saved to projects!');
     }
   }, [saveToPortfolio, showToastMessage]);
 
@@ -440,7 +440,7 @@ export default function PublishScreen() {
                 {isCreatingPortfolio ? (
                   <View style={styles.previewLoading}>
                     <ActivityIndicator size="large" color={Colors.light.accent} />
-                    <Text style={styles.previewLoadingText}>Saving to portfolio...</Text>
+                    <Text style={styles.previewLoadingText}>Saving to projects...</Text>
                   </View>
                 ) : (
                   <Image
@@ -474,7 +474,7 @@ export default function PublishScreen() {
               {portfolioSaved && !portfolioSaveError && !isCreatingPortfolio && (
                 <View style={styles.portfolioSuccessContainer}>
                   <Check size={16} color={Colors.light.success} />
-                  <Text style={styles.portfolioSuccessText}>Saved to portfolio</Text>
+                  <Text style={styles.portfolioSuccessText}>Saved to projects</Text>
                 </View>
               )}
             </View>

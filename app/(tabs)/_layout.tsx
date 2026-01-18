@@ -94,7 +94,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="library"
         options={{
-          title: "Portfolio",
+          title: "Projects",
           tabBarIcon: ({ color }) => (
             <FolderOpen color={color} size={responsive.tabIconSize} />
           ),

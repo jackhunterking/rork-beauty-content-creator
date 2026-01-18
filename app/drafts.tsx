@@ -131,7 +131,7 @@ export default function DraftsScreen() {
       <SafeAreaView style={styles.container} edges={['bottom']}>
         <Stack.Screen
           options={{
-            title: 'Drafts',
+            title: 'Projects',
             headerBackVisible: false,
             headerLeft: () => (
               <TouchableOpacity
@@ -147,7 +147,7 @@ export default function DraftsScreen() {
         />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.light.accent} />
-          <Text style={styles.loadingText}>Loading drafts...</Text>
+          <Text style={styles.loadingText}>Loading projects...</Text>
         </View>
       </SafeAreaView>
     );
@@ -209,12 +209,12 @@ export default function DraftsScreen() {
             <Clock size={48} color={Colors.light.textTertiary} />
           </View>
           <Text style={styles.emptyTitle}>
-            {drafts.length === 0 ? 'No drafts yet' : `No ${selectedFormat} drafts`}
+            {drafts.length === 0 ? 'No projects yet' : `No ${selectedFormat} projects`}
           </Text>
           <Text style={styles.emptyText}>
             {drafts.length === 0 
-              ? 'Your saved drafts will appear here. Start creating and save your progress!'
-              : `You don't have any ${getFormatLabel(selectedFormat)} drafts yet.`
+              ? 'Your saved projects will appear here. Start creating and save your work!'
+              : `You don't have any ${getFormatLabel(selectedFormat)} projects yet.`
             }
           </Text>
         </View>

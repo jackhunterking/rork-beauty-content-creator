@@ -934,7 +934,7 @@ export default function EditorV2Screen() {
     if (capturedCount === 0) {
       Alert.alert(
         'Nothing to Save',
-        'Add at least one image before saving a draft.',
+        'Add at least one image before saving.',
         [{ text: 'OK', style: 'default' }]
       );
       return;
@@ -1022,7 +1022,7 @@ export default function EditorV2Screen() {
       
       if (!savedDraft?.id) {
         console.error('[EditorV2] Draft save returned null');
-        router.replace('/drafts');
+        router.replace('/(tabs)/library');
         return;
       }
 
@@ -1081,9 +1081,9 @@ export default function EditorV2Screen() {
       // Ensure drafts list is refreshed with fresh data BEFORE navigation
       // This guarantees the timestamp will be up-to-date when the screen renders
       await refreshDrafts();
-      console.log('[EditorV2] Drafts refreshed before navigation');
+      console.log('[EditorV2] Projects refreshed before navigation');
       
-      router.replace('/drafts');
+      router.replace('/(tabs)/library');
     } catch (error) {
       console.error('[EditorV2] Failed to save draft:', error);
       Alert.alert('Error', 'Failed to save draft. Please try again.');
@@ -1107,7 +1107,7 @@ export default function EditorV2Screen() {
             },
           },
           {
-            text: 'Save Draft',
+            text: 'Save',
             onPress: handleSaveDraft,
           },
         ],
@@ -1169,7 +1169,7 @@ export default function EditorV2Screen() {
       />
 
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* Header - Close left, Save Draft + Download right */}
+        {/* Header - Close left, Save + Download right */}
         <View style={styles.header}>
           {/* Left - Close Button */}
           <TouchableOpacity
@@ -1184,7 +1184,7 @@ export default function EditorV2Screen() {
 
           {/* Right - Action Buttons */}
           <View style={styles.headerButtonsRight}>
-            {/* Save Draft Button */}
+            {/* Save Button */}
             <TouchableOpacity
               style={[
                 styles.headerActionButton,

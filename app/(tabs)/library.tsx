@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   StyleSheet,
   View,
@@ -6,33 +7,24 @@ import {
   TouchableOpacity,
   ScrollView,
   Pressable,
-  Alert,
   ActivityIndicator,
-  Modal,
-  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import {
-  FolderOpen,
-  Plus,
+  Image as ImageIcon,
   Square,
   RectangleVertical,
   RectangleHorizontal,
-  X,
-  Download,
-  Share2,
-  Trash2,
-  Check,
+  FolderOpen,
+  Plus,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { PortfolioItem, TemplateFormat, PublishPlatform } from '@/types';
-import { downloadAndSaveToGallery } from '@/services/downloadService';
-import { downloadAndShare } from '@/services/shareService';
-import { getPortfolioPreviewUri } from '@/services/imageUtils';
-import { getAllFormats, getFormatById, getDefaultFormat, getFormatLabel, FormatConfig } from '@/constants/formats';
+import { Draft, TemplateFormat } from '@/types';
+import { getDraftPreviewUri } from '@/services/imageUtils';
+import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
 import { useResponsive, getResponsiveTileHeight } from '@/hooks/useResponsive';
 
 // Helper to get icon component for a format config
@@ -56,307 +48,34 @@ const formatFilters = getAllFormats().map(config => ({
   label: config.id,
 }));
 
-// Platform options (simplified - only Save to Photos and Share)
-interface PlatformOption {
-  id: PublishPlatform;
-  name: string;
-  icon: string;
-}
-
-const PLATFORM_OPTIONS: PlatformOption[] = [
-  { id: 'download', name: 'Save to Photos', icon: 'download' },
-  { id: 'share', name: 'Share', icon: 'share' },
-];
-
-// Get icon component for platform
-const getPlatformIcon = (iconName: string, size: number) => {
-  switch (iconName) {
-    case 'download':
-      return <Download size={size} color={Colors.light.text} />;
-    case 'share':
-      return <Share2 size={size} color={Colors.light.text} />;
-    default:
-      return <Share2 size={size} color={Colors.light.text} />;
-  }
-};
-
-// Format date
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-};
-
-// Toast component for save confirmation
-const Toast = ({ visible, message }: { visible: boolean; message: string }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 50,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [visible, fadeAnim, slideAnim]);
-
-  if (!visible) return null;
-
-  return (
-    <Animated.View
-      style={[
-        styles.toast,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
-    >
-      <View style={styles.toastContent}>
-        <View style={styles.toastIconContainer}>
-          <Check size={16} color={Colors.light.surface} />
-        </View>
-        <Text style={styles.toastText}>{message}</Text>
-      </View>
-    </Animated.View>
-  );
-};
-
-// Bottom Sheet Component
-interface BottomSheetProps {
-  visible: boolean;
-  item: PortfolioItem | null;
-  onClose: () => void;
-  onDelete: () => void;
-  onPlatformAction: (platformId: PublishPlatform) => void;
-  isProcessing: boolean;
-  processingPlatform: string | null;
-  screenWidth: number;
-  screenHeight: number;
-  isTablet: boolean;
-}
-
-const BottomSheet = ({ 
-  visible, 
-  item, 
-  onClose, 
-  onDelete, 
-  onPlatformAction,
-  isProcessing,
-  processingPlatform,
-  screenWidth,
-  screenHeight,
-  isTablet,
-}: BottomSheetProps) => {
-  const slideAnim = useRef(new Animated.Value(screenHeight)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        damping: 20,
-        stiffness: 150,
-      }).start();
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: screenHeight,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [visible, slideAnim, screenHeight]);
-
-  if (!item) return null;
-
-  // Calculate preview dimensions dynamically based on format
-  const previewMaxWidth = Math.min(screenWidth - 80, 400);
-  const previewDimensions = (() => {
-    const config = getFormatById(item.format);
-    if (!config) {
-      // Fallback to square
-      return { width: Math.min(previewMaxWidth * 0.6, 200), height: Math.min(previewMaxWidth * 0.6, 200) };
-    }
-    
-    // Adjust base width based on aspect ratio (narrower for tall formats)
-    const baseWidthMultiplier = config.aspectRatio < 0.7 ? 0.5 : config.aspectRatio < 0.9 ? 0.55 : 0.6;
-    const maxWidth = config.aspectRatio < 0.7 ? 150 : config.aspectRatio < 0.9 ? 175 : 200;
-    
-    const previewWidth = Math.min(previewMaxWidth * baseWidthMultiplier, maxWidth);
-    const previewHeight = previewWidth / config.aspectRatio;
-    
-    return { width: previewWidth, height: previewHeight };
-  })();
-
-  // Constrain bottom sheet width on iPad
-  const sheetMaxWidth = isTablet ? 500 : screenWidth;
-  const platformCardWidth = isTablet 
-    ? (sheetMaxWidth - 60 - 10) / 2 
-    : (screenWidth - 40 - 10) / 2;
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={onClose}
-    >
-      <View style={styles.bottomSheetOverlay}>
-        <Pressable style={styles.bottomSheetBackdrop} onPress={onClose} />
-        <Animated.View 
-          style={[
-            styles.bottomSheetContainer,
-            { 
-              transform: [{ translateY: slideAnim }],
-              maxWidth: sheetMaxWidth,
-              alignSelf: 'center',
-              width: '100%',
-            }
-          ]}
-        >
-          {/* Handle bar */}
-          <View style={styles.bottomSheetHandle}>
-            <View style={styles.bottomSheetHandleBar} />
-          </View>
-
-          {/* Header with close button */}
-          <View style={styles.bottomSheetHeader}>
-            <View style={styles.bottomSheetDateContainer}>
-              <Text style={styles.bottomSheetDateText}>{formatDate(item.createdAt)}</Text>
-              <Text style={styles.bottomSheetFormatText}>{getFormatLabel(item.format)}</Text>
-            </View>
-            <TouchableOpacity style={styles.bottomSheetCloseButton} onPress={onClose}>
-              <X size={20} color={Colors.light.text} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Preview Image */}
-          <View style={styles.bottomSheetPreviewContainer}>
-            <View style={[styles.bottomSheetPreview, previewDimensions]}>
-              <Image
-                source={{ uri: getPortfolioPreviewUri(item) }}
-                style={styles.bottomSheetPreviewImage}
-                contentFit="cover"
-                transition={200}
-              />
-            </View>
-          </View>
-
-          {/* Platform Options Grid */}
-          <View style={styles.platformsSection}>
-            <Text style={styles.platformsSectionTitle}>Share to</Text>
-            <View style={styles.platformsGrid}>
-              {PLATFORM_OPTIONS.map((platform) => {
-                const isThisPlatformProcessing = processingPlatform === platform.id;
-                
-                return (
-                  <TouchableOpacity
-                    key={platform.id}
-                    style={[
-                      styles.platformCard,
-                      { width: platformCardWidth },
-                      isProcessing && !isThisPlatformProcessing && styles.platformCardDisabled,
-                    ]}
-                    onPress={() => onPlatformAction(platform.id)}
-                    disabled={isProcessing}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.platformIconContainer}>
-                      {isThisPlatformProcessing ? (
-                        <ActivityIndicator size="small" color={Colors.light.accent} />
-                      ) : (
-                        getPlatformIcon(platform.icon, 28)
-                      )}
-                    </View>
-                    <Text style={styles.platformName}>{platform.name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Delete Button */}
-          <TouchableOpacity 
-            style={styles.deleteButton} 
-            onPress={onDelete}
-            disabled={isProcessing}
-            activeOpacity={0.7}
-          >
-            <Trash2 size={18} color={Colors.light.error} />
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-};
-
-export default function PortfolioScreen() {
+export default function ProjectsScreen() {
   const router = useRouter();
-  const {
-    portfolio,
-    isPortfolioLoading,
-    deleteFromPortfolio,
+  const { 
+    drafts,
+    templates,
+    loadDraft,
+    isDraftsLoading,
+    refreshDrafts,
   } = useApp();
 
   // Responsive configuration
   const responsive = useResponsive();
 
-  // Format filter state - use centralized default
-  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat | 'all'>(getDefaultFormat() as TemplateFormat);
-  
-  // Bottom sheet state
-  const [selectedItem, setSelectedItem] = useState<PortfolioItem | null>(null);
-  const [isBottomSheetVisible, setIsBottomSheetVisible] = useState(false);
-  
-  // Processing state for share/download actions
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingPlatform, setProcessingPlatform] = useState<string | null>(null);
-  
-  // Toast state
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  // Refresh projects whenever the screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshDrafts();
+    }, [refreshDrafts])
+  );
 
-  // Filter portfolio by selected format
-  const filteredPortfolio = useMemo(() => {
-    if (selectedFormat === 'all') return portfolio;
-    return portfolio.filter(item => item.format === selectedFormat);
-  }, [portfolio, selectedFormat]);
+  // Local state for format filter - use centralized default
+  const [selectedFormat, setSelectedFormat] = useState<TemplateFormat>(getDefaultFormat() as TemplateFormat);
+
+  // Get template for a draft
+  const getTemplateForDraft = useCallback((templateId: string) => 
+    templates.find(t => t.id === templateId), 
+    [templates]
+  );
 
   // Dynamic tile height calculation
   const getTileHeight = useCallback((format: TemplateFormat) => {
@@ -367,98 +86,27 @@ export default function PortfolioScreen() {
     return responsive.tileWidth;
   }, [responsive.tileWidth]);
 
-  // Show toast message
-  const showToastMessage = useCallback((message: string) => {
-    setToastMessage(message);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
-  }, []);
-
-  // Handle portfolio item press - open bottom sheet
-  const handleItemPress = useCallback((item: PortfolioItem) => {
-    setSelectedItem(item);
-    setIsBottomSheetVisible(true);
-  }, []);
-
-  // Handle close bottom sheet
-  const handleCloseBottomSheet = useCallback(() => {
-    setIsBottomSheetVisible(false);
-    setTimeout(() => setSelectedItem(null), 300);
-  }, []);
-
-  // Handle delete
-  const handleDelete = useCallback(() => {
-    if (!selectedItem) return;
-
-    Alert.alert(
-      'Delete',
-      'Are you sure you want to remove this from your portfolio?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteFromPortfolio(selectedItem.id);
-              handleCloseBottomSheet();
-            } catch {
-              // Error handled silently
-            }
-          },
-        },
-      ]
-    );
-  }, [selectedItem, deleteFromPortfolio, handleCloseBottomSheet]);
-
-  // Handle platform action (share/download)
-  const handlePlatformAction = useCallback(async (platformId: PublishPlatform) => {
-    if (!selectedItem?.imageUrl) {
-      Alert.alert('Error', 'No image available');
-      return;
-    }
-
-    setIsProcessing(true);
-    setProcessingPlatform(platformId);
-
-    try {
-      switch (platformId) {
-        case 'download':
-          const downloadResult = await downloadAndSaveToGallery(selectedItem.imageUrl);
-          if (!downloadResult.success) {
-            throw new Error(downloadResult.error || 'Download failed');
-          }
-          showToastMessage('Saved! You can view it in your photo library');
-          break;
-
-        case 'share':
-          const shareResult = await downloadAndShare(selectedItem.imageUrl, undefined, {
-            mimeType: 'image/jpeg',
-            dialogTitle: 'Share your creation',
-          });
-          if (!shareResult.success) {
-            throw new Error(shareResult.error || 'Share failed');
-          }
-          // Close bottom sheet after successful share
-          handleCloseBottomSheet();
-          break;
-      }
-    } catch (error) {
-      console.error('Platform action failed:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error ? error.message : 'Something went wrong'
-      );
-    } finally {
-      setIsProcessing(false);
-      setProcessingPlatform(null);
-    }
-  }, [selectedItem, showToastMessage, handleCloseBottomSheet]);
+  // Filter projects by format
+  const filteredProjects = useMemo(() => {
+    return drafts.filter(draft => {
+      const template = getTemplateForDraft(draft.templateId);
+      return template?.format === selectedFormat;
+    });
+  }, [drafts, selectedFormat, getTemplateForDraft, templates.length]);
 
   // Handle format filter selection
-  const handleFormatSelect = useCallback((format: TemplateFormat | 'all') => {
+  const handleFormatSelect = useCallback((format: TemplateFormat) => {
     setSelectedFormat(format);
   }, []);
+
+  // Handle resume project (open in editor)
+  const handleResumeProject = useCallback((draft: Draft) => {
+    const template = getTemplateForDraft(draft.templateId);
+    if (!template) return;
+    
+    loadDraft(draft, template);
+    router.push('/editor-v2');
+  }, [getTemplateForDraft, loadDraft, router]);
 
   // Handle start creating
   const handleStartCreating = useCallback(() => {
@@ -486,38 +134,15 @@ export default function PortfolioScreen() {
         ? responsive.columns * responsive.tileWidth + (responsive.columns - 1) * responsive.gridGap 
         : undefined,
     },
-    itemTile: {
+    projectTile: {
       width: responsive.tileWidth,
     },
   }), [responsive]);
 
-  // Render a portfolio card (clean, no overlays)
-  const renderPortfolioCard = useCallback(
-    (item: PortfolioItem) => {
-      const tileHeight = getTileHeight(item.format);
-
-      return (
-        <Pressable
-          key={item.id}
-          style={[styles.itemTile, dynamicStyles.itemTile, { height: tileHeight }]}
-          onPress={() => handleItemPress(item)}
-        >
-          <Image
-            source={{ uri: getPortfolioPreviewUri(item) }}
-            style={styles.itemThumbnail}
-            contentFit="cover"
-            transition={200}
-          />
-        </Pressable>
-      );
-    },
-    [handleItemPress, getTileHeight, dynamicStyles.itemTile]
-  );
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={[styles.header, dynamicStyles.header]}>
-        <Text style={[styles.title, dynamicStyles.title]}>Portfolio</Text>
+        <Text style={[styles.title, dynamicStyles.title]}>Projects</Text>
       </View>
 
       {/* Format Filter Row */}
@@ -552,26 +177,26 @@ export default function PortfolioScreen() {
         </ScrollView>
       </View>
 
-      {isPortfolioLoading ? (
+      {isDraftsLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.light.accent} />
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
-      ) : filteredPortfolio.length === 0 ? (
+      ) : filteredProjects.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
             <FolderOpen size={48} color={Colors.light.textTertiary} />
           </View>
           <Text style={styles.emptyTitle}>
-            {portfolio.length === 0 ? 'Build your portfolio' : `No ${selectedFormat} items yet`}
+            {drafts.length === 0 ? 'No projects yet' : `No ${selectedFormat} projects`}
           </Text>
           <Text style={styles.emptyText}>
-            {portfolio.length === 0 
-              ? 'Your finished creations will appear here. Start creating to showcase your portfolio!'
-              : `You haven't created any ${getFormatLabel(selectedFormat as string)} content yet.`
+            {drafts.length === 0 
+              ? 'Your saved projects will appear here. Start creating and save your work!'
+              : `You don't have any ${getFormatLabel(selectedFormat)} projects yet.`
             }
           </Text>
-          {portfolio.length === 0 && (
+          {drafts.length === 0 && (
             <TouchableOpacity
               style={styles.emptyButton}
               onPress={handleStartCreating}
@@ -589,27 +214,43 @@ export default function PortfolioScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.grid, dynamicStyles.grid]}>
-            {filteredPortfolio.map((item) => renderPortfolioCard(item))}
+            {filteredProjects.map((draft) => {
+              const template = getTemplateForDraft(draft.templateId);
+              const previewUri = getDraftPreviewUri(draft);
+              const format = template?.format || '1:1';
+              
+              return (
+                <Pressable
+                  key={draft.id}
+                  style={[
+                    styles.projectTile,
+                    dynamicStyles.projectTile,
+                    { height: getTileHeight(format) }
+                  ]}
+                  onPress={() => handleResumeProject(draft)}
+                >
+                  {previewUri ? (
+                    <Image
+                      key={`project-preview-${draft.id}-${draft.updatedAt}`}
+                      source={{ uri: previewUri }}
+                      style={styles.projectThumbnail}
+                      contentFit="cover"
+                      transition={200}
+                      // For local files, disable disk caching to ensure fresh content
+                      // Local preview files change content without changing path
+                      cachePolicy={previewUri.startsWith('file://') ? 'memory' : 'memory-disk'}
+                    />
+                  ) : (
+                    <View style={styles.projectPlaceholder}>
+                      <ImageIcon size={32} color={Colors.light.textTertiary} />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         </ScrollView>
       )}
-
-      {/* Bottom Sheet */}
-      <BottomSheet
-        visible={isBottomSheetVisible}
-        item={selectedItem}
-        onClose={handleCloseBottomSheet}
-        onDelete={handleDelete}
-        onPlatformAction={handlePlatformAction}
-        isProcessing={isProcessing}
-        processingPlatform={processingPlatform}
-        screenWidth={responsive.screenWidth}
-        screenHeight={responsive.screenHeight}
-        isTablet={responsive.isTablet}
-      />
-
-      {/* Toast */}
-      <Toast visible={showToast} message={toastMessage} />
     </SafeAreaView>
   );
 }
@@ -729,185 +370,26 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   
-  // Portfolio Item Tile (Clean, no overlays)
-  itemTile: {
+  // Project Tile
+  projectTile: {
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
-  },
-  itemThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  
-  // Bottom Sheet Styles
-  bottomSheetOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  bottomSheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  bottomSheetContainer: {
-    backgroundColor: Colors.light.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingBottom: 40,
-  },
-  bottomSheetHandle: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  bottomSheetHandleBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.light.border,
-  },
-  bottomSheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  bottomSheetDateContainer: {
-    flex: 1,
-  },
-  bottomSheetDateText: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.light.text,
-  },
-  bottomSheetFormatText: {
-    fontSize: 13,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-  },
-  bottomSheetCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  
-  // Bottom Sheet Preview
-  bottomSheetPreviewContainer: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-  },
-  bottomSheetPreview: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: Colors.light.surfaceSecondary,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  bottomSheetPreviewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  
-  // Platform Options
-  platformsSection: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  platformsSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.light.text,
-    marginBottom: 12,
-  },
-  platformsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  platformCard: {
-    paddingVertical: 16,
-    backgroundColor: Colors.light.surface,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.light.border,
-    gap: 10,
+    borderColor: Colors.light.glassEdge,
+    shadowColor: Colors.light.glassShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  platformCardDisabled: {
-    opacity: 0.5,
+  projectThumbnail: {
+    width: '100%',
+    height: '100%',
   },
-  platformIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.surfaceSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  platformName: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: Colors.light.text,
-    textAlign: 'center',
-  },
-  
-  // Delete Button
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#FEE8E8',
-  },
-  deleteButtonText: {
-    fontSize: 15,
-    fontWeight: '500' as const,
-    color: Colors.light.error,
-  },
-  
-  // Toast
-  toast: {
-    position: 'absolute',
-    bottom: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: Colors.light.text,
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  toastContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  toastIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.light.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toastText: {
+  projectPlaceholder: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: Colors.light.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

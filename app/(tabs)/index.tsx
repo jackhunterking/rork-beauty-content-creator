@@ -2,7 +2,7 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, Activi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal, Clock } from "lucide-react-native";
+import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
@@ -50,7 +50,6 @@ export default function CreateScreen() {
     toggleFavourite, 
     isLoading, 
     refetchTemplates,
-    drafts,
   } = useApp();
 
   // Responsive configuration for iPad/iPhone
@@ -149,19 +148,6 @@ export default function CreateScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={[styles.header, dynamicStyles.header]}>
         <Text style={[styles.title, dynamicStyles.title]}>Create</Text>
-        {drafts.length > 0 && (
-          <TouchableOpacity 
-            style={styles.draftsHeaderButton}
-            onPress={() => router.push('/drafts')}
-            activeOpacity={0.7}
-          >
-            <Clock size={20} color={Colors.light.text} />
-            <Text style={styles.draftsHeaderText}>Drafts</Text>
-            <View style={styles.draftsHeaderBadge}>
-              <Text style={styles.draftsHeaderBadgeText}>{drafts.length}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
       <View style={[styles.typeSelector, dynamicStyles.typeSelector]}>
@@ -346,30 +332,6 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.light.text,
     letterSpacing: -0.5,
-  },
-  draftsHeaderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: 8,
-  },
-  draftsHeaderText: {
-    fontSize: 16,
-    fontWeight: '500' as const,
-    color: Colors.light.text,
-  },
-  draftsHeaderBadge: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  draftsHeaderBadgeText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: Colors.light.surface,
   },
   typeSelector: {
     flexDirection: 'row',
