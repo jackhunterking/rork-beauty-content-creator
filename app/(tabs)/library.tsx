@@ -146,25 +146,18 @@ export default function ProjectsScreen() {
     
     try {
       const newDraft = await duplicateDraft(selectedDraft.id);
-      // Show success feedback
-      Alert.alert(
-        'Project Duplicated',
-        'A copy of your project has been created.',
-        [
-          { text: 'OK', style: 'default' },
-          { 
-            text: 'Open Copy', 
-            style: 'default',
-            onPress: () => {
-              const template = getTemplateForDraft(newDraft.templateId);
-              if (template) {
-                loadDraft(newDraft, template);
-                router.push('/editor-v2');
-              }
-            }
-          },
-        ]
-      );
+      
+      // Get template for the duplicated draft
+      const template = getTemplateForDraft(newDraft.templateId);
+      
+      if (template) {
+        // Load the duplicated draft directly and navigate to editor
+        loadDraft(newDraft, template);
+        router.push('/editor-v2');
+      } else {
+        // Fallback: show alert if template not found
+        Alert.alert('Error', 'Could not find template for duplicated project.');
+      }
     } catch (error) {
       console.error('Failed to duplicate draft:', error);
       Alert.alert('Error', 'Failed to duplicate project. Please try again.');

@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { Draft, DraftRow } from '@/types';
 import { uploadDraftImage, deleteDraftImages, copyDraftImages } from './storageService';
-import { getLocalPreviewPath, deleteDirectory, getDraftDirectory } from './localStorageService';
+import { getLocalPreviewPath, deleteDirectory, getDraftDirectory, copyFile, getCachedRenderPath, createDraftDirectories } from './localStorageService';
 import { copyOverlays } from './overlayPersistenceService';
 
 /**
@@ -434,6 +434,7 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
     }
     
     // Create a new draft record with the same template
+    // IMPORTANT: Copy the rendered preview URL so thumbnails work immediately
     const { data: newDraftData, error: createError } = await supabase
       .from('drafts')
       .insert({
@@ -443,9 +444,9 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
         before_image_url: null,
         after_image_url: null,
         captured_image_urls: null,
-        // Don't copy rendered preview - it will need to be re-rendered
-        rendered_preview_url: null,
-        was_rendered_as_premium: null,
+        // Copy the rendered preview URL (Templated.io URL still valid for duplicate)
+        rendered_preview_url: sourceDraft.renderedPreviewUrl || null,
+        was_rendered_as_premium: sourceDraft.wasRenderedAsPremium ?? null,
       })
       .select()
       .single();
@@ -497,9 +498,32 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
     // Copy overlays from source to new draft (local storage)
     await copyOverlays(sourceDraftId, newDraft.id);
     
+    // Copy local preview file if it exists (contains rendered template + overlays)
+    let copiedLocalPreviewPath: string | null = null;
+    try {
+      const sourceLocalPreview = await getLocalPreviewPath(sourceDraftId);
+      if (sourceLocalPreview) {
+        // Ensure destination directories exist
+        await createDraftDirectories(newDraft.id);
+        
+        // Copy the local preview file
+        const destPreviewPath = getCachedRenderPath(newDraft.id, 'default');
+        await copyFile(sourceLocalPreview, destPreviewPath);
+        copiedLocalPreviewPath = destPreviewPath;
+        console.log(`Copied local preview from ${sourceDraftId} to ${newDraft.id}`);
+      }
+    } catch (copyError) {
+      console.warn('Failed to copy local preview file:', copyError);
+      // Non-critical - thumbnail will use rendered preview URL instead
+    }
+    
     console.log(`Successfully duplicated draft ${sourceDraftId} to ${newDraft.id}`);
     
-    return updatedDraft;
+    // Return draft with localPreviewPath if copied
+    return {
+      ...updatedDraft,
+      localPreviewPath: copiedLocalPreviewPath,
+    };
   } catch (error) {
     console.error('Failed to duplicate draft:', error);
     throw error;

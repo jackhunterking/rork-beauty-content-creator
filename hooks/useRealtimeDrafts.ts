@@ -76,13 +76,16 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
     const newRow = payload.new as DraftRow;
     const newDraft = mapRowToDraft(newRow);
     
+    
     // Try to get local preview path
+    let localPath: string | null = null;
     try {
-      const localPath = await getLocalPreviewPath(newDraft.id);
+      localPath = await getLocalPreviewPath(newDraft.id);
       newDraft.localPreviewPath = localPath;
     } catch {
       // Ignore - local preview may not exist yet
     }
+    
     
     console.log('[RealtimeDrafts] INSERT received:', newDraft.id.substring(0, 8));
     

@@ -483,6 +483,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setSlotStatesMap(slotStates);
     setComposedPreviewUri(null);
     
+    
     setCurrentProject({
       contentType: 'single',
       template,

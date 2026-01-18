@@ -375,9 +375,6 @@ export default function EditorV2Screen() {
 
   // Trigger preview render when photos change (like old editor)
   const triggerPreviewRender = useCallback(async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:triggerPreviewRender:start',message:'triggerPreviewRender called',data:{hasTemplate:!!template?.templatedId,slotCount:Object.keys(capturedImages).length,adjustmentsSnapshot:Object.fromEntries(Object.entries(capturedImages).map(([k,v])=>[k,v?.adjustments]))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-    // #endregion
     if (!template?.templatedId) return;
     
     // Filter images that have URIs
@@ -416,10 +413,6 @@ export default function EditorV2Screen() {
           (adjustments.rotation !== undefined && adjustments.rotation !== 0)
         );
         
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:triggerPreviewRender:processing',message:'Processing slot for render',data:{slotId,hasNonDefaultAdjustments,adjustments,mediaUri:media.uri?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        
         if (hasNonDefaultAdjustments && adjustments) {
           try {
             const processed = await applyAdjustmentsAndCrop(
@@ -430,14 +423,8 @@ export default function EditorV2Screen() {
               slot.height,
               adjustments
             );
-            // #region agent log
-            fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:triggerPreviewRender:processed',message:'Applied adjustments successfully',data:{slotId,processedUri:processed.uri?.substring(0,50),processedDims:{w:processed.width,h:processed.height}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             photosToRender[slotId] = processed.uri;
           } catch (adjustError) {
-            // #region agent log
-            fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:triggerPreviewRender:error',message:'Failed to apply adjustments',data:{slotId,error:String(adjustError)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
             photosToRender[slotId] = media.uri;
           }
@@ -450,10 +437,6 @@ export default function EditorV2Screen() {
         templateId: template.templatedId,
         slotImages: photosToRender,
       });
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:triggerPreviewRender:result',message:'Render preview result',data:{success:result.success,renderUrl:result.renderUrl?.substring(0,80),error:result.error},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E'})}).catch(()=>{});
-      // #endregion
       
       if (result.success && result.renderUrl) {
         setRenderedPreviewUri(result.renderUrl);
@@ -511,10 +494,6 @@ export default function EditorV2Screen() {
         }
       }
     }
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:useEffect:changeDetection',message:'Change detection ran',data:{hasNewOrChangedImage,changeReason,slotIds:Object.keys(currentImages),currentAdjustments:Object.fromEntries(Object.entries(currentImages).map(([k,v])=>[k,v?.adjustments]))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     
     // Update ref with both URI and adjustments
     const newPrevImages: Record<string, { uri: string; adjustments?: any } | null> = {};
@@ -848,9 +827,6 @@ export default function EditorV2Screen() {
   }, []);
 
   const handleResizeDone = useCallback(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleResizeDone',message:'handleResizeDone called',data:{cropSlotId,pendingRotation,pendingCropAdjustments,hasCurrentImage:!!capturedImages[cropSlotId!],currentAdjustments:capturedImages[cropSlotId!]?.adjustments},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
     if (cropSlotId) {
       const currentImage = capturedImages[cropSlotId];
       if (currentImage) {
@@ -860,9 +836,6 @@ export default function EditorV2Screen() {
           ...(pendingCropAdjustments || {}),
           rotation: pendingRotation,
         };
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleResizeDone:finalAdjustments',message:'Setting captured image with adjustments',data:{cropSlotId,finalAdjustments,imageUri:currentImage.uri?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-        // #endregion
         setCapturedImage(cropSlotId, {
           ...currentImage,
           adjustments: finalAdjustments,
@@ -1081,10 +1054,6 @@ export default function EditorV2Screen() {
           capturedImageUris[slotId] = media.uri;
         }
       }
-
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleSaveDraft',message:'Saving draft - NOW with processed images',data:{capturedImageUris:Object.fromEntries(Object.entries(capturedImageUris).map(([k,v])=>[k,v?.substring(0,50)])),adjustmentsApplied:Object.fromEntries(Object.entries(capturedImages).map(([k,v])=>[k,v?.adjustments])),renderedPreviewUri:renderedPreviewUri?.substring(0,80)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
 
       console.log('[EditorV2] Saving draft with slots:', Object.keys(capturedImageUris), 'overlays:', overlays.length);
 

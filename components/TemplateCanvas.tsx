@@ -437,10 +437,6 @@ function CropOverlay({
       rotation: currentRot,
     };
     
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:reportAdjustment',message:'Reporting adjustments to parent',data:{adjustments,maxU,maxV},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'scale-fix'})}).catch(()=>{});
-    // #endregion
-    
     // Report normalized values in rotated coordinate system
     // translateX now represents normalized U, translateY represents normalized V
     onAdjustmentChange(adjustments);
