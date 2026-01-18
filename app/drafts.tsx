@@ -1,5 +1,17 @@
+/**
+ * @deprecated This file is no longer in use.
+ * 
+ * The Projects functionality has been moved to:
+ * - /app/(tabs)/library.tsx - Main Projects tab with grid view, duplicate, and delete features
+ * 
+ * This file is kept for reference only and should be removed in a future cleanup.
+ * All project management features (duplicate, delete, actions) are now in library.tsx.
+ * 
+ * Last updated: January 2026
+ */
+
 import React, { useCallback, useMemo, useState, useRef } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, Redirect } from 'expo-router';
 import {
   StyleSheet,
   View,
@@ -70,7 +82,17 @@ const formatFilters = getAllFormats().map(config => ({
   label: config.id,
 }));
 
+/**
+ * @deprecated - Redirects to the Projects tab (library.tsx)
+ * This screen is no longer used. All functionality moved to /app/(tabs)/library.tsx
+ */
 export default function DraftsScreen() {
+  // Redirect to the new Projects tab - this page is deprecated
+  return <Redirect href="/(tabs)/library" />;
+
+  // ========== DEPRECATED CODE BELOW ==========
+  // The following code is kept for reference only
+  
   const router = useRouter();
   const { 
     drafts,

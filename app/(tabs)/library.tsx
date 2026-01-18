@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
 import { useFocusEffect } from 'expo-router';
 import {
   StyleSheet,
@@ -8,10 +8,12 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import {
   Image as ImageIcon,
   Square,
@@ -19,6 +21,10 @@ import {
   RectangleHorizontal,
   FolderOpen,
   Plus,
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  X,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
@@ -56,10 +62,17 @@ export default function ProjectsScreen() {
     loadDraft,
     isDraftsLoading,
     refreshDrafts,
+    duplicateDraft,
+    deleteDraft,
+    isDuplicatingDraft,
   } = useApp();
 
   // Responsive configuration
   const responsive = useResponsive();
+
+  // Bottom sheet ref and selected draft state
+  const bottomSheetRef = useRef<BottomSheet>(null);
+  const [selectedDraft, setSelectedDraft] = useState<Draft | null>(null);
 
   // Refresh projects whenever the screen gains focus
   useFocusEffect(
@@ -112,6 +125,99 @@ export default function ProjectsScreen() {
   const handleStartCreating = useCallback(() => {
     router.push('/(tabs)');
   }, [router]);
+
+  // Handle opening bottom sheet (long press on project)
+  const handleOpenActionSheet = useCallback((draft: Draft) => {
+    setSelectedDraft(draft);
+    bottomSheetRef.current?.snapToIndex(0);
+  }, []);
+
+  // Handle closing bottom sheet
+  const handleCloseActionSheet = useCallback(() => {
+    bottomSheetRef.current?.close();
+    setSelectedDraft(null);
+  }, []);
+
+  // Handle duplicate draft
+  const handleDuplicateDraft = useCallback(async () => {
+    if (!selectedDraft) return;
+    
+    handleCloseActionSheet();
+    
+    try {
+      const newDraft = await duplicateDraft(selectedDraft.id);
+      // Show success feedback
+      Alert.alert(
+        'Project Duplicated',
+        'A copy of your project has been created.',
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Open Copy', 
+            style: 'default',
+            onPress: () => {
+              const template = getTemplateForDraft(newDraft.templateId);
+              if (template) {
+                loadDraft(newDraft, template);
+                router.push('/editor-v2');
+              }
+            }
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to duplicate draft:', error);
+      Alert.alert('Error', 'Failed to duplicate project. Please try again.');
+    }
+  }, [selectedDraft, handleCloseActionSheet, duplicateDraft, getTemplateForDraft, loadDraft, router]);
+
+  // Handle delete draft with confirmation
+  const handleDeleteDraft = useCallback(async () => {
+    if (!selectedDraft) return;
+    
+    handleCloseActionSheet();
+    
+    Alert.alert(
+      'Delete Project',
+      'Are you sure you want to delete this project? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDraft(selectedDraft.id);
+            } catch (error) {
+              console.error('Failed to delete draft:', error);
+              Alert.alert('Error', 'Failed to delete project. Please try again.');
+            }
+          }
+        },
+      ]
+    );
+  }, [selectedDraft, handleCloseActionSheet, deleteDraft]);
+
+  // Bottom sheet snap points
+  const snapPoints = useMemo(() => ['35%'], []);
+
+  // Render bottom sheet backdrop
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  // Get selected draft info for bottom sheet header
+  const selectedTemplate = selectedDraft ? getTemplateForDraft(selectedDraft.templateId) : null;
+  const selectedPreviewUri = selectedDraft ? getDraftPreviewUri(selectedDraft) : null;
 
   // Dynamic styles based on responsive configuration
   const dynamicStyles = useMemo(() => ({
@@ -228,6 +334,8 @@ export default function ProjectsScreen() {
                     { height: getTileHeight(format) }
                   ]}
                   onPress={() => handleResumeProject(draft)}
+                  onLongPress={() => handleOpenActionSheet(draft)}
+                  delayLongPress={400}
                 >
                   {previewUri ? (
                     <Image
@@ -245,12 +353,102 @@ export default function ProjectsScreen() {
                       <ImageIcon size={32} color={Colors.light.textTertiary} />
                     </View>
                   )}
+                  
+                  {/* More button overlay */}
+                  <TouchableOpacity
+                    style={styles.moreButtonOverlay}
+                    onPress={() => handleOpenActionSheet(draft)}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <MoreHorizontal size={20} color={Colors.light.surface} />
+                  </TouchableOpacity>
                 </Pressable>
               );
             })}
           </View>
         </ScrollView>
       )}
+
+      {/* Loading overlay for duplication */}
+      {isDuplicatingDraft && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color={Colors.light.accent} />
+            <Text style={styles.loadingOverlayText}>Duplicating project...</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Action Bottom Sheet */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        handleIndicatorStyle={styles.bottomSheetIndicator}
+      >
+        <BottomSheetView style={styles.bottomSheetContent}>
+          {/* Header with preview */}
+          <View style={styles.sheetHeader}>
+            <View style={styles.sheetPreviewContainer}>
+              {selectedPreviewUri ? (
+                <Image
+                  source={{ uri: selectedPreviewUri }}
+                  style={styles.sheetPreview}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.sheetPreviewPlaceholder}>
+                  <ImageIcon size={20} color={Colors.light.textTertiary} />
+                </View>
+              )}
+            </View>
+            <View style={styles.sheetTitleContainer}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {selectedTemplate?.name || 'Project'}
+              </Text>
+              <Text style={styles.sheetSubtitle}>
+                {selectedTemplate ? getFormatLabel(selectedTemplate.format) : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.sheetCloseButton}
+              onPress={handleCloseActionSheet}
+              activeOpacity={0.7}
+            >
+              <X size={20} color={Colors.light.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.sheetDivider} />
+
+          {/* Actions */}
+          <View style={styles.sheetActions}>
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleDuplicateDraft}
+              activeOpacity={0.7}
+            >
+              <Copy size={22} color={Colors.light.text} />
+              <Text style={styles.actionText}>Duplicate Project</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionItem}
+              onPress={handleDeleteDraft}
+              activeOpacity={0.7}
+            >
+              <Trash2 size={22} color={Colors.light.error} />
+              <Text style={[styles.actionText, styles.actionTextDestructive]}>
+                Delete Project
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetView>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -382,6 +580,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 8,
     elevation: 2,
+    position: 'relative',
   },
   projectThumbnail: {
     width: '100%',
@@ -391,5 +590,118 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  
+  // More button overlay on tiles
+  moreButtonOverlay: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  // Loading overlay for duplication
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingBox: {
+    backgroundColor: Colors.light.surface,
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  loadingOverlayText: {
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
+  },
+  
+  // Bottom Sheet
+  bottomSheetIndicator: {
+    backgroundColor: Colors.light.border,
+    width: 36,
+  },
+  bottomSheetContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  sheetPreviewContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sheetPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  sheetPreviewPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetTitleContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.light.text,
+  },
+  sheetSubtitle: {
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
+  sheetCloseButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
+  sheetDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.light.border,
+    marginVertical: 8,
+  },
+  sheetActions: {
+    paddingTop: 8,
+  },
+  actionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 14,
+  },
+  actionText: {
+    fontSize: 16,
+    color: Colors.light.text,
+  },
+  actionTextDestructive: {
+    color: Colors.light.error,
   },
 });
