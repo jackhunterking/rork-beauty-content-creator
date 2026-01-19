@@ -348,34 +348,30 @@ function OnboardingFlowHandler({
  */
 /**
  * Bridge component to connect PostHogProvider's client to our service
- * This allows non-React code to access PostHog functions
+ * This allows non-React code to access PostHog functions and ensures
+ * session replay is properly started.
  */
 function PostHogBridge() {
   const posthog = usePostHog();
   
   useEffect(() => {
     if (posthog) {
-      // #region agent log - Hypothesis I: PostHog bridge with session replay check
-      console.log('[DEBUG-I] PostHogBridge: Setting client from provider');
-      
-      // Log all available methods on the posthog client to find session replay methods
-      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(posthog))
-        .filter(name => typeof (posthog as any)[name] === 'function');
-      console.log('[DEBUG-I] PostHog client methods:', methods.join(', '));
-      
-      // Check if session replay is available
-      if (typeof (posthog as any).startSessionRecording === 'function') {
-        console.log('[DEBUG-I] Session replay API available - calling startSessionRecording()');
-        (posthog as any).startSessionRecording();
-      } else {
-        console.log('[DEBUG-I] startSessionRecording method NOT found - session replay plugin may not be installed');
+      // Start session replay with proper options
+      // The SDK requires options.enableSessionReplay to be explicitly set
+      if (typeof (posthog as any).startSessionReplay === 'function') {
+        const sessionReplayOptions = {
+          enableSessionReplay: true,
+          sessionReplayConfig: {
+            maskAllTextInputs: true,
+            maskAllImages: false,
+            captureNetworkTelemetry: true,
+            captureLog: true,
+            throttleDelayMs: 1000,
+          },
+        };
+        
+        (posthog as any).startSessionReplay(sessionReplayOptions);
       }
-      
-      // Check session recording status
-      if (typeof (posthog as any).isSessionRecordingActive === 'function') {
-        console.log('[DEBUG-I] Session recording active:', (posthog as any).isSessionRecordingActive());
-      }
-      // #endregion
       
       setPostHogClient(posthog);
     }
@@ -448,21 +444,11 @@ export default function RootLayout() {
   const [posthogReady, setPosthogReady] = useState(false);
 
   useEffect(() => {
-    // #region agent log - Hypothesis F: Check for duplicate init
-    console.log('[DEBUG-F] RootLayout mount - PostHogProvider will handle initialization');
-    console.log('[DEBUG-F] API Key provided:', !!POSTHOG_API_KEY, 'Length:', POSTHOG_API_KEY?.length);
-    console.log('[DEBUG-F] Host:', POSTHOG_HOST);
-    // #endregion
-
     // Hide the native splash screen immediately to show our animated one
     SplashScreen.hideAsync();
     
-    // NOTE: We removed manual initializePostHog() call here
     // PostHogProvider handles initialization automatically with session replay support
-    // Manual initialization was causing conflicts with session replay
-    
     setPosthogReady(true);
-    console.log('[Analytics] PostHog will be initialized by PostHogProvider');
     
     // Initialize Facebook SDK for Meta Ads attribution (iOS only)
     if (Platform.OS === 'ios') {
@@ -471,7 +457,7 @@ export default function RootLayout() {
   }, []);
 
   // PostHog client configuration for the provider
-  // IMPORTANT: For React Native, session replay is configured via these options
+  // IMPORTANT: enableSessionReplay and sessionReplayConfig MUST be inside options (per docs)
   const posthogClientConfig = {
     host: POSTHOG_HOST,
     // Enable debug logging in development to see what's happening
@@ -479,16 +465,22 @@ export default function RootLayout() {
     // Flush events more frequently for testing
     flushInterval: 10,
     flushAt: 5,
+    // Enable session replay - MUST be in options per PostHog docs
+    enableSessionReplay: true,
+    // Session replay configuration
+    sessionReplayConfig: {
+      // Whether text and text input fields are masked. Default is true.
+      maskAllTextInputs: true,
+      // Whether images are masked. Default is true.
+      maskAllImages: false, // We want to see template/content UI
+      // Whether network requests are captured in recordings. Default is true
+      captureNetworkTelemetry: true,
+      // Capture logs automatically (Android only)
+      captureLog: true,
+      // Throttling delay (ms) - higher = less performance impact but less smooth
+      throttleDelayMs: 1000,
+    },
   };
-
-  // #region agent log - Hypothesis G: Log PostHogProvider config
-  console.log('[DEBUG-G] PostHogProvider config:', JSON.stringify({
-    apiKeyProvided: !!POSTHOG_API_KEY,
-    apiKeyPrefix: POSTHOG_API_KEY?.substring(0, 15),
-    host: POSTHOG_HOST,
-    debug: __DEV__,
-  }));
-  // #endregion
 
   return (
     <PostHogProvider 
@@ -498,21 +490,6 @@ export default function RootLayout() {
         captureLifecycleEvents: true,
         captureScreens: true,
         captureTouches: true,
-      }}
-      // Enable session replay for React Native
-      // This must be a top-level prop, not in options
-      enableSessionReplay={true}
-      sessionReplayConfig={{
-        // Mask all text inputs for privacy
-        maskAllTextInputs: true,
-        // Don't mask images - we want to see template/content UI  
-        maskAllImages: false,
-        // Capture network requests for debugging
-        captureNetworkTelemetry: true,
-        // Screenshot capture settings for iOS
-        iOSdebouncerDelayMs: 1000,
-        // Screenshot capture settings for Android
-        androidDebouncerDelayMs: 1000,
       }}
     >
       <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>

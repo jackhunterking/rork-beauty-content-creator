@@ -121,14 +121,6 @@ let isInitialized = false;
  * The provider creates the instance with the correct session replay config.
  */
 export function setPostHogClient(client: PostHog | null): void {
-  // #region agent log - Hypothesis H: Setting client from provider
-  console.log('[DEBUG-H] setPostHogClient called', {
-    hasClient: !!client,
-    wasInitialized: isInitialized,
-    hadPreviousClient: !!posthogClient,
-  });
-  // #endregion
-  
   if (client) {
     posthogClient = client;
     isInitialized = true;
@@ -138,8 +130,6 @@ export function setPostHogClient(client: PostHog | null): void {
       platform: Platform.OS,
       platform_version: Platform.Version,
     });
-    
-    console.log('[PostHog] Client set from PostHogProvider');
   }
 }
 
