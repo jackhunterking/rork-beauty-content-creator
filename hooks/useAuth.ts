@@ -34,10 +34,11 @@ export function useAuth() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSessionReady, setIsSessionReady] = useState(false);
   const [appleSignInAvailable, setAppleSignInAvailable] = useState(false);
 
-  // Check if user is authenticated
-  const isAuthenticated = !!session && !!user;
+  // Check if user is authenticated - only true when session is fully ready
+  const isAuthenticated = !!session && !!user && isSessionReady;
 
   // Initialize auth state
   useEffect(() => {
@@ -45,21 +46,42 @@ export function useAuth() {
 
     async function initAuth() {
       try {
-        // Get initial session
+        // Get initial session - this may have an expired token
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
         if (!mounted) return;
         
-        setSession(initialSession);
-
         if (initialSession?.user) {
-          const profile = await getCurrentProfile();
-          if (mounted) {
-            setUser(profile);
+          // Verify the session is valid by checking the user
+          // This will trigger a token refresh if needed
+          const { data: { user: validUser }, error: userError } = await supabase.auth.getUser();
+          
+          if (!mounted) return;
+          
+          if (userError || !validUser) {
+            // Session is invalid - clear it
+            console.log('[useAuth] Session invalid, clearing');
+            setSession(null);
+            setUser(null);
+            setIsSessionReady(false);
+          } else {
+            // Session is valid - safe to use
+            setSession(initialSession);
+            const profile = await getCurrentProfile();
+            if (mounted) {
+              setUser(profile);
+              setIsSessionReady(true); // Now safe for API calls
+            }
           }
+        } else {
+          // No session
+          setSession(null);
+          setUser(null);
+          setIsSessionReady(false);
         }
       } catch (error) {
         console.error('[useAuth] Error initializing auth:', error);
+        setIsSessionReady(false);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -78,8 +100,19 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log('[useAuth] Auth state changed:', event);
+        // #region agent log
+        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useAuth.ts:onAuthStateChange',message:'Auth state changed',data:{event,hasSession:!!newSession,hasUser:!!newSession?.user,userId:newSession?.user?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
+        // #endregion
         
         if (!mounted) return;
+
+        // INITIAL_SESSION may have expired token - don't mark as ready yet
+        // Wait for initAuth to complete or SIGNED_IN/TOKEN_REFRESHED events
+        if (event === 'INITIAL_SESSION') {
+          // Don't set session ready here - let initAuth handle it after validation
+          setSession(newSession);
+          return;
+        }
 
         setSession(newSession);
 
@@ -87,6 +120,7 @@ export function useAuth() {
           const profile = await getCurrentProfile();
           if (mounted) {
             setUser(profile);
+            setIsSessionReady(true); // Session is now ready for API calls
             
             // Identify user in PostHog for analytics tracking
             if (profile) {
@@ -106,8 +140,14 @@ export function useAuth() {
               });
             }
           }
+        } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+          // Token was refreshed - session is now valid
+          if (mounted) {
+            setIsSessionReady(true);
+          }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
+          setIsSessionReady(false); // Reset session ready state
           // Reset PostHog user on sign out
           resetUser();
           // Track sign out event

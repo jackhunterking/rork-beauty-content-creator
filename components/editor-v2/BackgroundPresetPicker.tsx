@@ -28,6 +28,7 @@ import {
   Briefcase,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchBackgroundPresets } from '@/services/aiService';
 import type { BackgroundPreset, BackgroundPresetCategory, GroupedBackgroundPresets } from '@/types';
 
@@ -163,6 +164,9 @@ export function BackgroundPresetPicker({
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ['70%'], []);
   
+  // Auth context - wait for auth before making API calls
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  
   // Presets state
   const [presets, setPresets] = useState<BackgroundPreset[]>([]);
   const [groupedPresets, setGroupedPresets] = useState<GroupedBackgroundPresets | null>(null);
@@ -172,10 +176,25 @@ export function BackgroundPresetPicker({
   // Calculate bottom padding with safe area
   const bottomPadding = Math.max(insets.bottom, 20) + 16;
 
-  // Load presets
+  // Load presets - only when authenticated
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackgroundPresetPicker.tsx:useEffect',message:'BackgroundPresetPicker auth check',data:{isAuthenticated,authLoading,timestamp:new Date().toISOString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
+    
+    // Don't load if still checking auth or not authenticated
+    if (authLoading) {
+      return;
+    }
+    
+    if (!isAuthenticated) {
+      setIsLoading(false);
+      setError('Please sign in to use AI features');
+      return;
+    }
+    
     loadPresets();
-  }, []);
+  }, [isAuthenticated, authLoading]);
 
   const loadPresets = async () => {
     setIsLoading(true);

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAICredits } from '@/hooks/useAICredits';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchAIConfig } from '@/services/aiService';
 import type { AIFeatureKey, AIModelConfig } from '@/types';
 
@@ -150,6 +151,9 @@ export function AIEnhancePanel({
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ['60%'], []);
   
+  // Auth context - wait for auth before making API calls
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  
   // AI Credits hook
   const { credits, isLoading: creditsLoading, refreshCredits } = useAICredits();
   
@@ -161,10 +165,25 @@ export function AIEnhancePanel({
   // Calculate bottom padding with safe area
   const bottomPadding = Math.max(insets.bottom, 20) + 16;
 
-  // Load AI config
+  // Load AI config - only when authenticated
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AIEnhancePanel.tsx:useEffect',message:'AIEnhancePanel auth check',data:{isAuthenticated,authLoading,timestamp:new Date().toISOString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
+    
+    // Don't load if still checking auth or not authenticated
+    if (authLoading) {
+      return;
+    }
+    
+    if (!isAuthenticated) {
+      setIsLoadingConfig(false);
+      setConfigError('Please sign in to use AI features');
+      return;
+    }
+    
     loadConfig();
-  }, []);
+  }, [isAuthenticated, authLoading]);
 
   const loadConfig = async () => {
     setIsLoadingConfig(true);
