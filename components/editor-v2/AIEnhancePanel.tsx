@@ -2,23 +2,36 @@
  * AIEnhancePanel Component
  * 
  * Bottom sheet panel showing AI enhancement options.
- * Scaffolded for future AI integration.
+ * Fetches configuration dynamically from Supabase.
+ * Displays credit balance and handles premium access.
  */
 
-import React, { useCallback, useMemo } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+} from 'react-native';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   Sparkles, 
-  User, 
-  Palette, 
-  ZoomIn,
+  Scissors,
+  Image,
   Crown,
   X,
+  Coins,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { AIEnhancementType, AIEnhancementOption } from './types';
+import { useAICredits } from '@/hooks/useAICredits';
+import { fetchAIConfig } from '@/services/aiService';
+import type { AIFeatureKey, AIModelConfig } from '@/types';
 
 interface AIEnhancePanelProps {
   /** Reference to bottom sheet */
@@ -30,79 +43,50 @@ interface AIEnhancePanelProps {
   /** Whether an enhancement is being processed */
   isProcessing: boolean;
   /** Currently processing enhancement type */
-  processingType: AIEnhancementType | null;
+  processingType: AIFeatureKey | null;
   /** Called when an enhancement is selected */
-  onSelectEnhancement: (type: AIEnhancementType) => void;
+  onSelectEnhancement: (type: AIFeatureKey, presetId?: string) => void;
   /** Called to request premium access */
   onRequestPremium: (feature: string) => void;
   /** Called when panel is closed */
   onClose: () => void;
+  /** Called when background replace is selected (opens preset picker) */
+  onOpenBackgroundPicker?: () => void;
 }
 
-const AI_ENHANCEMENTS: AIEnhancementOption[] = [
-  {
-    id: 'auto_enhance',
-    name: 'Auto Enhance',
-    description: 'One-tap improvement for lighting, color, and sharpness',
-    icon: 'sparkles',
-    isPro: true,
-  },
-  {
-    id: 'portrait_retouch',
-    name: 'Portrait Retouch',
-    description: 'Skin smoothing and blemish removal',
-    icon: 'user',
-    isPro: true,
-  },
-  {
-    id: 'color_correct',
-    name: 'Color Correct',
-    description: 'Fix white balance and exposure',
-    icon: 'palette',
-    isPro: true,
-  },
-  {
-    id: 'upscale',
-    name: 'Upscale 4x',
-    description: 'AI-powered image upscaling for better quality',
-    icon: 'zoom',
-    isPro: true,
-  },
-];
-
-function getIcon(iconName: string, color: string) {
-  const size = 24;
-  switch (iconName) {
-    case 'sparkles':
+function getIcon(featureKey: string, color: string, size: number = 24) {
+  switch (featureKey) {
+    case 'auto_quality':
       return <Sparkles size={size} color={color} />;
-    case 'user':
-      return <User size={size} color={color} />;
-    case 'palette':
-      return <Palette size={size} color={color} />;
-    case 'zoom':
-      return <ZoomIn size={size} color={color} />;
+    case 'background_remove':
+      return <Scissors size={size} color={color} />;
+    case 'background_replace':
+      return <Image size={size} color={color} />;
     default:
       return <Sparkles size={size} color={color} />;
   }
 }
 
 interface EnhancementCardProps {
-  option: AIEnhancementOption;
+  feature: AIModelConfig;
   isPremium: boolean;
+  creditsRemaining: number;
   isProcessing: boolean;
   isThisProcessing: boolean;
   onSelect: () => void;
 }
 
 function EnhancementCard({
-  option,
+  feature,
   isPremium,
+  creditsRemaining,
   isProcessing,
   isThisProcessing,
   onSelect,
 }: EnhancementCardProps) {
-  const isLocked = option.isPro && !isPremium;
+  const isLocked = feature.isPremiumOnly && !isPremium;
   const isDisabled = isProcessing && !isThisProcessing;
+  const insufficientCredits = !isLocked && creditsRemaining < feature.costCredits;
 
   return (
     <TouchableOpacity
@@ -110,6 +94,7 @@ function EnhancementCard({
         styles.card,
         isDisabled && styles.cardDisabled,
         isThisProcessing && styles.cardProcessing,
+        insufficientCredits && styles.cardInsufficientCredits,
       ]}
       onPress={onSelect}
       disabled={isDisabled}
@@ -123,19 +108,29 @@ function EnhancementCard({
         </View>
       )}
 
+      {/* Cost Badge */}
+      {!isLocked && (
+        <View style={[styles.costBadge, insufficientCredits && styles.costBadgeInsufficient]}>
+          <Coins size={10} color={insufficientCredits ? '#EF4444' : '#8B5CF6'} />
+          <Text style={[styles.costBadgeText, insufficientCredits && styles.costBadgeTextInsufficient]}>
+            {feature.costCredits}
+          </Text>
+        </View>
+      )}
+
       {/* Icon */}
       <View style={styles.cardIcon}>
         {isThisProcessing ? (
           <ActivityIndicator size="small" color="#8B5CF6" />
         ) : (
-          getIcon(option.icon, '#8B5CF6')
+          getIcon(feature.featureKey, '#8B5CF6')
         )}
       </View>
 
       {/* Content */}
-      <Text style={styles.cardTitle}>{option.name}</Text>
+      <Text style={styles.cardTitle}>{feature.displayName}</Text>
       <Text style={styles.cardDescription} numberOfLines={2}>
-        {option.description}
+        {feature.description}
       </Text>
     </TouchableOpacity>
   );
@@ -150,21 +145,69 @@ export function AIEnhancePanel({
   onSelectEnhancement,
   onRequestPremium,
   onClose,
+  onOpenBackgroundPicker,
 }: AIEnhancePanelProps) {
   const insets = useSafeAreaInsets();
-  const snapPoints = useMemo(() => ['55%'], []);
+  const snapPoints = useMemo(() => ['60%'], []);
+  
+  // AI Credits hook
+  const { credits, isLoading: creditsLoading, refreshCredits } = useAICredits();
+  
+  // Feature config state
+  const [features, setFeatures] = useState<AIModelConfig[]>([]);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
   
   // Calculate bottom padding with safe area
   const bottomPadding = Math.max(insets.bottom, 20) + 16;
 
-  const handleSelectEnhancement = useCallback((type: AIEnhancementType) => {
-    const option = AI_ENHANCEMENTS.find(e => e.id === type);
-    if (option?.isPro && !isPremium) {
-      onRequestPremium(`ai_${type}`);
+  // Load AI config
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  const loadConfig = async () => {
+    setIsLoadingConfig(true);
+    setConfigError(null);
+    try {
+      const config = await fetchAIConfig();
+      setFeatures(config);
+    } catch (error: any) {
+      console.error('[AIEnhancePanel] Config load error:', error);
+      setConfigError(error.message || 'Failed to load AI features');
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  };
+
+  const handleSelectEnhancement = useCallback((featureKey: AIFeatureKey) => {
+    const feature = features.find(f => f.featureKey === featureKey);
+    
+    // Check premium access
+    if (feature?.isPremiumOnly && !isPremium) {
+      onRequestPremium(`ai_${featureKey}`);
       return;
     }
-    onSelectEnhancement(type);
-  }, [isPremium, onSelectEnhancement, onRequestPremium]);
+    
+    // Check credits
+    if (credits && credits.creditsRemaining < (feature?.costCredits || 0)) {
+      // Could show a credits depleted modal here
+      onRequestPremium('ai_credits_depleted');
+      return;
+    }
+    
+    // For background replace, open the preset picker
+    if (featureKey === 'background_replace' && onOpenBackgroundPicker) {
+      onOpenBackgroundPicker();
+      return;
+    }
+    
+    onSelectEnhancement(featureKey);
+  }, [features, isPremium, credits, onSelectEnhancement, onRequestPremium, onOpenBackgroundPicker]);
+
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([loadConfig(), refreshCredits()]);
+  }, [refreshCredits]);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -178,6 +221,8 @@ export function AIEnhancePanel({
     []
   );
 
+  const creditsRemaining = credits?.creditsRemaining ?? 0;
+
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -188,7 +233,17 @@ export function AIEnhancePanel({
       handleIndicatorStyle={styles.handleIndicator}
       backgroundStyle={styles.background}
     >
-      <BottomSheetView style={styles.content}>
+      <BottomSheetScrollView 
+        style={styles.content}
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl 
+            refreshing={isLoadingConfig || creditsLoading} 
+            onRefresh={handleRefresh}
+            tintColor="#8B5CF6"
+          />
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -206,39 +261,98 @@ export function AIEnhancePanel({
           </TouchableOpacity>
         </View>
 
+        {/* Credits Display */}
+        <View style={styles.creditsBox}>
+          <View style={styles.creditsLeft}>
+            <Coins size={18} color="#8B5CF6" />
+            <Text style={styles.creditsLabel}>AI Credits</Text>
+          </View>
+          <View style={styles.creditsRight}>
+            {creditsLoading ? (
+              <ActivityIndicator size="small" color="#8B5CF6" />
+            ) : (
+              <>
+                <Text style={styles.creditsValue}>{creditsRemaining}</Text>
+                {credits && (
+                  <Text style={styles.creditsReset}>
+                    Resets in {credits.daysUntilReset} days
+                  </Text>
+                )}
+              </>
+            )}
+          </View>
+        </View>
+
         {/* Info Text */}
         {!selectedSlotId && (
           <View style={styles.infoBox}>
+            <AlertCircle size={16} color={Colors.light.textSecondary} />
             <Text style={styles.infoText}>
               Select a photo first to apply AI enhancements
             </Text>
           </View>
         )}
 
-        {/* Enhancement Options Grid */}
-        <View style={styles.grid}>
-          {AI_ENHANCEMENTS.map((option) => (
-            <EnhancementCard
-              key={option.id}
-              option={option}
-              isPremium={isPremium}
-              isProcessing={isProcessing}
-              isThisProcessing={processingType === option.id}
-              onSelect={() => handleSelectEnhancement(option.id)}
-            />
-          ))}
-        </View>
+        {/* Error State */}
+        {configError && (
+          <View style={styles.errorBox}>
+            <AlertCircle size={16} color="#EF4444" />
+            <Text style={styles.errorText}>{configError}</Text>
+            <TouchableOpacity onPress={loadConfig} style={styles.retryButton}>
+              <RefreshCw size={14} color="#8B5CF6" />
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* Coming Soon Note */}
-        <View style={styles.comingSoonBox}>
-          <Text style={styles.comingSoonText}>
-            ✨ AI features coming soon. Stay tuned!
-          </Text>
-        </View>
+        {/* Loading State */}
+        {isLoadingConfig && !configError && (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#8B5CF6" />
+            <Text style={styles.loadingText}>Loading AI features...</Text>
+          </View>
+        )}
+
+        {/* Enhancement Options Grid */}
+        {!isLoadingConfig && !configError && (
+          <View style={styles.grid}>
+            {features.map((feature) => (
+              <EnhancementCard
+                key={feature.featureKey}
+                feature={feature}
+                isPremium={isPremium}
+                creditsRemaining={creditsRemaining}
+                isProcessing={isProcessing}
+                isThisProcessing={processingType === feature.featureKey}
+                onSelect={() => handleSelectEnhancement(feature.featureKey)}
+              />
+            ))}
+          </View>
+        )}
+
+        {/* Empty State */}
+        {!isLoadingConfig && !configError && features.length === 0 && (
+          <View style={styles.emptyBox}>
+            <Sparkles size={32} color={Colors.light.textSecondary} />
+            <Text style={styles.emptyText}>
+              No AI features available at the moment
+            </Text>
+          </View>
+        )}
+
+        {/* Processing Info */}
+        {isProcessing && (
+          <View style={styles.processingBox}>
+            <ActivityIndicator size="small" color="#8B5CF6" />
+            <Text style={styles.processingText}>
+              Processing your image with AI...
+            </Text>
+          </View>
+        )}
         
         {/* Bottom safe area padding */}
         <View style={{ height: bottomPadding }} />
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 }
@@ -255,6 +369,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     paddingHorizontal: 20,
   },
   header: {
@@ -289,13 +405,99 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  creditsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+  creditsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  creditsLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8B5CF6',
+  },
+  creditsRight: {
+    alignItems: 'flex-end',
+  },
+  creditsValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#8B5CF6',
+  },
+  creditsReset: {
+    fontSize: 11,
+    color: Colors.light.textSecondary,
+    marginTop: 2,
+  },
   infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: Colors.light.surfaceSecondary,
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
   },
   infoText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#EF4444',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+    borderRadius: 6,
+  },
+  retryText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8B5CF6',
+  },
+  loadingBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+  },
+  emptyBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    marginTop: 12,
     fontSize: 14,
     color: Colors.light.textSecondary,
     textAlign: 'center',
@@ -320,6 +522,9 @@ const styles = StyleSheet.create({
   cardProcessing: {
     borderColor: '#8B5CF6',
     borderWidth: 2,
+  },
+  cardInsufficientCredits: {
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   cardIcon: {
     width: 48,
@@ -358,7 +563,34 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.light.surface,
   },
-  comingSoonBox: {
+  costBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  costBadgeInsufficient: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  costBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#8B5CF6',
+  },
+  costBadgeTextInsufficient: {
+    color: '#EF4444',
+  },
+  processingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
     marginTop: 20,
     backgroundColor: 'rgba(139, 92, 246, 0.08)',
     borderRadius: 12,
@@ -366,10 +598,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(139, 92, 246, 0.2)',
   },
-  comingSoonText: {
+  processingText: {
     fontSize: 13,
     color: '#8B5CF6',
-    textAlign: 'center',
     fontWeight: '500',
   },
 });

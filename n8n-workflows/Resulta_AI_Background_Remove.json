@@ -1,0 +1,566 @@
+{
+  "name": "Resulta - AI Background Remove",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resulta/background-remove",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 340],
+      "webhookId": "resulta-bg-remove-v1"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"generation_id\": \"{{ $json.body.generation_id }}\",\n  \"image_url\": \"{{ $json.body.image_url }}\",\n  \"user_id\": \"{{ $json.body.user_id }}\",\n  \"model\": \"{{ $json.body.params?.model ?? 'General' }}\",\n  \"operating_resolution\": \"{{ $json.body.params?.operating_resolution ?? '1024x1024' }}\",\n  \"output_format\": \"{{ $json.body.params?.output_format ?? 'png' }}\",\n  \"start_time\": {{ Date.now() }},\n  \"feature\": \"background_remove\",\n  \"model_id\": \"fal-ai/birefnet/v2\",\n  \"estimated_cost_usd\": 0.005,\n  \"retry_count\": 0,\n  \"max_retries\": 30\n}",
+        "options": {}
+      },
+      "id": "2-set-params",
+      "name": "Set Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 340]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://queue.fal.run/fal-ai/birefnet/v2",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"image_url\": \"{{ $json.image_url }}\",\n  \"model\": \"{{ $json.model }}\",\n  \"operating_resolution\": \"{{ $json.operating_resolution }}\",\n  \"output_format\": \"{{ $json.output_format }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "3-submit-fal",
+      "name": "Submit to Fal.AI Queue",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 340],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fal-ai-key",
+          "name": "Fal.AI API Key"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-request-id",
+              "leftValue": "={{ $json.body?.request_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4-check-queued",
+      "name": "Queued Successfully?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"generation_id\": \"{{ $('Set Parameters').item.json.generation_id }}\",\n  \"request_id\": \"{{ $json.body.request_id }}\",\n  \"image_url\": \"{{ $('Set Parameters').item.json.image_url }}\",\n  \"start_time\": {{ $('Set Parameters').item.json.start_time }},\n  \"feature\": \"{{ $('Set Parameters').item.json.feature }}\",\n  \"model_id\": \"{{ $('Set Parameters').item.json.model_id }}\",\n  \"estimated_cost_usd\": {{ $('Set Parameters').item.json.estimated_cost_usd }},\n  \"retry_count\": 0,\n  \"max_retries\": {{ $('Set Parameters').item.json.max_retries }},\n  \"user_id\": \"{{ $('Set Parameters').item.json.user_id }}\"\n}",
+        "options": {}
+      },
+      "id": "5-store-request-id",
+      "name": "Store Request ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "6-wait",
+      "name": "Wait 2s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1340, 240],
+      "webhookId": "resulta-bg-remove-wait"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://queue.fal.run/fal-ai/birefnet/v2/requests/{{ $json.request_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "7-poll-status",
+      "name": "Poll Result Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 240],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fal-ai-key",
+          "name": "Fal.AI API Key"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-completed",
+              "leftValue": "={{ $json.body?.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8-check-completed",
+      "name": "Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-failed",
+              "leftValue": "={{ $json.body?.status }}",
+              "rightValue": "FAILED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9-check-failed",
+      "name": "Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 340]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "max-retries",
+              "leftValue": "={{ $('Store Request ID').item.json.retry_count }}",
+              "rightValue": "={{ $('Store Request ID').item.json.max_retries }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10-check-retry",
+      "name": "Can Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 440]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"generation_id\": \"{{ $('Store Request ID').item.json.generation_id }}\",\n  \"request_id\": \"{{ $('Store Request ID').item.json.request_id }}\",\n  \"image_url\": \"{{ $('Store Request ID').item.json.image_url }}\",\n  \"start_time\": {{ $('Store Request ID').item.json.start_time }},\n  \"feature\": \"{{ $('Store Request ID').item.json.feature }}\",\n  \"model_id\": \"{{ $('Store Request ID').item.json.model_id }}\",\n  \"estimated_cost_usd\": {{ $('Store Request ID').item.json.estimated_cost_usd }},\n  \"retry_count\": {{ $('Store Request ID').item.json.retry_count + 1 }},\n  \"max_retries\": {{ $('Store Request ID').item.json.max_retries }},\n  \"user_id\": \"{{ $('Store Request ID').item.json.user_id }}\"\n}",
+        "options": {}
+      },
+      "id": "11-increment-retry",
+      "name": "Increment Retry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2440, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate processing time and format success response\nconst startTime = $('Store Request ID').first().json.start_time;\nconst processingTime = Date.now() - startTime;\nconst response = $input.first().json.body?.response || $input.first().json.body;\n\n// BiRefNet v2 returns the image in image.url\nconst outputUrl = response?.image?.url || response?.output?.url || response?.url;\n\nif (!outputUrl) {\n  throw new Error('No output URL in response');\n}\n\nreturn [{\n  json: {\n    success: true,\n    generation_id: $('Store Request ID').first().json.generation_id,\n    output_url: outputUrl,\n    processing_time_ms: processingTime,\n    estimated_cost_usd: $('Store Request ID').first().json.estimated_cost_usd,\n    feature: $('Store Request ID').first().json.feature,\n    model_id: $('Store Request ID').first().json.model_id,\n    user_id: $('Store Request ID').first().json.user_id,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "12-format-success",
+      "name": "Format Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format error response\nconst startTime = $('Set Parameters').first().json.start_time;\nconst processingTime = Date.now() - startTime;\n\nlet errorMessage = 'Background removal failed';\nlet errorCode = 'PROCESSING_ERROR';\n\ntry {\n  const input = $input.first().json;\n  if (input.body?.error) {\n    errorMessage = input.body.error.message || input.body.error;\n  } else if (input.error) {\n    errorMessage = input.error.message || input.error;\n  } else if (input.message) {\n    errorMessage = input.message;\n  }\n} catch (e) {\n  // Keep default error message\n}\n\nreturn [{\n  json: {\n    success: false,\n    generation_id: $('Set Parameters').first().json.generation_id,\n    error: errorMessage,\n    error_code: errorCode,\n    processing_time_ms: processingTime,\n    feature: $('Set Parameters').first().json.feature,\n    model_id: $('Set Parameters').first().json.model_id,\n    user_id: $('Set Parameters').first().json.user_id,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "13-format-submit-error",
+      "name": "Format Submit Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format Fal.AI failure response\nconst startTime = $('Store Request ID').first().json.start_time;\nconst processingTime = Date.now() - startTime;\n\nconst input = $input.first().json;\nconst errorMessage = input.body?.response?.error || input.body?.error?.message || 'Background removal failed';\n\nreturn [{\n  json: {\n    success: false,\n    generation_id: $('Store Request ID').first().json.generation_id,\n    error: errorMessage,\n    error_code: 'FAL_AI_FAILED',\n    processing_time_ms: processingTime,\n    feature: $('Store Request ID').first().json.feature,\n    model_id: $('Store Request ID').first().json.model_id,\n    user_id: $('Store Request ID').first().json.user_id,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "14-format-fal-error",
+      "name": "Format Fal Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format timeout error\nconst startTime = $('Store Request ID').first().json.start_time;\nconst processingTime = Date.now() - startTime;\n\nreturn [{\n  json: {\n    success: false,\n    generation_id: $('Store Request ID').first().json.generation_id,\n    error: 'Processing timeout - exceeded maximum wait time',\n    error_code: 'TIMEOUT',\n    processing_time_ms: processingTime,\n    feature: $('Store Request ID').first().json.feature,\n    model_id: $('Store Request ID').first().json.model_id,\n    user_id: $('Store Request ID').first().json.user_id,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "15-format-timeout",
+      "name": "Format Timeout",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2440, 540]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-Processing-Time",
+                "value": "={{ $json.processing_time_ms }}"
+              },
+              {
+                "name": "X-Generation-ID",
+                "value": "={{ $json.generation_id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "16-respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2220, 140]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 500,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-Error-Code",
+                "value": "={{ $json.error_code }}"
+              },
+              {
+                "name": "X-Generation-ID",
+                "value": "={{ $json.generation_id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "17-respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2660, 440]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Parameters": {
+      "main": [
+        [
+          {
+            "node": "Submit to Fal.AI Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit to Fal.AI Queue": {
+      "main": [
+        [
+          {
+            "node": "Queued Successfully?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Submit Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queued Successfully?": {
+      "main": [
+        [
+          {
+            "node": "Store Request ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Submit Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Request ID": {
+      "main": [
+        [
+          {
+            "node": "Wait 2s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2s": {
+      "main": [
+        [
+          {
+            "node": "Poll Result Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Result Status": {
+      "main": [
+        [
+          {
+            "node": "Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Can Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Completed?": {
+      "main": [
+        [
+          {
+            "node": "Format Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failed?": {
+      "main": [
+        [
+          {
+            "node": "Format Fal Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Can Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Retry?": {
+      "main": [
+        [
+          {
+            "node": "Increment Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Retry": {
+      "main": [
+        [
+          {
+            "node": "Wait 2s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Submit Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Fal Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Timeout": {
+      "main": [
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Resulta"
+    },
+    {
+      "name": "AI"
+    },
+    {
+      "name": "Production"
+    }
+  ],
+  "pinData": {},
+  "meta": {
+    "templateId": "resulta-bg-remove-v1",
+    "instanceId": "resulta-production"
+  }
+}

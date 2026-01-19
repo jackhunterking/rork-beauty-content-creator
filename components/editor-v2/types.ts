@@ -88,22 +88,20 @@ export interface ContextualAction {
 
 /**
  * AI Enhancement types available
+ * Re-exported from main types for compatibility
  */
-export type AIEnhancementType = 
-  | 'auto_enhance'
-  | 'portrait_retouch'
-  | 'color_correct'
-  | 'upscale';
+export type { AIEnhancementType, AIFeatureKey, AIModelConfig } from '@/types';
 
 /**
- * AI Enhancement option
+ * AI Enhancement option (legacy interface, use AIModelConfig for new code)
  */
 export interface AIEnhancementOption {
-  id: AIEnhancementType;
+  id: string;
   name: string;
   description: string;
   icon: string;
   isPro: boolean;
+  costCredits?: number;
 }
 
 /**

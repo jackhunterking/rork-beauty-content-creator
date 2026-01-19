@@ -48,10 +48,13 @@ import {
   LogoPanel,
   TextEditToolbar,
 } from '@/components/editor-v2';
+import { BackgroundPresetPicker } from '@/components/editor-v2/BackgroundPresetPicker';
+import { enhanceImage } from '@/services/aiService';
+import { useAICredits } from '@/hooks/useAICredits';
+import type { AIFeatureKey, BackgroundPreset } from '@/types';
 import {
   SelectionState,
   DEFAULT_SELECTION,
-  AIEnhancementType,
 } from '@/components/editor-v2/types';
 import type { 
   MainToolbarItem, 
@@ -95,6 +98,7 @@ export default function EditorV2Screen() {
 
   // Bottom sheet refs
   const aiPanelRef = useRef<BottomSheet>(null);
+  const backgroundPickerRef = useRef<BottomSheet>(null);
   const projectActionsRef = useRef<BottomSheet>(null);
   
   // Canva-style panel refs
@@ -118,7 +122,11 @@ export default function EditorV2Screen() {
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
-  const [aiProcessingType, setAIProcessingType] = useState<AIEnhancementType | null>(null);
+  const [aiProcessingType, setAIProcessingType] = useState<AIFeatureKey | null>(null);
+  const [selectedBackgroundPresetId, setSelectedBackgroundPresetId] = useState<string | null>(null);
+  
+  // AI Credits hook
+  const { refreshCredits } = useAICredits();
   
   // Ref to track overlay interaction - prevents canvas tap from deselecting during overlay tap
   const overlayInteractionRef = useRef<boolean>(false);
@@ -630,23 +638,101 @@ export default function EditorV2Screen() {
 
 
   // Handle AI enhancement selection
-  const handleAIEnhancement = useCallback((type: AIEnhancementType) => {
+  const handleAIEnhancement = useCallback(async (featureKey: AIFeatureKey, presetId?: string) => {
     if (!selection.id || selection.type !== 'slot') {
       Alert.alert('Select a photo', 'Please select a photo first to apply AI enhancements.');
       return;
     }
 
-    // TODO: Implement actual AI enhancement
-    setIsAIProcessing(true);
-    setAIProcessingType(type);
+    const slotId = selection.id;
+    const image = capturedImages[slotId];
+    
+    if (!image?.uri) {
+      Alert.alert('No image', 'Please capture a photo first.');
+      return;
+    }
 
-    // Simulate processing
-    setTimeout(() => {
+    // Close AI panel
+    aiPanelRef.current?.close();
+    
+    // Start processing
+    setIsAIProcessing(true);
+    setAIProcessingType(featureKey);
+
+    try {
+      // Get the image URL - need to upload to a public URL for the AI service
+      // For now, we'll use the local URI if it's already a Supabase URL
+      let imageUrl = image.uri;
+      
+      // If it's a local file, we need to upload it first
+      if (imageUrl.startsWith('file://')) {
+        // The image needs to be publicly accessible for Fal.AI
+        // For now, show a message that we need Supabase storage
+        Alert.alert(
+          'Image Upload Required', 
+          'The image needs to be saved to cloud storage first. Please save your draft before using AI enhancements.',
+          [{ text: 'OK' }]
+        );
+        setIsAIProcessing(false);
+        setAIProcessingType(null);
+        return;
+      }
+
+      // Call the AI enhancement service
+      const result = await enhanceImage({
+        featureKey,
+        imageUrl,
+        draftId: currentProject?.id,
+        slotId,
+        presetId,
+      });
+
+      if (!result.success || !result.outputUrl) {
+        throw new Error(result.error || 'Enhancement failed');
+      }
+
+      // Update the captured image with the enhanced version
+      setCapturedImages(prev => ({
+        ...prev,
+        [slotId]: {
+          ...prev[slotId]!,
+          uri: result.outputUrl!,
+        },
+      }));
+
+      // Refresh credits display
+      refreshCredits();
+
+      // Show success feedback
+      Alert.alert(
+        'Enhancement Complete', 
+        `Your image has been enhanced! ${result.creditsCharged} credit${result.creditsCharged !== 1 ? 's' : ''} used.`
+      );
+
+    } catch (error: any) {
+      console.error('[Editor] AI enhancement error:', error);
+      Alert.alert(
+        'Enhancement Failed',
+        error.message || 'Something went wrong. Please try again.'
+      );
+    } finally {
       setIsAIProcessing(false);
       setAIProcessingType(null);
-      Alert.alert('Coming Soon', `${type} enhancement will be available soon!`);
-    }, 1500);
-  }, [selection]);
+    }
+  }, [selection, capturedImages, currentProject, refreshCredits]);
+
+  // Handle background preset selection
+  const handleBackgroundPresetSelect = useCallback((preset: BackgroundPreset) => {
+    setSelectedBackgroundPresetId(preset.id);
+    backgroundPickerRef.current?.close();
+    // Trigger the enhancement with the selected preset
+    handleAIEnhancement('background_replace', preset.id);
+  }, [handleAIEnhancement]);
+
+  // Handle opening background picker
+  const handleOpenBackgroundPicker = useCallback(() => {
+    backgroundPickerRef.current?.snapToIndex(0);
+  }, []);
 
   // Handle AI panel close
   const handleAIPanelClose = useCallback(() => {
@@ -1920,6 +2006,17 @@ export default function EditorV2Screen() {
         onSelectEnhancement={handleAIEnhancement}
         onRequestPremium={(feature) => requestPremiumAccess(feature)}
         onClose={handleAIPanelClose}
+        onOpenBackgroundPicker={handleOpenBackgroundPicker}
+      />
+
+      {/* Background Preset Picker */}
+      <BackgroundPresetPicker
+        bottomSheetRef={backgroundPickerRef}
+        isPremium={isPremium}
+        selectedPresetId={selectedBackgroundPresetId}
+        onSelectPreset={handleBackgroundPresetSelect}
+        onRequestPremium={(feature) => requestPremiumAccess(feature)}
+        onClose={() => backgroundPickerRef.current?.close()}
       />
 
       {/* Text Style Panel - compact panel for text/date overlays */}

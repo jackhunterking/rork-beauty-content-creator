@@ -729,3 +729,239 @@ export interface RenderProgress {
   progress?: number;  // 0-100
   message?: string;
 }
+
+// ============================================
+// AI Enhancement Types
+// ============================================
+
+/**
+ * Available AI feature keys
+ * Maps to feature_key in ai_model_config table
+ */
+export type AIFeatureKey = 'auto_quality' | 'background_remove' | 'background_replace';
+
+/**
+ * AI enhancement type for editor (same as AIFeatureKey but more explicit)
+ */
+export type AIEnhancementType = AIFeatureKey;
+
+/**
+ * AI model configuration from Supabase
+ * Used to dynamically render available AI features
+ */
+export interface AIModelConfig {
+  featureKey: AIFeatureKey;
+  displayName: string;
+  description: string;
+  icon: string;
+  costCredits: number;
+  isEnabled: boolean;
+  isPremiumOnly: boolean;
+  sortOrder: number;
+}
+
+/**
+ * Database row type for ai_model_config (snake_case from Supabase)
+ */
+export interface AIModelConfigRow {
+  id: string;
+  feature_key: string;
+  display_name: string;
+  description: string | null;
+  icon: string;
+  provider: string;
+  model_id: string;
+  model_version: string | null;
+  endpoint_url: string | null;
+  default_params: Record<string, unknown>;
+  system_prompt: string | null;
+  cost_credits: number;
+  is_enabled: boolean;
+  is_premium_only: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * User AI credits balance
+ */
+export interface AICredits {
+  creditsRemaining: number;
+  creditsUsedThisPeriod: number;
+  monthlyAllocation: number;
+  periodEnd: string;
+  daysUntilReset: number;
+}
+
+/**
+ * Database row type for ai_credits (snake_case from Supabase)
+ */
+export interface AICreditsRow {
+  id: string;
+  user_id: string;
+  credits_remaining: number;
+  credits_used_this_period: number;
+  monthly_allocation: number;
+  period_start: string;
+  period_end: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * AI generation status
+ */
+export type AIGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+/**
+ * AI generation record
+ * Tracks individual AI enhancement operations
+ */
+export interface AIGeneration {
+  id: string;
+  featureKey: AIFeatureKey;
+  status: AIGenerationStatus;
+  inputImageUrl: string;
+  outputImageUrl?: string;
+  creditsCharged: number;
+  processingTimeMs?: number;
+  errorMessage?: string;
+  createdAt: string;
+  completedAt?: string;
+}
+
+/**
+ * Database row type for ai_generations (snake_case from Supabase)
+ */
+export interface AIGenerationRow {
+  id: string;
+  user_id: string;
+  draft_id: string | null;
+  slot_id: string | null;
+  feature_key: string;
+  model_id: string;
+  provider: string;
+  input_image_url: string;
+  output_image_url: string | null;
+  input_params: Record<string, unknown>;
+  background_preset_id: string | null;
+  custom_prompt: string | null;
+  status: string;
+  error_message: string | null;
+  error_code: string | null;
+  credits_charged: number;
+  estimated_cost_usd: number | null;
+  started_at: string;
+  completed_at: string | null;
+  processing_time_ms: number | null;
+  app_version: string | null;
+  created_at: string;
+}
+
+/**
+ * Background preset for AI background replacement
+ */
+export interface BackgroundPreset {
+  id: string;
+  name: string;
+  category: BackgroundPresetCategory;
+  previewUrl?: string;
+  previewColor: string;
+  isPremium: boolean;
+  sortOrder: number;
+}
+
+/**
+ * Background preset categories
+ */
+export type BackgroundPresetCategory = 'studio' | 'solid' | 'nature' | 'blur' | 'professional';
+
+/**
+ * Database row type for background_presets (snake_case from Supabase)
+ */
+export interface BackgroundPresetRow {
+  id: string;
+  name: string;
+  category: string;
+  prompt: string;
+  negative_prompt: string | null;
+  preview_url: string | null;
+  preview_color: string | null;
+  sort_order: number;
+  is_premium: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+/**
+ * Grouped background presets by category
+ */
+export interface GroupedBackgroundPresets {
+  studio: BackgroundPreset[];
+  solid: BackgroundPreset[];
+  nature: BackgroundPreset[];
+  blur: BackgroundPreset[];
+  professional: BackgroundPreset[];
+}
+
+/**
+ * Request payload for AI enhancement
+ */
+export interface AIEnhanceRequest {
+  featureKey: AIFeatureKey;
+  imageUrl: string;
+  draftId?: string;
+  slotId?: string;
+  presetId?: string;  // For background_replace
+  customPrompt?: string;  // For background_replace with custom prompt
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Response from AI enhancement
+ */
+export interface AIEnhanceResponse {
+  success: boolean;
+  generationId: string;
+  outputUrl?: string;
+  creditsCharged: number;
+  creditsRemaining: number;
+  processingTimeMs?: number;
+  error?: string;
+}
+
+/**
+ * AI feature check result
+ */
+export interface AIFeatureCheck {
+  hasCredits: boolean;
+  creditsRemaining: number;
+  creditsRequired: number;
+}
+
+/**
+ * AI config response from edge function
+ */
+export interface AIConfigResponse {
+  features: AIModelConfig[];
+  version: string;
+}
+
+/**
+ * AI presets response from edge function
+ */
+export interface AIPresetsResponse {
+  presets: BackgroundPreset[];
+  grouped: GroupedBackgroundPresets;
+}
+
+/**
+ * AI processing state for UI feedback
+ */
+export interface AIProcessingState {
+  isProcessing: boolean;
+  featureKey?: AIFeatureKey;
+  progress?: number;  // 0-100
+  message?: string;
+}

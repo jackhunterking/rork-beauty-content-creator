@@ -18,6 +18,7 @@ export { ColorPickerModal } from './ColorPickerModal';
 // Existing components
 export { ContextualToolbar } from './ContextualToolbar';
 export { AIEnhancePanel } from './AIEnhancePanel';
+export { BackgroundPresetPicker } from './BackgroundPresetPicker';
 export { CropToolbar } from './CropToolbar';
 
 // Types - re-export everything from types

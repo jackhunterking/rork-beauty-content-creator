@@ -71,6 +71,15 @@ export const POSTHOG_EVENTS = {
   PREMIUM_FEATURE_ATTEMPTED: 'premium_feature_attempted',
   WATERMARK_REMOVED: 'watermark_removed',
   
+  // AI Enhancement events
+  AI_ENHANCEMENT_STARTED: 'ai_enhancement_started',
+  AI_ENHANCEMENT_COMPLETED: 'ai_enhancement_completed',
+  AI_ENHANCEMENT_FAILED: 'ai_enhancement_failed',
+  AI_CREDITS_DEPLETED: 'ai_credits_depleted',
+  AI_CREDITS_REFRESHED: 'ai_credits_refreshed',
+  AI_FEATURE_CONFIG_LOADED: 'ai_feature_config_loaded',
+  AI_BACKGROUND_PRESET_SELECTED: 'ai_background_preset_selected',
+  
   // Settings events
   SETTINGS_CHANGED: 'settings_changed',
   FEEDBACK_SUBMITTED: 'feedback_submitted',
@@ -102,6 +111,12 @@ export const USER_PROPERTIES = {
   // Engagement properties
   TOTAL_PROJECTS_CREATED: 'total_projects_created',
   TOTAL_EXPORTS: 'total_exports',
+  
+  // AI properties
+  AI_CREDITS_REMAINING: 'ai_credits_remaining',
+  AI_TOTAL_GENERATIONS: 'ai_total_generations',
+  AI_FAVORITE_FEATURE: 'ai_favorite_feature',
+  AI_LAST_GENERATION_DATE: 'ai_last_generation_date',
 } as const;
 
 // ============================================
@@ -557,6 +572,129 @@ export async function shutdownPostHog(): Promise<void> {
 }
 
 // ============================================
+// AI Enhancement Tracking
+// ============================================
+
+/**
+ * Track when an AI enhancement is started
+ */
+export function trackAIEnhancementStarted(
+  featureKey: string,
+  properties?: {
+    slotId?: string;
+    draftId?: string;
+    presetId?: string;
+    creditsRequired?: number;
+  }
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_STARTED, {
+    feature_key: featureKey,
+    ...properties,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * Track when an AI enhancement completes successfully
+ */
+export function trackAIEnhancementCompleted(
+  featureKey: string,
+  properties?: {
+    generationId?: string;
+    slotId?: string;
+    draftId?: string;
+    creditsCharged?: number;
+    processingTimeMs?: number;
+    creditsRemaining?: number;
+  }
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_COMPLETED, {
+    feature_key: featureKey,
+    ...properties,
+    timestamp: new Date().toISOString(),
+  });
+  
+  // Update user properties
+  if (properties?.creditsRemaining !== undefined) {
+    setUserProperties({
+      [USER_PROPERTIES.AI_CREDITS_REMAINING]: properties.creditsRemaining,
+      [USER_PROPERTIES.AI_LAST_GENERATION_DATE]: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * Track when an AI enhancement fails
+ */
+export function trackAIEnhancementFailed(
+  featureKey: string,
+  errorMessage: string,
+  properties?: {
+    generationId?: string;
+    slotId?: string;
+    draftId?: string;
+    errorCode?: string;
+  }
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_FAILED, {
+    feature_key: featureKey,
+    error_message: errorMessage,
+    ...properties,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * Track when user runs out of AI credits
+ */
+export function trackAICreditsDepleted(
+  featureKey: string,
+  creditsRequired: number
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_CREDITS_DEPLETED, {
+    feature_key: featureKey,
+    credits_required: creditsRequired,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * Track when AI credits are refreshed
+ */
+export function trackAICreditsRefreshed(
+  creditsRemaining: number,
+  monthlyAllocation: number
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_CREDITS_REFRESHED, {
+    credits_remaining: creditsRemaining,
+    monthly_allocation: monthlyAllocation,
+    timestamp: new Date().toISOString(),
+  });
+  
+  setUserProperties({
+    [USER_PROPERTIES.AI_CREDITS_REMAINING]: creditsRemaining,
+  });
+}
+
+/**
+ * Track background preset selection
+ */
+export function trackBackgroundPresetSelected(
+  presetId: string,
+  presetName: string,
+  category: string,
+  isPremium: boolean
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_BACKGROUND_PRESET_SELECTED, {
+    preset_id: presetId,
+    preset_name: presetName,
+    category,
+    is_premium: isPremium,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ============================================
 // Opt-out Control
 // ============================================
 
@@ -627,6 +765,14 @@ export default {
   
   // Superwall integration
   forwardSuperwallEvent,
+  
+  // AI Enhancement tracking
+  trackAIEnhancementStarted,
+  trackAIEnhancementCompleted,
+  trackAIEnhancementFailed,
+  trackAICreditsDepleted,
+  trackAICreditsRefreshed,
+  trackBackgroundPresetSelected,
   
   // Lifecycle
   flushEvents,
