@@ -355,10 +355,28 @@ function PostHogBridge() {
   
   useEffect(() => {
     if (posthog) {
-      // #region agent log - Hypothesis H: PostHog bridge connecting
-      console.log('[DEBUG-H] PostHogBridge: Setting client from provider');
-      console.log('[DEBUG-H] Session replay enabled:', posthog.isSessionReplayActive?.() ?? 'method not available');
+      // #region agent log - Hypothesis I: PostHog bridge with session replay check
+      console.log('[DEBUG-I] PostHogBridge: Setting client from provider');
+      
+      // Log all available methods on the posthog client to find session replay methods
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(posthog))
+        .filter(name => typeof (posthog as any)[name] === 'function');
+      console.log('[DEBUG-I] PostHog client methods:', methods.join(', '));
+      
+      // Check if session replay is available
+      if (typeof (posthog as any).startSessionRecording === 'function') {
+        console.log('[DEBUG-I] Session replay API available - calling startSessionRecording()');
+        (posthog as any).startSessionRecording();
+      } else {
+        console.log('[DEBUG-I] startSessionRecording method NOT found - session replay plugin may not be installed');
+      }
+      
+      // Check session recording status
+      if (typeof (posthog as any).isSessionRecordingActive === 'function') {
+        console.log('[DEBUG-I] Session recording active:', (posthog as any).isSessionRecordingActive());
+      }
       // #endregion
+      
       setPostHogClient(posthog);
     }
   }, [posthog]);

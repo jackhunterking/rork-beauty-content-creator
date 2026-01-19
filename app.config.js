@@ -65,6 +65,8 @@ export default {
           origin: "https://resulta.app/",
         },
       ],
+      // PostHog Session Replay - MUST be included for session recordings to work
+      "posthog-react-native-session-replay",
       "expo-font",
       "expo-web-browser",
       "expo-apple-authentication",
