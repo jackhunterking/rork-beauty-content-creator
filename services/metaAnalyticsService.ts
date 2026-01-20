@@ -68,14 +68,11 @@ export async function initializeFacebookSDK(): Promise<void> {
     // Enable advertiser ID collection for attribution
     await Settings.setAdvertiserIDCollectionEnabled(true);
     
-    // Set Advertiser Tracking Enabled (ATE) flag for iOS 14.5+
-    // Enables full tracking capabilities for ad attribution
-    try {
-      await Settings.setAdvertiserTrackingEnabled(true);
-    } catch {
-      // ATE flag not critical - continue initialization
-      console.log('[MetaAnalytics] ATE flag could not be set (may require ATT consent)');
-    }
+    // Note: setAdvertiserTrackingEnabled is deprecated as of iOS 14.5+
+    // The SDK now automatically reads ATT (App Tracking Transparency) permission status
+    // from iOS, so we no longer need to manually set this flag.
+    // See: https://developers.facebook.com/docs/app-events/getting-started-app-events-ios
+    console.log('[MetaAnalytics] SDK uses automatic ATT status detection (iOS 14.5+)');
     
     // Flush any pending events
     AppEventsLogger.flush();

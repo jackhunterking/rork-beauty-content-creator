@@ -63,6 +63,8 @@ export interface PreviewRenderOptions {
   slotImages: Record<string, string>;
   /** Overlays to render (handled client-side) */
   overlays?: Overlay[];
+  /** Background layer color overrides (layerId -> fill color) */
+  backgroundOverrides?: Record<string, string>;
 }
 
 export interface RenderProgress {
@@ -92,7 +94,7 @@ export type RenderProgressCallback = (progress: RenderProgress) => void;
 export async function renderPreview(
   options: PreviewRenderOptions
 ): Promise<PreviewRenderResult> {
-  const { templateId, slotImages } = options;
+  const { templateId, slotImages, backgroundOverrides } = options;
   
   try {
     // Validate API key
@@ -116,6 +118,17 @@ export async function renderPreview(
     // Add slot images
     for (const [slotId, publicUrl] of Object.entries(publicUrls)) {
       layerPayload[slotId] = { image_url: publicUrl };
+    }
+    
+    // Add background layer color overrides
+    if (backgroundOverrides) {
+      for (const [layerId, fillColor] of Object.entries(backgroundOverrides)) {
+        // Merge with existing layer payload or create new
+        layerPayload[layerId] = {
+          ...(layerPayload[layerId] || {}),
+          fill: fillColor,
+        };
+      }
     }
     
     // Call Templated.io API

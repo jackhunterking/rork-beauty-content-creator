@@ -56,19 +56,23 @@ CREATE TRIGGER ai_credits_updated_at
 
 -- Function to check and reset credits if period expired
 -- Called before any credit operation
+-- Uses INSERT ON CONFLICT to handle race conditions with concurrent requests
 CREATE OR REPLACE FUNCTION check_and_reset_ai_credits(p_user_id UUID)
 RETURNS ai_credits AS $$
 DECLARE
     v_credits ai_credits;
 BEGIN
-    -- Get or create credits record
+    -- First, try to get existing record
     SELECT * INTO v_credits FROM ai_credits WHERE user_id = p_user_id;
     
     IF v_credits IS NULL THEN
-        -- Create new credits record with initial allocation
+        -- Use INSERT ON CONFLICT to handle race conditions
         INSERT INTO ai_credits (user_id, credits_remaining, monthly_allocation)
         VALUES (p_user_id, 10, 10)
-        RETURNING * INTO v_credits;
+        ON CONFLICT (user_id) DO NOTHING;
+        
+        -- Re-fetch the record (either our insert or the concurrent one)
+        SELECT * INTO v_credits FROM ai_credits WHERE user_id = p_user_id;
     ELSIF v_credits.period_end < NOW() THEN
         -- Reset credits for new period
         UPDATE ai_credits

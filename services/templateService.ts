@@ -79,6 +79,10 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     layersJson: row.layers_json || undefined,
     // Premium template flag - requires Pro subscription when true
     isPremium: row.is_premium ?? false,
+    // List of layer IDs that users can customize the background color of
+    customizableBackgroundLayers: row.customizable_background_layers || undefined,
+    // PNG URL with transparent slots and background - for client-side compositing
+    frameOverlayUrl: row.frame_overlay_url || undefined,
   };
 }
 

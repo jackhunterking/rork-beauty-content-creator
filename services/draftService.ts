@@ -66,6 +66,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     renderedPreviewUrl: row.rendered_preview_url || undefined,
     // Premium status when preview was rendered
     wasRenderedAsPremium: row.was_rendered_as_premium ?? undefined,
+    // User-customized background layer colors
+    backgroundOverrides: row.background_overrides || undefined,
   };
 }
 
@@ -222,6 +224,7 @@ export async function updateDraft(
     renderedPreviewUrl?: string | null;
     wasRenderedAsPremium?: boolean | null;
     projectName?: string | null;
+    backgroundOverrides?: Record<string, string> | null;
   }
 ): Promise<Draft> {
   // Ensure user is authenticated (RLS will handle authorization)
@@ -248,6 +251,9 @@ export async function updateDraft(
   }
   if (updates.projectName !== undefined) {
     updateData.project_name = updates.projectName;
+  }
+  if (updates.backgroundOverrides !== undefined) {
+    updateData.background_overrides = updates.backgroundOverrides;
   }
 
   const { data, error } = await supabase
@@ -277,6 +283,7 @@ export async function updateDraft(
  * @param wasRenderedAsPremium - Optional premium status when preview was rendered
  * @param localPreviewPath - Optional local file path for cached preview (client-side only, not stored in DB)
  * @param projectName - Optional user-editable project name for personal reference
+ * @param backgroundOverrides - Optional map of layer IDs to fill colors for background customization
  */
 export async function saveDraftWithImages(
   templateId: string,
@@ -287,7 +294,8 @@ export async function saveDraftWithImages(
   renderedPreviewUrl?: string | null,
   wasRenderedAsPremium?: boolean,
   localPreviewPath?: string | null,
-  projectName?: string | null
+  projectName?: string | null,
+  backgroundOverrides?: Record<string, string> | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -357,6 +365,7 @@ export async function saveDraftWithImages(
       renderedPreviewUrl: renderedPreviewUrl ?? draft.renderedPreviewUrl,
       wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
       projectName: projectName !== undefined ? projectName : draft.projectName,
+      backgroundOverrides: backgroundOverrides !== undefined ? backgroundOverrides : draft.backgroundOverrides,
     });
 
     // Return draft with localPreviewPath appended (client-side only, not in DB)
@@ -495,6 +504,8 @@ export async function duplicateDraft(sourceDraftId: string): Promise<Draft> {
         was_rendered_as_premium: sourceDraft.wasRenderedAsPremium ?? null,
         // Copy project name with (Copy) suffix
         project_name: duplicateProjectName,
+        // Copy background color overrides
+        background_overrides: sourceDraft.backgroundOverrides || null,
       })
       .select()
       .single();

@@ -13,6 +13,44 @@ interface UseRealtimeDraftsResult {
 }
 
 /**
+ * Simple debounce hook to prevent rapid state updates from realtime events.
+ * Returns a debounced version of the callback that batches rapid calls.
+ */
+function useDebouncedCallback<T extends (...args: any[]) => any>(
+  callback: T,
+  delay: number
+): T {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+  
+  // Keep callback ref up to date
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  return useCallback(
+    ((...args: Parameters<T>) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        callbackRef.current(...args);
+      }, delay);
+    }) as T,
+    [delay]
+  );
+}
+
+/**
  * Convert database row (snake_case) to Draft type (camelCase)
  */
 function mapRowToDraft(row: DraftRow): Draft {
@@ -97,8 +135,8 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
     });
   }, []);
 
-  // Handle real-time UPDATE event
-  const handleUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<DraftRow>) => {
+  // Handle real-time UPDATE event (core logic)
+  const processUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<DraftRow>) => {
     if (!mountedRef.current) return;
     
     const updatedRow = payload.new as DraftRow;
@@ -127,6 +165,9 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
       }
     });
   }, []);
+
+  // Debounced UPDATE handler to prevent rapid state updates
+  const handleUpdate = useDebouncedCallback(processUpdate, 100);
 
   // Handle real-time DELETE event
   const handleDelete = useCallback((payload: RealtimePostgresChangesPayload<DraftRow>) => {
@@ -212,7 +253,7 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
         channelRef.current = null;
       }
     };
-  }, [isAuthenticated, fetchInitialDrafts, handleInsert, handleUpdate, handleDelete]);
+  }, [isAuthenticated, fetchInitialDrafts, handleInsert, processUpdate, handleUpdate, handleDelete]);
 
   // Manual refetch function
   const refetch = useCallback(async () => {

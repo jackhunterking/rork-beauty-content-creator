@@ -3,6 +3,7 @@
  * 
  * Bottom sheet for selecting background replacement presets.
  * Shows preset categories and allows selection for AI background replacement.
+ * Minimal design with brand-aligned colors.
  */
 
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
@@ -12,9 +13,8 @@ import {
   Text, 
   TouchableOpacity, 
   ActivityIndicator,
-  ScrollView,
 } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { 
   Image,
@@ -28,7 +28,6 @@ import {
   Briefcase,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useAuthContext } from '@/contexts/AuthContext';
 import { fetchBackgroundPresets } from '@/services/aiService';
 import type { BackgroundPreset, BackgroundPresetCategory, GroupedBackgroundPresets } from '@/types';
 
@@ -76,7 +75,8 @@ function PresetTile({ preset, isSelected, isLocked, onSelect }: PresetTileProps)
       <View 
         style={[
           styles.presetPreview,
-          { backgroundColor: preset.previewColor || '#CCCCCC' }
+          { backgroundColor: preset.previewColor || '#CCCCCC' },
+          isSelected && styles.presetPreviewSelected,
         ]} 
       />
       
@@ -95,7 +95,10 @@ function PresetTile({ preset, isSelected, isLocked, onSelect }: PresetTileProps)
       )}
       
       {/* Name */}
-      <Text style={styles.presetName} numberOfLines={1}>
+      <Text style={[
+        styles.presetName,
+        isSelected && styles.presetNameSelected,
+      ]} numberOfLines={1}>
         {preset.name}
       </Text>
     </TouchableOpacity>
@@ -164,9 +167,6 @@ export function BackgroundPresetPicker({
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ['70%'], []);
   
-  // Auth context - wait for auth before making API calls
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
-  
   // Presets state
   const [presets, setPresets] = useState<BackgroundPreset[]>([]);
   const [groupedPresets, setGroupedPresets] = useState<GroupedBackgroundPresets | null>(null);
@@ -176,25 +176,10 @@ export function BackgroundPresetPicker({
   // Calculate bottom padding with safe area
   const bottomPadding = Math.max(insets.bottom, 20) + 16;
 
-  // Load presets - only when authenticated
+  // Load presets on mount - auth handled gracefully in service layer
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'BackgroundPresetPicker.tsx:useEffect',message:'BackgroundPresetPicker auth check',data:{isAuthenticated,authLoading,timestamp:new Date().toISOString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
-    
-    // Don't load if still checking auth or not authenticated
-    if (authLoading) {
-      return;
-    }
-    
-    if (!isAuthenticated) {
-      setIsLoading(false);
-      setError('Please sign in to use AI features');
-      return;
-    }
-    
     loadPresets();
-  }, [isAuthenticated, authLoading]);
+  }, []);
 
   const loadPresets = async () => {
     setIsLoading(true);
@@ -248,7 +233,7 @@ export function BackgroundPresetPicker({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <View style={styles.headerIcon}>
-              <Image size={20} color="#8B5CF6" />
+              <Image size={20} color={Colors.light.ai.primary} />
             </View>
             <Text style={styles.headerTitle}>Choose Background</Text>
           </View>
@@ -269,7 +254,7 @@ export function BackgroundPresetPicker({
         {/* Loading State */}
         {isLoading && (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#8B5CF6" />
+            <ActivityIndicator size="large" color={Colors.light.ai.primary} />
             <Text style={styles.loadingText}>Loading presets...</Text>
           </View>
         )}
@@ -339,7 +324,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(139, 92, 246, 0.15)',
+    backgroundColor: Colors.light.ai.lightBg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -375,19 +360,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: 'rgba(214, 69, 69, 0.1)',
     borderRadius: 12,
     marginBottom: 20,
   },
   errorText: {
     fontSize: 14,
-    color: '#EF4444',
+    color: Colors.light.error,
     marginBottom: 12,
   },
   retryButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#8B5CF6',
+    backgroundColor: Colors.light.ai.primary,
     borderRadius: 8,
   },
   retryText: {
@@ -432,6 +417,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.borderLight,
     position: 'relative',
   },
+  presetPreviewSelected: {
+    borderColor: Colors.light.ai.primary,
+    borderWidth: 3,
+  },
   selectedIndicator: {
     position: 'absolute',
     top: 4,
@@ -439,7 +428,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#8B5CF6',
+    backgroundColor: Colors.light.ai.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -460,6 +449,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.light.textSecondary,
     textAlign: 'center',
+  },
+  presetNameSelected: {
+    color: Colors.light.ai.primaryDark,
+    fontWeight: '600',
   },
 });
 

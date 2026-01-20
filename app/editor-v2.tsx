@@ -40,7 +40,7 @@ import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCaptur
 import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
 import {
-  AIEnhancePanel,
+  AIStudioPanel,
   CropToolbar,
   EditorMainToolbar,
   ElementContextBar,
@@ -50,7 +50,6 @@ import {
 } from '@/components/editor-v2';
 import { BackgroundPresetPicker } from '@/components/editor-v2/BackgroundPresetPicker';
 import { enhanceImage } from '@/services/aiService';
-import { useAICredits } from '@/hooks/useAICredits';
 import type { AIFeatureKey, BackgroundPreset } from '@/types';
 import {
   SelectionState,
@@ -81,6 +80,7 @@ import {
 } from '@/components/overlays';
 import { saveOverlays, loadOverlays } from '@/services/overlayPersistenceService';
 import { saveLocalPreviewFile, createDraftDirectories } from '@/services/localStorageService';
+import { cleanupTempFiles, trackTempFile } from '@/services/tempCleanupService';
 
 export default function EditorV2Screen() {
   const router = useRouter();
@@ -97,7 +97,7 @@ export default function EditorV2Screen() {
   const capturedImages = currentProject.capturedImages;
 
   // Bottom sheet refs
-  const aiPanelRef = useRef<BottomSheet>(null);
+  const aiStudioRef = useRef<BottomSheet>(null);
   const backgroundPickerRef = useRef<BottomSheet>(null);
   const projectActionsRef = useRef<BottomSheet>(null);
   
@@ -125,8 +125,16 @@ export default function EditorV2Screen() {
   const [aiProcessingType, setAIProcessingType] = useState<AIFeatureKey | null>(null);
   const [selectedBackgroundPresetId, setSelectedBackgroundPresetId] = useState<string | null>(null);
   
-  // AI Credits hook
-  const { refreshCredits } = useAICredits();
+  // Background layer customization state - initialized from draft (LEGACY)
+  const [backgroundOverrides, setBackgroundOverrides] = useState<Record<string, string>>(
+    currentProject.backgroundOverrides || {}
+  );
+  
+  // Canvas background color state (NEW - for client-side compositing)
+  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string>('#FFFFFF');
+  
+  // Whether background tool is active (for showing context bar)
+  const [isBackgroundToolActive, setIsBackgroundToolActive] = useState(false);
   
   // Ref to track overlay interaction - prevents canvas tap from deselecting during overlay tap
   const overlayInteractionRef = useRef<boolean>(false);
@@ -154,6 +162,7 @@ export default function EditorV2Screen() {
   
   // Canva-style UI state
   const [activeMainTool, setActiveMainTool] = useState<MainToolbarItem | null>(null);
+  const [expandedMainTool, setExpandedMainTool] = useState<MainToolbarItem | null>(null);
 
   // Track initial state for change detection
   const initialCapturedImagesRef = useRef<Record<string, string | null>>({});
@@ -295,6 +304,13 @@ export default function EditorV2Screen() {
       hasInitializedFromCacheRef.current = true;
     }
   }, [currentProject.draftId, currentProject.cachedPreviewUrl, template, capturedImages]);
+
+  // Sync backgroundOverrides when draft is loaded
+  useEffect(() => {
+    if (currentProject.draftId && currentProject.backgroundOverrides) {
+      setBackgroundOverrides(currentProject.backgroundOverrides);
+    }
+  }, [currentProject.draftId, currentProject.backgroundOverrides]);
 
   // Load overlays when loading a draft (FIX: was missing in EditorV2)
   useEffect(() => {
@@ -482,6 +498,7 @@ export default function EditorV2Screen() {
       const result = await renderPreview({
         templateId: template.templatedId,
         slotImages: photosToRender,
+        backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : undefined,
       });
       
       if (result.success && result.renderUrl) {
@@ -498,7 +515,7 @@ export default function EditorV2Screen() {
     } finally {
       setIsRendering(false);
     }
-  }, [template?.templatedId, capturedImages, slots]);
+  }, [template?.templatedId, capturedImages, slots, backgroundOverrides]);
 
   // Helper to serialize adjustments for comparison
   const serializeAdjustments = useCallback((adj: any) => {
@@ -637,7 +654,7 @@ export default function EditorV2Screen() {
   }, [selection, selectedOverlayId, editingOverlayId, pendingManipulationAdjustments, saveManipulationAdjustments]);
 
 
-  // Handle AI enhancement selection
+  // Handle AI enhancement selection (called from AIStudioPanel)
   const handleAIEnhancement = useCallback(async (featureKey: AIFeatureKey, presetId?: string) => {
     if (!selection.id || selection.type !== 'slot') {
       Alert.alert('Select a photo', 'Please select a photo first to apply AI enhancements.');
@@ -653,7 +670,7 @@ export default function EditorV2Screen() {
     }
 
     // Close AI panel
-    aiPanelRef.current?.close();
+    aiStudioRef.current?.close();
     
     // Start processing
     setIsAIProcessing(true);
@@ -661,13 +678,11 @@ export default function EditorV2Screen() {
 
     try {
       // Get the image URL - need to upload to a public URL for the AI service
-      // For now, we'll use the local URI if it's already a Supabase URL
       let imageUrl = image.uri;
       
       // If it's a local file, we need to upload it first
       if (imageUrl.startsWith('file://')) {
         // The image needs to be publicly accessible for Fal.AI
-        // For now, show a message that we need Supabase storage
         Alert.alert(
           'Image Upload Required', 
           'The image needs to be saved to cloud storage first. Please save your draft before using AI enhancements.',
@@ -678,11 +693,13 @@ export default function EditorV2Screen() {
         return;
       }
 
-      // Call the AI enhancement service
+      // Call the AI enhancement service with validated parameters
+      console.log('[Editor] Calling AI enhance with:', { featureKey, imageUrl: imageUrl.substring(0, 50), slotId, presetId });
+      
       const result = await enhanceImage({
         featureKey,
         imageUrl,
-        draftId: currentProject?.id,
+        draftId: currentProject?.draftId || undefined,
         slotId,
         presetId,
       });
@@ -692,21 +709,15 @@ export default function EditorV2Screen() {
       }
 
       // Update the captured image with the enhanced version
-      setCapturedImages(prev => ({
-        ...prev,
-        [slotId]: {
-          ...prev[slotId]!,
-          uri: result.outputUrl!,
-        },
-      }));
-
-      // Refresh credits display
-      refreshCredits();
+      setCapturedImage(slotId, {
+        ...image,
+        uri: result.outputUrl,
+      });
 
       // Show success feedback
       Alert.alert(
         'Enhancement Complete', 
-        `Your image has been enhanced! ${result.creditsCharged} credit${result.creditsCharged !== 1 ? 's' : ''} used.`
+        'Your image has been enhanced!'
       );
 
     } catch (error: any) {
@@ -719,7 +730,7 @@ export default function EditorV2Screen() {
       setIsAIProcessing(false);
       setAIProcessingType(null);
     }
-  }, [selection, capturedImages, currentProject, refreshCredits]);
+  }, [selection, capturedImages, currentProject?.draftId, setCapturedImage]);
 
   // Handle background preset selection
   const handleBackgroundPresetSelect = useCallback((preset: BackgroundPreset) => {
@@ -734,10 +745,27 @@ export default function EditorV2Screen() {
     backgroundPickerRef.current?.snapToIndex(0);
   }, []);
 
-  // Handle AI panel close
-  const handleAIPanelClose = useCallback(() => {
-    aiPanelRef.current?.close();
-  }, []);
+  // Handle background layer color change
+  const handleBackgroundLayerColorChange = useCallback((layerId: string, color: string) => {
+    setBackgroundOverrides(prev => ({
+      ...prev,
+      [layerId]: color,
+    }));
+    // Trigger re-render with new background
+    setTimeout(() => {
+      triggerPreviewRender();
+    }, 100);
+  }, [triggerPreviewRender]);
+
+  // Handle reset all background overrides
+  const handleBackgroundOverridesReset = useCallback(() => {
+    setBackgroundOverrides({});
+    // Trigger re-render without overrides
+    setTimeout(() => {
+      triggerPreviewRender();
+    }, 100);
+  }, [triggerPreviewRender]);
+
 
   // ============================================
   // Canva-style Main Toolbar Handlers
@@ -792,14 +820,23 @@ export default function EditorV2Screen() {
     } else if (tool === 'logo') {
       // Open logo picker panel
       logoPanelRef.current?.openPicker();
+    } else if (tool === 'background') {
+      // Show background color picker via context bar (not bottom sheet)
+      // Deselect any current selection first
+      setSelection(DEFAULT_SELECTION);
+      setSelectedOverlayId(null);
+      // Activate background tool to show context bar
+      setIsBackgroundToolActive(true);
     } else if (tool === 'ai') {
-      // Open AI panel
-      aiPanelRef.current?.snapToIndex(0);
+      // Open AI Studio panel (unified AI experience)
+      aiStudioRef.current?.snapToIndex(0);
     }
   }, [activeMainTool, slots, capturedImages, router]);
 
   // Get element type for context bar based on selection
   const contextBarElementType = useMemo((): ContextBarElementType | null => {
+    // Background tool active takes precedence
+    if (isBackgroundToolActive) return 'background';
     if (selection.type === 'slot') return 'photo';
     if (selectedOverlayId) {
       const overlay = overlays.find(o => o.id === selectedOverlayId);
@@ -810,10 +847,10 @@ export default function EditorV2Screen() {
       }
     }
     return null;
-  }, [selection.type, selectedOverlayId, overlays]);
+  }, [isBackgroundToolActive, selection.type, selectedOverlayId, overlays]);
 
   // Check if something is selected (for showing context bar vs main toolbar)
-  const hasSelection = selection.id !== null || selectedOverlayId !== null;
+  const hasSelection = selection.id !== null || selectedOverlayId !== null || isBackgroundToolActive;
 
   // Handle confirm/done from context bar
   const handleContextBarConfirm = useCallback(() => {
@@ -825,11 +862,18 @@ export default function EditorV2Screen() {
     setPendingManipulationAdjustments(null);
     setSelectedOverlayId(null);
     setActiveMainTool(null);
+    setIsBackgroundToolActive(false);
     
     // Close panels
     textStylePanelRef.current?.close();
     logoPanelRef.current?.close();
   }, [pendingManipulationAdjustments, saveManipulationAdjustments]);
+  
+  // Handle canvas background color change (for client-side compositing)
+  const handleCanvasBackgroundColorChange = useCallback((color: string) => {
+    setSelectedBackgroundColor(color);
+    // No API call needed - instant color change via client-side compositing!
+  }, []);
 
   // Handle text edit action - enters editing mode with keyboard
   const handleTextEditAction = useCallback(() => {
@@ -1371,9 +1415,57 @@ export default function EditorV2Screen() {
     setPendingRotation(rotation);
   }, []);
 
-  const handlePhotoAI = useCallback(() => {
-    aiPanelRef.current?.snapToIndex(0);
-  }, []);
+  // Handle AI feature selection from inline menu (context bar - photo already selected)
+  const handleAIFeatureSelect = useCallback((featureKey: AIFeatureKey) => {
+    // For background_replace, open the preset picker
+    if (featureKey === 'background_replace') {
+      backgroundPickerRef.current?.snapToIndex(0);
+      return;
+    }
+    
+    // For other features, apply directly
+    handleAIEnhancement(featureKey);
+  }, [handleAIEnhancement]);
+
+  // Handle AI feature selection from main toolbar (may not have photo selected)
+  const handleMainToolbarAISelect = useCallback((featureKey: AIFeatureKey) => {
+    // Check if a photo slot is selected
+    if (selection.type !== 'slot' || !selection.id) {
+      // Need to select a photo first - find first slot with an image
+      const firstFilledSlot = slots.find(slot => hasValidCapturedImage(slot.layerId, capturedImages));
+      if (firstFilledSlot) {
+        // Select the slot first
+        setSelection({
+          type: 'slot',
+          id: firstFilledSlot.layerId,
+          isTransforming: false,
+        });
+        // Then handle the AI feature
+        setTimeout(() => {
+          if (featureKey === 'background_replace') {
+            backgroundPickerRef.current?.snapToIndex(0);
+          } else {
+            handleAIEnhancement(featureKey);
+          }
+        }, 100);
+      } else {
+        // No photos yet - prompt to add one
+        Alert.alert(
+          'Add a Photo First',
+          'Please add a photo to your template before using AI features.',
+          [{ text: 'OK' }]
+        );
+      }
+      return;
+    }
+    
+    // Photo already selected - proceed normally
+    if (featureKey === 'background_replace') {
+      backgroundPickerRef.current?.snapToIndex(0);
+    } else {
+      handleAIEnhancement(featureKey);
+    }
+  }, [selection, slots, capturedImages, handleAIEnhancement]);
 
   const handlePhotoDelete = useCallback(() => {
     if (selection.id) {
@@ -1435,11 +1527,17 @@ export default function EditorV2Screen() {
         return null;
       }
       
+      // Track the ViewShot temp file for cleanup
+      trackTempFile(uri);
+      
       // Save to cache directory temporarily
       const filename = `canvas_overlay_${Date.now()}.jpg`;
       const destUri = `${FileSystem.cacheDirectory}${filename}`;
       
       await FileSystem.copyAsync({ from: uri, to: destUri });
+      
+      // Track the copied file for cleanup as well
+      trackTempFile(destUri);
       
       console.log('[EditorV2] Captured canvas with overlays to cache:', destUri);
       return destUri;
@@ -1535,6 +1633,7 @@ export default function EditorV2Screen() {
         capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
         renderedPreviewUrl: renderedPreviewUri,
         wasRenderedAsPremium: isPremium,
+        backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : null,
       });
 
       console.log('[EditorV2] Draft saved:', savedDraft?.id);
@@ -1764,6 +1863,20 @@ export default function EditorV2Screen() {
     }
   }, [hasUnsavedChanges, resetProject, router, handleSaveDraft]);
 
+  // Cleanup effect - runs when editor unmounts
+  // Cleans up temp files and memory cache to prevent accumulation
+  useEffect(() => {
+    return () => {
+      console.log('[EditorV2] Cleanup on unmount');
+      // Clean up any pending temp files from ViewShot captures and image processing
+      cleanupTempFiles().catch(err => {
+        console.warn('[EditorV2] Cleanup error:', err);
+      });
+      // Clear memory cache for images (disk cache persists for reuse)
+      ExpoImage.clearMemoryCache().catch(() => {});
+    };
+  }, []);
+
   // Redirect if no template
   useEffect(() => {
     if (!template) {
@@ -1894,6 +2007,9 @@ export default function EditorV2Screen() {
                   rotation: pendingRotation,
                   onAdjustmentChange: handleCropAdjustmentChange,
                 } : null}
+                backgroundColor={selectedBackgroundColor}
+                capturedImages={capturedImages}
+                useClientSideCompositing={!!template?.frameOverlayUrl}
               />
               
               {/* Overlay Layer - renders overlays on top of canvas (hidden during manipulation/crop) */}
@@ -1956,8 +2072,12 @@ export default function EditorV2Screen() {
             autoExpandOption={contextBarAutoExpandOption}
             onPhotoReplace={handlePhotoReplace}
             onPhotoAdjust={handlePhotoResize}
-            onPhotoAI={handlePhotoAI}
             onPhotoResize={handlePhotoResize}
+            isPremium={isPremium}
+            isAIProcessing={isAIProcessing}
+            aiProcessingType={aiProcessingType}
+            onAIFeatureSelect={handleAIFeatureSelect}
+            onRequestPremium={(feature) => requestPremiumAccess(feature)}
             onTextEdit={handleTextEditAction}
             onTextFont={handleInlineFontChange}
             onTextColor={handleInlineColorChange}
@@ -1969,6 +2089,8 @@ export default function EditorV2Screen() {
             onLogoReplace={handleLogoReplaceAction}
             onLogoOpacity={handleLogoOpacityAction}
             onLogoSize={handleLogoSizeAction}
+            canvasBackgroundColor={selectedBackgroundColor}
+            onCanvasBackgroundColorChange={handleCanvasBackgroundColorChange}
             onConfirm={handleContextBarConfirm}
           />
         ) : (
@@ -1976,6 +2098,13 @@ export default function EditorV2Screen() {
             activeTool={activeMainTool}
             onToolSelect={handleMainToolbarSelect}
             visible={true}
+            isPremium={isPremium}
+            isAIProcessing={isAIProcessing}
+            aiProcessingType={aiProcessingType}
+            onAIFeatureSelect={handleMainToolbarAISelect}
+            onRequestPremium={(feature) => requestPremiumAccess(feature)}
+            expandedTool={expandedMainTool}
+            onExpandedToolChange={setExpandedMainTool}
           />
         )}
       </SafeAreaView>
@@ -1996,20 +2125,28 @@ export default function EditorV2Screen() {
         visible={!!editingOverlayId}
       />
 
-      {/* AI Enhancement Panel */}
-      <AIEnhancePanel
-        bottomSheetRef={aiPanelRef}
+      {/* AI Studio Panel */}
+      <AIStudioPanel
+        bottomSheetRef={aiStudioRef}
         isPremium={isPremium}
         selectedSlotId={selection.type === 'slot' ? selection.id : null}
         isProcessing={isAIProcessing}
         processingType={aiProcessingType}
-        onSelectEnhancement={handleAIEnhancement}
+        onApplyEnhancement={handleAIEnhancement}
         onRequestPremium={(feature) => requestPremiumAccess(feature)}
-        onClose={handleAIPanelClose}
-        onOpenBackgroundPicker={handleOpenBackgroundPicker}
+        onClose={() => aiStudioRef.current?.close()}
+        onSelectPhoto={() => {
+          // Navigate to first empty slot to capture a photo
+          const firstEmptySlot = slots.find(slot => !hasValidCapturedImage(slot.layerId, capturedImages));
+          if (firstEmptySlot) {
+            router.push(`/capture/${firstEmptySlot.layerId}`);
+          } else if (slots.length > 0) {
+            router.push(`/capture/${slots[0].layerId}`);
+          }
+        }}
       />
 
-      {/* Background Preset Picker */}
+      {/* Background Preset Picker (AI Background Replace) */}
       <BackgroundPresetPicker
         bottomSheetRef={backgroundPickerRef}
         isPremium={isPremium}

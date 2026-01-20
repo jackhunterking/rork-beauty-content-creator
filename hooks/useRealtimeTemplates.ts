@@ -13,6 +13,44 @@ interface UseRealtimeTemplatesResult {
 }
 
 /**
+ * Simple debounce hook to prevent rapid state updates from realtime events.
+ * Returns a debounced version of the callback that batches rapid calls.
+ */
+function useDebouncedCallback<T extends (...args: any[]) => any>(
+  callback: T,
+  delay: number
+): T {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(callback);
+  
+  // Keep callback ref up to date
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  return useCallback(
+    ((...args: Parameters<T>) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(() => {
+        callbackRef.current(...args);
+      }, delay);
+    }) as T,
+    [delay]
+  );
+}
+
+/**
  * Hook that provides real-time templates from Supabase.
  * Automatically subscribes to INSERT, UPDATE, DELETE events on the templates table.
  */
@@ -51,8 +89,8 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
     }
   }, []);
 
-  // Handle real-time UPDATE event
-  const handleUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<TemplateRow>) => {
+  // Handle real-time UPDATE event (core logic)
+  const processUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<TemplateRow>) => {
     console.log('[Realtime] UPDATE received:', payload.new);
     const updatedRow = payload.new as TemplateRow;
     
@@ -87,6 +125,9 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
       }
     });
   }, []);
+
+  // Debounced UPDATE handler to prevent rapid state updates
+  const handleUpdate = useDebouncedCallback(processUpdate, 100);
 
   // Handle real-time DELETE event
   const handleDelete = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
@@ -171,7 +212,7 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
         channelRef.current = null;
       }
     };
-  }, [fetchInitialTemplates, handleInsert, handleUpdate, handleDelete]);
+  }, [fetchInitialTemplates, handleInsert, processUpdate, handleUpdate, handleDelete]);
 
   // Manual refetch function
   const refetch = useCallback(async () => {

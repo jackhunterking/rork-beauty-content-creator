@@ -46,13 +46,7 @@ const ENDPOINTS = {
  * Get authorization header for edge function calls
  */
 async function getAuthHeader(): Promise<string | null> {
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:getAuthHeader:entry',message:'Getting auth header',data:{timestamp:new Date().toISOString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,E'})}).catch(()=>{});
-  // #endregion
   const { data: { session } } = await supabase.auth.getSession();
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:getAuthHeader:result',message:'Session check result',data:{hasSession:!!session,hasAccessToken:!!session?.access_token,tokenPrefix:session?.access_token?.substring(0,20)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,C,E'})}).catch(()=>{});
-  // #endregion
   return session?.access_token ? `Bearer ${session.access_token}` : null;
 }
 
@@ -63,16 +57,11 @@ async function callEdgeFunction<T>(
   url: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:callEdgeFunction:entry',message:'Edge function call started',data:{url,method:options.method||'GET'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
   const authHeader = await getAuthHeader();
   
   if (!authHeader) {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:callEdgeFunction:noAuth',message:'No auth header - not authenticated',data:{url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,D'})}).catch(()=>{});
-    // #endregion
-    throw new Error('Not authenticated');
+    // Return empty response instead of throwing - prevents error cascades
+    throw new Error('AUTH_PENDING');
   }
 
   const response = await fetch(url, {
@@ -86,11 +75,11 @@ async function callEdgeFunction<T>(
 
   const data = await response.json();
 
-  // #region agent log
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'aiService.ts:callEdgeFunction:response',message:'Edge function response',data:{url,status:response.status,ok:response.ok,errorMsg:data?.error},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
-
   if (!response.ok) {
+    // If 401, auth may be stale - indicate auth pending
+    if (response.status === 401) {
+      throw new Error('AUTH_PENDING');
+    }
     throw new Error(data.error || `Request failed with status ${response.status}`);
   }
 
@@ -156,9 +145,15 @@ function transformGenerationRow(row: AIGenerationRow): AIGeneration {
  */
 export async function fetchAIConfig(): Promise<AIModelConfig[]> {
   try {
-    const response = await callEdgeFunction<AIConfigResponse>(ENDPOINTS.config);
-    return response.features;
-  } catch (error) {
+    // The edge function returns snake_case data, so we need to cast to the row type
+    const response = await callEdgeFunction<{ features: AIModelConfigRow[]; version: string }>(ENDPOINTS.config);
+    // Transform snake_case to camelCase
+    return (response.features || []).map(transformConfigRow);
+  } catch (error: any) {
+    // If auth is pending, return empty array instead of throwing
+    if (error?.message === 'AUTH_PENDING') {
+      return [];
+    }
     console.error('[aiService] Error fetching AI config:', error);
     throw error;
   }
@@ -172,11 +167,34 @@ export async function fetchBackgroundPresets(): Promise<{
   grouped: GroupedBackgroundPresets;
 }> {
   try {
-    const response = await callEdgeFunction<AIPresetsResponse>(
-      `${ENDPOINTS.config}/presets`
-    );
-    return response;
-  } catch (error) {
+    // The edge function returns snake_case data
+    const response = await callEdgeFunction<{
+      presets: BackgroundPresetRow[];
+      grouped: Record<string, BackgroundPresetRow[]>;
+    }>(`${ENDPOINTS.config}/presets`);
+    
+    // Transform snake_case to camelCase
+    const transformedPresets = (response.presets || []).map(transformPresetRow);
+    const transformedGrouped: GroupedBackgroundPresets = {
+      studio: (response.grouped?.studio || []).map(transformPresetRow),
+      solid: (response.grouped?.solid || []).map(transformPresetRow),
+      nature: (response.grouped?.nature || []).map(transformPresetRow),
+      blur: (response.grouped?.blur || []).map(transformPresetRow),
+      professional: (response.grouped?.professional || []).map(transformPresetRow),
+    };
+    
+    return {
+      presets: transformedPresets,
+      grouped: transformedGrouped,
+    };
+  } catch (error: any) {
+    // If auth is pending, return empty presets instead of throwing
+    if (error?.message === 'AUTH_PENDING') {
+      return {
+        presets: [],
+        grouped: { studio: [], solid: [], nature: [], blur: [], professional: [] }
+      };
+    }
     console.error('[aiService] Error fetching presets:', error);
     throw error;
   }
@@ -197,7 +215,7 @@ export async function getFeatureConfig(featureKey: AIFeatureKey): Promise<AIMode
 /**
  * Get current AI credit balance
  */
-export async function getCredits(): Promise<AICredits> {
+export async function getCredits(): Promise<AICredits | null> {
   try {
     const response = await callEdgeFunction<{
       credits_remaining: number;
@@ -214,7 +232,11 @@ export async function getCredits(): Promise<AICredits> {
       periodEnd: response.period_end,
       daysUntilReset: response.days_until_reset,
     };
-  } catch (error) {
+  } catch (error: any) {
+    // If auth is pending, return null instead of throwing
+    if (error?.message === 'AUTH_PENDING') {
+      return null;
+    }
     console.error('[aiService] Error fetching credits:', error);
     throw error;
   }

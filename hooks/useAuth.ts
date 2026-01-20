@@ -65,8 +65,13 @@ export function useAuth() {
             setUser(null);
             setIsSessionReady(false);
           } else {
-            // Session is valid - safe to use
-            setSession(initialSession);
+            // Get the FRESH session after validation (token may have been refreshed)
+            const { data: { session: freshSession } } = await supabase.auth.getSession();
+            
+            if (!mounted) return;
+            
+            // Use the fresh session which has the updated access token
+            setSession(freshSession);
             const profile = await getCurrentProfile();
             if (mounted) {
               setUser(profile);
@@ -100,9 +105,6 @@ export function useAuth() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log('[useAuth] Auth state changed:', event);
-        // #region agent log
-        fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useAuth.ts:onAuthStateChange',message:'Auth state changed',data:{event,hasSession:!!newSession,hasUser:!!newSession?.user,userId:newSession?.user?.id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-        // #endregion
         
         if (!mounted) return;
 

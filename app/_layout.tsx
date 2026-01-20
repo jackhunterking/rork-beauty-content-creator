@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Platform } from "react-native";
+import { Platform, AppState, AppStateStatus } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SuperwallProvider, useSuperwallEvents, usePlacement } from "expo-superwall";
 import { PostHogProvider } from "posthog-react-native";
@@ -25,6 +25,10 @@ import {
   POSTHOG_EVENTS,
   setPostHogClient,
 } from "@/services/posthogService";
+import { 
+  cleanupTempFiles, 
+  cleanupOldTempFiles 
+} from "@/services/tempCleanupService";
 import { usePostHog } from "posthog-react-native";
 import { useScreenTracking } from "@/hooks/useScreenTracking";
 // Note: In-app purchase tracking is handled automatically by Facebook SDK
@@ -44,20 +48,37 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
+/**
+ * Simple network connectivity check
+ * Uses a lightweight HEAD request to check if we can reach the network.
+ * Returns false if the request fails (no network), true otherwise.
+ * Timeout is set to 5 seconds to avoid hanging.
+ */
+async function checkNetworkConnectivity(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch('https://api.superwall.com', {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok || response.status === 403; // 403 is still "reachable"
+  } catch (error) {
+    clearTimeout(timeoutId);
+    // AbortError means timeout, other errors mean network issues
+    console.log('[Network] Connectivity check failed:', error);
+    return false;
+  }
+}
+
 function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen 
-        name="drafts" 
-        options={{ 
-          headerShown: true,
-          title: 'Drafts',
-          presentation: 'card',
-        }} 
-      />
-      <Stack.Screen 
-        name="editor" 
+        name="editor-v2" 
         options={{ 
           headerShown: true,
           title: 'Editor',
@@ -313,6 +334,18 @@ function OnboardingFlowHandler({
         console.log('[Onboarding] No survey data found, manually triggering onboarding paywall');
         hasTriggeredManualPaywall.current = true;
         
+        // Check network connectivity before Superwall operations
+        // This prevents connection refused errors when offline
+        const isConnected = await checkNetworkConnectivity();
+        if (!isConnected) {
+          console.log('[Onboarding] No network connection, skipping paywall and going to auth');
+          if (!hasNavigatedToAuth.current) {
+            hasNavigatedToAuth.current = true;
+            router.replace('/auth/onboarding-auth');
+          }
+          return;
+        }
+        
         // Manually present the onboarding paywall using registerPlacement
         // This handles the case where app_install already fired but user didn't sign up
         try {
@@ -384,11 +417,49 @@ function RootLayoutInner() {
   const [showAnimatedSplash, setShowAnimatedSplash] = useState(true);
   const [splashComplete, setSplashComplete] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // Track screen views for PostHog analytics
   useScreenTracking({
     enabled: splashComplete, // Only track after splash is complete
   });
+
+  // App state listener for temp file cleanup
+  // Clean up temp files when app goes to background to prevent memory accumulation
+  useEffect(() => {
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+      // When app goes from active to background/inactive
+      if (
+        appStateRef.current === 'active' &&
+        nextAppState.match(/inactive|background/)
+      ) {
+        console.log('[App] Backgrounding - cleaning up temp files');
+        try {
+          await cleanupTempFiles();
+        } catch (error) {
+          console.warn('[App] Temp cleanup failed:', error);
+        }
+      }
+      
+      // When app returns to foreground, clean up old files
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('[App] Returning to foreground - cleaning old temp files');
+        // Clean files older than 10 minutes
+        cleanupOldTempFiles(10 * 60 * 1000).catch(console.warn);
+      }
+      
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   // Force update check - runs after splash completes
   const {

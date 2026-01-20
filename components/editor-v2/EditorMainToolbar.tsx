@@ -3,7 +3,7 @@
  * 
  * Canva-style main toolbar that sits directly on the canvas without background.
  * Features horizontally scrollable menu items with icon + label.
- * Transparent background, minimal design.
+ * Supports inline expandable menus (like AI feature selection).
  */
 
 import React, { useCallback } from 'react';
@@ -16,20 +16,22 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Camera,
   Type,
   Calendar,
   Image as ImageIcon,
   Sparkles,
-  Layers,
   Palette,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   withSpring,
   useSharedValue,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import Colors from '@/constants/colors';
+import { AIFeatureMenu } from './AIFeatureMenu';
+import type { AIFeatureKey } from '@/types';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -37,7 +39,7 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
  * Available tools in the main toolbar
  */
 export type MainToolbarItem = 
-  | 'photo'
+  | 'background'
   | 'text'
   | 'date'
   | 'logo'
@@ -53,9 +55,9 @@ interface ToolbarItemConfig {
 
 const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
   {
-    id: 'photo',
-    icon: (color) => <Camera size={24} color={color} strokeWidth={1.8} />,
-    label: 'Photo',
+    id: 'background',
+    icon: (color) => <Palette size={24} color={color} strokeWidth={1.8} />,
+    label: 'Background',
   },
   {
     id: 'text',
@@ -75,20 +77,18 @@ const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
   {
     id: 'ai',
     icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.8} />,
-    label: 'AI',
+    label: 'AI Studio',
   },
 ];
 
 interface ToolbarButtonProps {
   item: ToolbarItemConfig;
-  isActive: boolean;
   disabled?: boolean;
   onPress: () => void;
 }
 
 function ToolbarButton({
   item,
-  isActive,
   disabled = false,
   onPress,
 }: ToolbarButtonProps) {
@@ -106,7 +106,6 @@ function ToolbarButton({
     transform: [{ scale: scale.value }],
   }));
 
-  // No highlight/active state for main toolbar items (no sub-menus)
   const iconColor = disabled
     ? Colors.light.textTertiary
     : Colors.light.text;
@@ -149,6 +148,16 @@ interface EditorMainToolbarProps {
   items?: MainToolbarItem[];
   /** Whether to show the toolbar */
   visible?: boolean;
+  /** AI-related props */
+  isPremium?: boolean;
+  isAIProcessing?: boolean;
+  aiProcessingType?: AIFeatureKey | null;
+  onAIFeatureSelect?: (featureKey: AIFeatureKey) => void;
+  onRequestPremium?: (feature: string) => void;
+  /** Currently expanded tool (for inline menus) */
+  expandedTool?: MainToolbarItem | null;
+  /** Callback when expanded tool changes */
+  onExpandedToolChange?: (tool: MainToolbarItem | null) => void;
 }
 
 export function EditorMainToolbar({
@@ -157,6 +166,13 @@ export function EditorMainToolbar({
   disabled = false,
   items,
   visible = true,
+  isPremium = false,
+  isAIProcessing = false,
+  aiProcessingType = null,
+  onAIFeatureSelect,
+  onRequestPremium,
+  expandedTool = null,
+  onExpandedToolChange,
 }: EditorMainToolbarProps) {
   const insets = useSafeAreaInsets();
 
@@ -164,6 +180,26 @@ export function EditorMainToolbar({
   const displayItems = items
     ? TOOLBAR_ITEMS.filter((item) => items.includes(item.id))
     : TOOLBAR_ITEMS;
+
+  const handleToolPress = useCallback((tool: MainToolbarItem) => {
+    if (tool === 'ai') {
+      // Toggle AI menu expansion
+      if (expandedTool === 'ai') {
+        onExpandedToolChange?.(null);
+      } else {
+        onExpandedToolChange?.('ai');
+      }
+    } else {
+      // Close any expanded menu and select the tool
+      onExpandedToolChange?.(null);
+      onToolSelect(tool);
+    }
+  }, [expandedTool, onExpandedToolChange, onToolSelect]);
+
+  const handleAIFeatureSelect = useCallback((featureKey: AIFeatureKey) => {
+    onExpandedToolChange?.(null);
+    onAIFeatureSelect?.(featureKey);
+  }, [onExpandedToolChange, onAIFeatureSelect]);
 
   if (!visible) {
     return null;
@@ -176,6 +212,25 @@ export function EditorMainToolbar({
         { paddingBottom: Math.max(insets.bottom, 8) },
       ]}
     >
+      {/* Expanded AI Menu */}
+      {expandedTool === 'ai' && (
+        <Animated.View 
+          style={styles.expandedMenuContainer}
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(100)}
+        >
+          <AIFeatureMenu
+            isPremium={isPremium}
+            isProcessing={isAIProcessing}
+            processingType={aiProcessingType}
+            onSelectFeature={handleAIFeatureSelect}
+            onRequestPremium={onRequestPremium || (() => {})}
+            onClose={() => onExpandedToolChange?.(null)}
+          />
+        </Animated.View>
+      )}
+
+      {/* Main Toolbar */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -186,9 +241,8 @@ export function EditorMainToolbar({
           <ToolbarButton
             key={item.id}
             item={item}
-            isActive={activeTool === item.id}
             disabled={disabled}
-            onPress={() => onToolSelect(item.id)}
+            onPress={() => handleToolPress(item.id)}
           />
         ))}
       </ScrollView>
@@ -202,6 +256,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingTop: 8,
   },
+  expandedMenuContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   scrollContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -214,6 +272,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 12,
     minWidth: 56,
+    borderRadius: 12,
   },
   iconWrapper: {
     width: 44,

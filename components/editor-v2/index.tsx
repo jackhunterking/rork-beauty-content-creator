@@ -17,9 +17,14 @@ export { ColorPickerModal } from './ColorPickerModal';
 
 // Existing components
 export { ContextualToolbar } from './ContextualToolbar';
-export { AIEnhancePanel } from './AIEnhancePanel';
 export { BackgroundPresetPicker } from './BackgroundPresetPicker';
 export { CropToolbar } from './CropToolbar';
+
+// AI Studio components
+export { AIStudioPanel } from './AIStudioPanel';
+export { AIStudioFeatureTab } from './AIStudioFeatureTab';
+export { AIStudioPresetGrid } from './AIStudioPresetGrid';
+export { AIFeatureMenu } from './AIFeatureMenu';
 
 // Types - re-export everything from types
 export * from './types';

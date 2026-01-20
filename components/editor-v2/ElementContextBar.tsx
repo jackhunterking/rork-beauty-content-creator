@@ -48,8 +48,10 @@ import {
   Square,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Colors from '@/constants/colors';
+import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
 import { COLOR_PRESETS, BACKGROUND_COLOR_PRESETS, BACKGROUND_CONSTRAINTS, FONT_OPTIONS, FontFamily, DATE_FORMAT_OPTIONS, DateFormat } from '@/types/overlays';
+import { AIFeatureMenu } from './AIFeatureMenu';
+import type { AIFeatureKey } from '@/types';
 
 /**
  * TextColorIcon Component
@@ -98,7 +100,7 @@ const textColorIconStyles = StyleSheet.create({
 /**
  * Element types for context bar
  */
-export type ContextBarElementType = 'photo' | 'text' | 'date' | 'logo';
+export type ContextBarElementType = 'photo' | 'text' | 'date' | 'logo' | 'background';
 
 /**
  * Text format options
@@ -114,7 +116,7 @@ export interface TextFormatOptions {
 /**
  * Expandable option types
  */
-type ExpandedOption = 'color' | 'size' | 'font' | 'format' | 'dateFormat' | 'datePicker' | 'background' | null;
+type ExpandedOption = 'color' | 'size' | 'font' | 'format' | 'dateFormat' | 'datePicker' | 'background' | 'ai' | null;
 
 interface ContextBarAction {
   id: string;
@@ -127,17 +129,16 @@ interface ContextBarAction {
 
 interface ContextBarButtonProps {
   action: ContextBarAction;
-  isExpanded?: boolean;
 }
 
-function ContextBarButton({ action, isExpanded }: ContextBarButtonProps) {
+function ContextBarButton({ action }: ContextBarButtonProps) {
   const iconColor = action.isPrimary
     ? Colors.light.accent
     : Colors.light.text;
 
   return (
     <TouchableOpacity
-      style={[styles.actionButton, isExpanded && styles.actionButtonExpanded]}
+      style={styles.actionButton}
       onPress={action.onPress}
       activeOpacity={0.7}
     >
@@ -146,7 +147,6 @@ function ContextBarButton({ action, isExpanded }: ContextBarButtonProps) {
         style={[
           styles.actionLabel,
           action.isPrimary && styles.actionLabelPrimary,
-          isExpanded && styles.actionLabelExpanded,
         ]}
         numberOfLines={1}
       >
@@ -176,8 +176,13 @@ interface ElementContextBarProps {
   /** Photo actions */
   onPhotoReplace?: () => void;
   onPhotoAdjust?: () => void;
-  onPhotoAI?: () => void;
   onPhotoResize?: () => void;
+  /** AI actions */
+  isPremium?: boolean;
+  isAIProcessing?: boolean;
+  aiProcessingType?: AIFeatureKey | null;
+  onAIFeatureSelect?: (featureKey: AIFeatureKey) => void;
+  onRequestPremium?: (feature: string) => void;
   /** Text actions */
   onTextEdit?: () => void;
   onTextFont?: (font: FontFamily) => void;
@@ -194,6 +199,9 @@ interface ElementContextBarProps {
   onLogoReplace?: () => void;
   onLogoOpacity?: () => void;
   onLogoSize?: () => void;
+  /** Background actions (for canvas background color) */
+  canvasBackgroundColor?: string;
+  onCanvasBackgroundColorChange?: (color: string) => void;
   /** Common actions */
   onConfirm?: () => void;
 }
@@ -212,8 +220,12 @@ export function ElementContextBar({
   autoExpandOption,
   onPhotoReplace,
   onPhotoAdjust,
-  onPhotoAI,
   onPhotoResize,
+  isPremium = false,
+  isAIProcessing = false,
+  aiProcessingType = null,
+  onAIFeatureSelect,
+  onRequestPremium,
   onTextEdit,
   onTextFont,
   onTextColor,
@@ -227,6 +239,8 @@ export function ElementContextBar({
   onLogoReplace,
   onLogoOpacity,
   onLogoSize,
+  canvasBackgroundColor = '#FFFFFF',
+  onCanvasBackgroundColorChange,
   onConfirm,
 }: ElementContextBarProps) {
   const insets = useSafeAreaInsets();
@@ -335,11 +349,11 @@ export function ElementContextBar({
             onPress: onPhotoResize || (() => {}),
           },
           {
-            id: 'ai',
-            icon: () => <Sparkles size={22} color={Colors.light.accent} strokeWidth={1.8} />,
-            label: 'AI Edit',
-            onPress: onPhotoAI || (() => {}),
-            isPrimary: true,
+            id: 'ai-studio',
+            icon: (color) => <Sparkles size={22} color={color} strokeWidth={1.8} />,
+            label: 'AI Studio',
+            onPress: () => handleToggleExpand('ai'),
+            expandable: 'ai',
           },
         ];
 
@@ -484,9 +498,18 @@ export function ElementContextBar({
           },
         ];
 
+      case 'background':
+        // Background element type - shows color picker immediately
+        return [];
+
       default:
         return [];
     }
+  };
+
+  // Handle canvas background color selection
+  const handleCanvasBackgroundColorSelect = (color: string) => {
+    onCanvasBackgroundColorChange?.(color);
   };
 
   const actions = getActions();
@@ -706,6 +729,51 @@ export function ElementContextBar({
             </TouchableOpacity>
           );
         })}
+      </ScrollView>
+    </Animated.View>
+  );
+
+  // Render canvas background color picker row (for 'background' element type)
+  const renderCanvasBackgroundPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.colorScrollContent}
+        bounces={false}
+      >
+        {/* Custom color button - opens full picker */}
+        <TouchableOpacity 
+          style={styles.colorWheelButton} 
+          activeOpacity={0.7}
+          onPress={() => {
+            setColorPickerMode('background');
+            setShowColorPicker(true);
+          }}
+        >
+          <View style={styles.colorWheelGradient}>
+            <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Canvas background color presets (15 colors) */}
+        {BACKGROUND_COLORS.map((color) => (
+          <TouchableOpacity
+            key={color}
+            style={[
+              styles.colorOption,
+              { backgroundColor: color },
+              canvasBackgroundColor === color && styles.colorOptionSelected,
+              color === '#FFFFFF' && styles.colorOptionWhite,
+            ]}
+            onPress={() => handleCanvasBackgroundColorSelect(color)}
+            activeOpacity={0.7}
+          />
+        ))}
       </ScrollView>
     </Animated.View>
   );
@@ -931,7 +999,26 @@ export function ElementContextBar({
       {expandedOption === 'size' && renderSizePicker()}
       {expandedOption === 'format' && renderFormatPanel()}
       {expandedOption === 'dateFormat' && renderDateFormatPicker()}
-      {expandedOption === 'background' && renderBackgroundPicker()}
+      {expandedOption === 'background' && elementType !== 'background' && renderBackgroundPicker()}
+      
+      {/* Canvas background color picker (for 'background' element type - shown always) */}
+      {elementType === 'background' && renderCanvasBackgroundPicker()}
+      {expandedOption === 'ai' && (
+        <AIFeatureMenu
+          isPremium={isPremium}
+          isProcessing={isAIProcessing}
+          processingType={aiProcessingType}
+          onSelectFeature={(featureKey) => {
+            onAIFeatureSelect?.(featureKey);
+            // Don't close for background_replace - it needs the bottom sheet
+            if (featureKey !== 'background_replace') {
+              setExpandedOption(null);
+            }
+          }}
+          onRequestPremium={onRequestPremium || (() => {})}
+          onClose={() => setExpandedOption(null)}
+        />
+      )}
 
       {/* Main context bar */}
       <View style={styles.actionsContainer}>
@@ -946,8 +1033,7 @@ export function ElementContextBar({
           {actions.map((action) => (
             <ContextBarButton 
               key={action.id} 
-              action={action} 
-              isExpanded={expandedOption === action.expandable}
+              action={action}
             />
           ))}
         </ScrollView>
@@ -1098,6 +1184,10 @@ const styles = StyleSheet.create({
   colorOptionSelected: {
     borderColor: Colors.light.accent,
     borderWidth: 3,
+  },
+  colorOptionWhite: {
+    borderColor: Colors.light.border,
+    borderWidth: 2,
   },
   transparentColorOption: {
     backgroundColor: Colors.light.surfaceSecondary,
@@ -1288,9 +1378,6 @@ const styles = StyleSheet.create({
     minWidth: 60,
     borderRadius: 8,
   },
-  actionButtonExpanded: {
-    backgroundColor: Colors.light.surfaceSecondary,
-  },
   actionIconWrapper: {
     width: 28,
     height: 28,
@@ -1307,9 +1394,6 @@ const styles = StyleSheet.create({
   },
   actionLabelPrimary: {
     color: Colors.light.accent,
-    fontWeight: '600',
-  },
-  actionLabelExpanded: {
     fontWeight: '600',
   },
   confirmButton: {

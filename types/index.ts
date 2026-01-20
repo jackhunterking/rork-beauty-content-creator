@@ -396,6 +396,13 @@ export interface Template {
   
   // Whether this template requires Pro subscription
   isPremium: boolean;
+  
+  // List of layer IDs that users can customize the background color of
+  customizableBackgroundLayers?: string[];
+  
+  // PNG URL with transparent slots and background - for client-side compositing
+  // Used by LayeredCanvas for zero-API-call background color changes
+  frameOverlayUrl?: string;
 }
 
 // Templated.io layer structure
@@ -450,6 +457,10 @@ export interface TemplateRow {
   layers_json: TemplatedLayer[] | null;
   // Whether this template requires Pro subscription
   is_premium: boolean;
+  // List of layer IDs that users can customize the background color of
+  customizable_background_layers: string[] | null;
+  // PNG URL with transparent slots and background - for client-side compositing
+  frame_overlay_url: string | null;
 }
 
 // ============================================
@@ -484,6 +495,8 @@ export interface Draft {
   localPreviewPath?: string | null;
   // Overlays added to the draft (Pro feature, stored locally)
   overlays?: Overlay[];
+  // User-customized background layer colors (layerId -> fill color)
+  backgroundOverrides?: Record<string, string>;
 }
 
 // Database row type for drafts
@@ -504,7 +517,26 @@ export interface DraftRow {
   rendered_preview_url: string | null;
   // Premium status when preview was rendered
   was_rendered_as_premium: boolean | null;
+  // User-customized background layer colors (layerId -> fill color)
+  background_overrides: Record<string, string> | null;
 }
+
+// ============================================
+// Background Layer Customization Types
+// ============================================
+
+/**
+ * Background layer override for custom colors
+ */
+export interface BackgroundLayerOverride {
+  layerId: string;
+  fill: string; // Hex color (e.g., "#FF5733")
+}
+
+/**
+ * Map of layer IDs to their fill color overrides
+ */
+export type BackgroundOverrides = Record<string, string>;
 
 // ============================================
 // Media & Asset Types

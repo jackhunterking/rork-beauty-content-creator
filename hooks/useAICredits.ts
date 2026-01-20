@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { getCredits, checkCredits } from '@/services/aiService';
 import type { AICredits, AIFeatureKey, AIFeatureCheck } from '@/types';
 
@@ -43,7 +43,7 @@ const CHECK_CACHE_TTL = 30 * 1000;
 // ============================================
 
 export function useAICredits(): UseAICreditsReturn {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuthContext();
   const [credits, setCredits] = useState<AICredits | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

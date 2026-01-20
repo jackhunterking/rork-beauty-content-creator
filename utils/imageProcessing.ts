@@ -1,5 +1,7 @@
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ImageSlot, FramePositionInfo, MediaAsset } from '@/types';
+import { trackTempFile } from '@/services/tempCleanupService';
 
 // ============================================
 // Constants for Image Adjustment Feature
@@ -296,6 +298,9 @@ export async function cropToAspectRatio(
     { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
   );
   
+  // Track temp file for cleanup
+  trackTempFile(result.uri);
+  
   return {
     uri: result.uri,
     width: result.width,
@@ -321,6 +326,9 @@ export async function resizeToSlot(
     [{ resize: { width, height } }],
     { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
   );
+  
+  // Track temp file for cleanup
+  trackTempFile(result.uri);
   
   return {
     uri: result.uri,
@@ -506,6 +514,9 @@ export async function processImageForAdjustment(
     { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
   );
   
+  // Track temp file for cleanup
+  trackTempFile(resized.uri);
+  
   return {
     uri: resized.uri,
     width: resized.width,
@@ -536,6 +547,10 @@ export async function applyAdjustmentsAndCrop(
   adjustments: { translateX: number; translateY: number; scale: number; rotation?: number }
 ): Promise<{ uri: string; width: number; height: number }> {
   const { translateX, translateY, scale, rotation = 0 } = adjustments;
+  
+  // Track intermediate files for cleanup
+  let rotatedUri: string | null = null;
+  let croppedUri: string | null = null;
   
   // IMPORTANT: translateX and translateY are NORMALIZED values in ROTATED coordinates
   // They were normalized using the ORIGINAL image's baseImageSize in the UI
@@ -595,6 +610,7 @@ export async function applyAdjustmentsAndCrop(
       [{ rotate: rotation }],
       { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
     );
+    rotatedUri = rotated.uri;
     currentUri = rotated.uri;
     currentWidth = rotated.width;
     currentHeight = rotated.height;
@@ -641,9 +657,26 @@ export async function applyAdjustmentsAndCrop(
     }],
     { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
   );
+  croppedUri = cropped.uri;
   
   // Resize to exact slot dimensions
   const resized = await resizeToSlot(cropped.uri, targetWidth, targetHeight);
+  
+  // Clean up intermediate files to prevent memory accumulation
+  // These are no longer needed after the final resized image is created
+  try {
+    if (rotatedUri && rotatedUri !== uri) {
+      await FileSystem.deleteAsync(rotatedUri, { idempotent: true });
+    }
+    if (croppedUri && croppedUri !== rotatedUri) {
+      await FileSystem.deleteAsync(croppedUri, { idempotent: true });
+    }
+  } catch (cleanupError) {
+    // Silently ignore cleanup errors - files may already be deleted
+    if (__DEV__) {
+      console.log('[ImageProcessing] Intermediate cleanup warning:', cleanupError);
+    }
+  }
   
   return resized;
 }

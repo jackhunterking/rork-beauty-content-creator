@@ -71,6 +71,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     wasRenderedAsPremium: boolean | null;
     localPreviewPath: string | null;
     projectName: string | null;
+    backgroundOverrides: Record<string, string>;
   }>({
     contentType: 'single',
     template: null,
@@ -82,6 +83,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     wasRenderedAsPremium: null,
     localPreviewPath: null,
     projectName: null,
+    backgroundOverrides: {},
   });
 
   // Initialize local storage on app start
@@ -207,6 +209,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium,
       localPreviewPath,
       projectName,
+      backgroundOverrides,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -217,6 +220,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;
       projectName?: string | null;
+      backgroundOverrides?: Record<string, string> | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -227,7 +231,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         renderedPreviewUrl,
         wasRenderedAsPremium,
         localPreviewPath,
-        projectName
+        projectName,
+        backgroundOverrides
       );
     },
     onSuccess: (savedDraft) => {
@@ -239,6 +244,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         wasRenderedAsPremium: savedDraft.wasRenderedAsPremium ?? null,
         localPreviewPath: savedDraft.localPreviewPath || null,
         projectName: savedDraft.projectName || null,
+        backgroundOverrides: savedDraft.backgroundOverrides || {},
       }));
       // Note: No manual cache updates needed - useRealtimeDrafts will receive
       // the INSERT/UPDATE event from Supabase and update automatically
@@ -352,6 +358,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium: null,
       localPreviewPath: null,
       projectName: null,
+      backgroundOverrides: {},
     }));
   }, []);
 
@@ -443,6 +450,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium: null,
       localPreviewPath: null,
       projectName: null,
+      backgroundOverrides: {},
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -527,6 +535,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
       localPreviewPath: draft.localPreviewPath || null,
       projectName: draft.projectName || null,
+      backgroundOverrides: draft.backgroundOverrides || {},
     });
   }, []);
 
@@ -604,6 +613,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       wasRenderedAsPremium?: boolean;
       localPreviewPath?: string | null;
       projectName?: string | null;
+      backgroundOverrides?: Record<string, string> | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     duplicateDraft: (draftId: string) => duplicateDraftMutation.mutateAsync(draftId),

@@ -11,11 +11,12 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Template } from '@/types';
+import { Template, CapturedImages } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots, Slot } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
 import { withCacheBust } from '@/services/imageUtils';
+import { LayeredCanvas } from './LayeredCanvas';
 // Image processing constants moved inline for clarity
 
 const CANVAS_PADDING = 20;
@@ -76,6 +77,14 @@ interface TemplateCanvasProps {
   manipulationMode?: ManipulationModeConfig | null;
   /** Crop mode configuration - full resize with rotation */
   cropMode?: CropModeConfig | null;
+  /** Background color for LayeredCanvas mode (when frameOverlayUrl is available) */
+  backgroundColor?: string;
+  /** Captured images for LayeredCanvas mode */
+  capturedImages?: CapturedImages;
+  /** Whether to use client-side LayeredCanvas compositing instead of Templated.io preview */
+  useClientSideCompositing?: boolean;
+  /** Children to render on top of the canvas (overlays) */
+  children?: React.ReactNode;
 }
 
 /**
@@ -1076,6 +1085,10 @@ export function TemplateCanvas({
   selectedSlotId = null,
   manipulationMode = null,
   cropMode = null,
+  backgroundColor = '#FFFFFF',
+  capturedImages = {},
+  useClientSideCompositing = false,
+  children,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
   const { width: screenWidth } = useWindowDimensions();
@@ -1145,6 +1158,22 @@ export function TemplateCanvas({
     return template.templatedPreviewUrl || template.thumbnail;
   }, [renderedPreviewUri, template.templatedPreviewUrl, template.thumbnail]);
 
+  // Determine if we should use client-side compositing
+  // Use LayeredCanvas when:
+  // 1. useClientSideCompositing is explicitly true
+  // 2. Template has a frame overlay URL
+  // 3. User has captured at least one photo
+  const hasPhotos = useMemo(() => {
+    return Object.values(capturedImages).some(img => img !== null);
+  }, [capturedImages]);
+
+  const shouldUseLayeredCanvas = useMemo(() => {
+    return useClientSideCompositing && template.frameOverlayUrl && hasPhotos;
+  }, [useClientSideCompositing, template.frameOverlayUrl, hasPhotos]);
+
+  // Get slots for LayeredCanvas
+  const slots = useMemo(() => extractSlots(template), [template]);
+
   return (
     <View style={styles.wrapper}>
       <View
@@ -1156,28 +1185,42 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Preview Image */}
-        <Image
-          source={{ uri: previewUrl }}
-          style={styles.previewImage}
-          contentFit="cover"
-          transition={200}
-          onLoad={() => {
-            // Notify parent that the preview image has loaded
-            if (onPreviewLoad) {
-              console.log('[TemplateCanvas] Preview image loaded:', previewUrl?.substring(0, 50) + '...');
-              onPreviewLoad();
-            }
-          }}
-          onError={() => {
-            // If the rendered preview fails to load (e.g., expired URL),
-            // notify parent to trigger a fresh render
-            if (renderedPreviewUri && onPreviewError) {
-              console.warn('[TemplateCanvas] Cached preview failed to load, requesting re-render');
-              onPreviewError();
-            }
-          }}
-        />
+        {/* Client-side LayeredCanvas compositing (zero API calls for color changes) */}
+        {shouldUseLayeredCanvas ? (
+          <LayeredCanvas
+            template={template}
+            slots={slots}
+            capturedImages={capturedImages}
+            backgroundColor={backgroundColor}
+            canvasWidth={displayWidth}
+            canvasHeight={displayHeight}
+          >
+            {children}
+          </LayeredCanvas>
+        ) : (
+          /* Traditional Templated.io preview */
+          <Image
+            source={{ uri: previewUrl }}
+            style={styles.previewImage}
+            contentFit="cover"
+            transition={200}
+            onLoad={() => {
+              // Notify parent that the preview image has loaded
+              if (onPreviewLoad) {
+                console.log('[TemplateCanvas] Preview image loaded:', previewUrl?.substring(0, 50) + '...');
+                onPreviewLoad();
+              }
+            }}
+            onError={() => {
+              // If the rendered preview fails to load (e.g., expired URL),
+              // notify parent to trigger a fresh render
+              if (renderedPreviewUri && onPreviewError) {
+                console.warn('[TemplateCanvas] Cached preview failed to load, requesting re-render');
+                onPreviewError();
+              }
+            }}
+          />
+        )}
 
         {/* Invisible slot tap targets - hidden during manipulation or crop mode */}
         {!manipulationMode && !cropMode && scaledSlots.map(slot => (

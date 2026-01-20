@@ -138,6 +138,18 @@
                 <code class="bg-white dark:bg-gray-600 px-2 py-0.5 rounded text-xs">divider_line</code>
               </div>
             </div>
+
+            <!-- Background Layers -->
+            <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
+              <p class="text-sm font-medium text-purple-800 dark:text-purple-200 mb-1">Customizable Background Layers</p>
+              <p class="text-xs text-purple-700 dark:text-purple-300 mb-2">Layers users can customize with solid colors in the editor</p>
+              <div class="flex flex-wrap gap-2">
+                <code class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded text-xs">background_bar</code>
+                <code class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded text-xs">left_circle</code>
+                <code class="bg-white dark:bg-gray-700 px-2 py-0.5 rounded text-xs">accent_shape</code>
+              </div>
+              <p class="text-xs text-purple-600 dark:text-purple-400 mt-2 italic">Configure in "Background Layer Settings" section below</p>
+            </div>
           </div>
         </div>
 
@@ -437,6 +449,190 @@
 
       <!-- Resync Status Message -->
       <div id="resyncStatusMessage" class="hidden mt-4"></div>
+    </div>
+
+    <!-- Background Layer Settings Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mt-8">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+          <svg class="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">Background Layer Settings</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Configure which layers users can customize the background color of</p>
+        </div>
+      </div>
+
+      <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 mb-4 border border-purple-200 dark:border-purple-800">
+        <p class="text-sm text-purple-800 dark:text-purple-200">
+          <strong>How it works:</strong> Select a template, then choose which layers should be available for background color customization in the editor. Users will see these layers in the "Background" tool and can apply solid colors to them.
+        </p>
+      </div>
+
+      <form id="backgroundLayerForm" class="space-y-4">
+        <!-- Template Selection -->
+        <div>
+          <label for="bg_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Select Template
+          </label>
+          <select 
+            id="bg_template" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+          >
+            <option value="">Loading templates...</option>
+          </select>
+        </div>
+
+        <!-- Current Background Layers Display -->
+        <div id="currentBgLayers" class="hidden">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Current Customizable Layers
+          </label>
+          <div id="currentBgLayersList" class="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[48px]">
+            <span class="text-gray-400 dark:text-gray-500 text-sm">None configured</span>
+          </div>
+        </div>
+
+        <!-- Available Layers from Template -->
+        <div id="availableLayers" class="hidden">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Available Layers <span class="text-xs text-gray-500">(from template's layers_json)</span>
+          </label>
+          <div id="availableLayersList" class="space-y-2 max-h-64 overflow-y-auto p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <p class="text-gray-400 text-sm">Select a template to see available layers</p>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Check the layers you want users to be able to customize. Typically background shapes, bars, circles, etc.
+          </p>
+        </div>
+
+        <!-- Manual Layer Input (fallback) -->
+        <div>
+          <label for="manual_layers" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Manual Layer Names <span class="text-xs text-gray-500">(comma-separated, optional)</span>
+          </label>
+          <input 
+            type="text" 
+            id="manual_layers" 
+            placeholder="e.g., background_bar, left_circle, accent_shape"
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+          >
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Use this if the template doesn't have layers_json or you know the layer names
+          </p>
+        </div>
+
+        <button 
+          type="submit" 
+          id="bgLayerBtn"
+          class="w-full py-3 px-6 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <svg id="bgLayerBtnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          <span id="bgLayerBtnText">Save Background Layer Settings</span>
+          <svg id="bgLayerBtnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Background Layer Status Message -->
+      <div id="bgLayerStatusMessage" class="hidden mt-4"></div>
+    </div>
+
+    <!-- Frame Overlay Generation Section -->
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mt-8">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+          <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-xl font-bold text-gray-900 dark:text-white">Frame Overlay Generation</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Generate transparent frame overlays for zero-API-call background colors</p>
+        </div>
+      </div>
+
+      <div class="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 mb-4 border border-emerald-200 dark:border-emerald-800">
+        <p class="text-sm text-emerald-800 dark:text-emerald-200">
+          <strong>How it works:</strong> This generates a PNG with transparent slots and background. The app uses this frame overlay for client-side compositing - users can change background colors instantly without API calls!
+        </p>
+      </div>
+
+      <form id="frameOverlayForm" class="space-y-4">
+        <!-- Template Selection -->
+        <div>
+          <label for="overlay_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Select Template
+          </label>
+          <select 
+            id="overlay_template" 
+            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+          >
+            <option value="">Loading templates...</option>
+          </select>
+        </div>
+
+        <!-- Current Frame Overlay Status -->
+        <div id="currentOverlayStatus" class="hidden">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Current Frame Overlay
+          </label>
+          <div id="currentOverlayInfo" class="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <span class="text-gray-400 dark:text-gray-500 text-sm">None generated</span>
+          </div>
+        </div>
+
+        <!-- Slot Layers to Hide -->
+        <div id="slotLayersSection" class="hidden">
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Slot Layers to Hide <span class="text-xs text-gray-500">(auto-detected)</span>
+          </label>
+          <div id="slotLayersList" class="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[48px]">
+            <span class="text-gray-400 dark:text-gray-500 text-sm">No slot layers found</span>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            These layers will be hidden in the frame overlay (contain "slot" in their name)
+          </p>
+        </div>
+
+        <!-- Generate Button -->
+        <button 
+          type="submit" 
+          id="overlayBtn"
+          class="w-full py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <svg id="overlayBtnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+          </svg>
+          <span id="overlayBtnText">Generate Frame Overlay</span>
+          <svg id="overlayBtnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </button>
+
+        <!-- Bulk Generate Button -->
+        <button 
+          type="button" 
+          id="bulkOverlayBtn"
+          onclick="generateAllOverlays()"
+          class="w-full py-2 px-6 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+          </svg>
+          <span id="bulkOverlayBtnText">Generate for All Templates (Missing Only)</span>
+        </button>
+      </form>
+
+      <!-- Frame Overlay Status Message -->
+      <div id="overlayStatusMessage" class="hidden mt-4"></div>
     </div>
 
     <!-- Sync History -->
@@ -929,6 +1125,516 @@
 
     // Load templates for resync on page load
     loadTemplatesForResync();
+
+    // ==========================================
+    // BACKGROUND LAYER SETTINGS FUNCTIONALITY
+    // ==========================================
+    
+    const BG_LAYER_WEBHOOK_URL = 'https://jackhunterking.app.n8n.cloud/webhook/resulta/template-background-sync';
+    
+    // Track selected layers
+    let selectedBgLayers = [];
+    let currentTemplateId = null;
+    
+    // Load templates for background layer settings
+    async function loadTemplatesForBgSettings() {
+      const select = document.getElementById('bg_template');
+      
+      try {
+        const { data, error } = await supabaseClient
+          .from('templates')
+          .select('id, templated_id, name, layers_json, customizable_background_layers')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+          select.innerHTML = '<option value="">No templates found</option>';
+          return;
+        }
+        
+        select.innerHTML = '<option value="">-- Select a template --</option>' + 
+          data.map(t => {
+            const hasBgLayers = t.customizable_background_layers && t.customizable_background_layers.length > 0;
+            const badge = hasBgLayers ? ' ✓' : '';
+            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-bg-layers='${JSON.stringify(t.customizable_background_layers || [])}'>${escapeHtml(t.name)}${badge}</option>`;
+          }).join('');
+        
+      } catch (err) {
+        console.error('Error loading templates for bg settings:', err);
+        select.innerHTML = '<option value="">Error loading templates</option>';
+      }
+    }
+    
+    // Handle template selection change
+    document.getElementById('bg_template').addEventListener('change', (e) => {
+      const select = e.target;
+      const selectedOption = select.options[select.selectedIndex];
+      
+      if (!selectedOption || !selectedOption.value) {
+        document.getElementById('currentBgLayers').classList.add('hidden');
+        document.getElementById('availableLayers').classList.add('hidden');
+        selectedBgLayers = [];
+        currentTemplateId = null;
+        return;
+      }
+      
+      currentTemplateId = selectedOption.value;
+      const layersJson = JSON.parse(selectedOption.dataset.layers || '[]');
+      const existingBgLayers = JSON.parse(selectedOption.dataset.bgLayers || '[]');
+      
+      // Show current configured layers
+      document.getElementById('currentBgLayers').classList.remove('hidden');
+      const currentListEl = document.getElementById('currentBgLayersList');
+      
+      if (existingBgLayers.length > 0) {
+        currentListEl.innerHTML = existingBgLayers.map(layer => 
+          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-200 rounded text-sm">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+            ${escapeHtml(layer)}
+          </span>`
+        ).join('');
+      } else {
+        currentListEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 text-sm">None configured</span>';
+      }
+      
+      // Initialize selected layers with existing ones
+      selectedBgLayers = [...existingBgLayers];
+      
+      // Show available layers
+      document.getElementById('availableLayers').classList.remove('hidden');
+      const availableListEl = document.getElementById('availableLayersList');
+      
+      if (layersJson.length > 0) {
+        // Filter out slot and watermark layers - they shouldn't be background customizable
+        const bgCandidateLayers = layersJson.filter(layer => {
+          const layerName = (layer.layer || '').toLowerCase();
+          return !layerName.includes('slot') && !layerName.includes('watermark');
+        });
+        
+        if (bgCandidateLayers.length > 0) {
+          availableListEl.innerHTML = bgCandidateLayers.map(layer => {
+            const layerName = layer.layer;
+            const isChecked = existingBgLayers.includes(layerName);
+            const layerType = layer.type || 'unknown';
+            const hasFill = layer.fill || layer.color;
+            
+            return `
+              <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600/50 cursor-pointer transition">
+                <input 
+                  type="checkbox" 
+                  value="${escapeHtml(layerName)}"
+                  ${isChecked ? 'checked' : ''}
+                  onchange="toggleBgLayer(this)"
+                  class="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                >
+                <div class="flex-1">
+                  <span class="font-medium text-gray-900 dark:text-white text-sm">${escapeHtml(layerName)}</span>
+                  <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">${layerType}</span>
+                  ${hasFill ? `<span class="ml-1 text-xs text-green-600 dark:text-green-400">has fill</span>` : ''}
+                </div>
+              </label>
+            `;
+          }).join('');
+        } else {
+          availableListEl.innerHTML = '<p class="text-gray-400 text-sm">No suitable layers found (all are slots or watermarks)</p>';
+        }
+      } else {
+        availableListEl.innerHTML = '<p class="text-gray-400 text-sm">No layers_json data available. Use manual input below.</p>';
+      }
+      
+      // Pre-fill manual input with existing layers
+      if (existingBgLayers.length > 0) {
+        document.getElementById('manual_layers').value = existingBgLayers.join(', ');
+      } else {
+        document.getElementById('manual_layers').value = '';
+      }
+    });
+    
+    // Toggle layer selection
+    function toggleBgLayer(checkbox) {
+      const layerName = checkbox.value;
+      if (checkbox.checked) {
+        if (!selectedBgLayers.includes(layerName)) {
+          selectedBgLayers.push(layerName);
+        }
+      } else {
+        selectedBgLayers = selectedBgLayers.filter(l => l !== layerName);
+      }
+      // Update manual input to reflect selection
+      document.getElementById('manual_layers').value = selectedBgLayers.join(', ');
+    }
+    
+    // Show background layer status message
+    function showBgLayerStatus(message, isSuccess, responseData = null) {
+      const statusEl = document.getElementById('bgLayerStatusMessage');
+      
+      let detailsHtml = '';
+      if (responseData) {
+        detailsHtml = `
+          <details class="mt-3">
+            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
+            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
+          </details>
+        `;
+      }
+      
+      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
+      statusEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium">${isSuccess ? 'Settings Saved!' : 'Save Failed'}</p>
+            <p class="text-sm mt-1">${message}</p>
+            ${detailsHtml}
+          </div>
+        </div>
+      `;
+      statusEl.classList.remove('hidden');
+      
+      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Toggle background layer loading state
+    function setBgLayerLoading(isLoading) {
+      const btn = document.getElementById('bgLayerBtn');
+      const btnText = document.getElementById('bgLayerBtnText');
+      const btnIcon = document.getElementById('bgLayerBtnIcon');
+      const btnSpinner = document.getElementById('bgLayerBtnSpinner');
+      
+      btn.disabled = isLoading;
+      btnText.textContent = isLoading ? 'Saving...' : 'Save Background Layer Settings';
+      btnIcon.classList.toggle('hidden', isLoading);
+      btnSpinner.classList.toggle('hidden', !isLoading);
+      btn.classList.toggle('opacity-75', isLoading);
+      btn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+    
+    // Background layer form submission
+    document.getElementById('backgroundLayerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      // Hide previous status
+      document.getElementById('bgLayerStatusMessage').classList.add('hidden');
+      
+      if (!currentTemplateId) {
+        showBgLayerStatus('Please select a template first', false);
+        return;
+      }
+      
+      // Get layers from manual input (which reflects checkbox selections)
+      const manualInput = document.getElementById('manual_layers').value.trim();
+      let layersToSave = [];
+      
+      if (manualInput) {
+        layersToSave = manualInput.split(',').map(l => l.trim()).filter(l => l.length > 0);
+      }
+      
+      setBgLayerLoading(true);
+      
+      let responseData = null;
+      let success = false;
+      let errorMessage = null;
+      
+      try {
+        // Update directly in Supabase (simpler than N8N for this use case)
+        const { data, error } = await supabaseClient
+          .from('templates')
+          .update({ 
+            customizable_background_layers: layersToSave.length > 0 ? layersToSave : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentTemplateId)
+          .select()
+          .single();
+        
+        if (error) throw error;
+        
+        success = true;
+        responseData = data;
+        
+        const layerCount = layersToSave.length;
+        const message = layerCount > 0 
+          ? `${layerCount} layer(s) configured as customizable: ${layersToSave.join(', ')}`
+          : 'All background layer customization removed from this template';
+        
+        showBgLayerStatus(message, true, responseData);
+        
+        // Refresh the templates dropdown to show updated data
+        await loadTemplatesForBgSettings();
+        
+        // Re-select the current template to refresh the UI
+        document.getElementById('bg_template').value = currentTemplateId;
+        document.getElementById('bg_template').dispatchEvent(new Event('change'));
+        
+      } catch (error) {
+        console.error('Background layer save error:', error);
+        errorMessage = error.message || 'Failed to save background layer settings.';
+        showBgLayerStatus(errorMessage, false, responseData);
+      } finally {
+        setBgLayerLoading(false);
+      }
+    });
+    
+    // Load templates for background settings on page load
+    loadTemplatesForBgSettings();
+
+    // ==========================================
+    // FRAME OVERLAY GENERATION FUNCTIONALITY
+    // ==========================================
+    
+    // Use Supabase Edge Function to avoid CORS issues
+    const FRAME_OVERLAY_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-frame-overlay`;
+    
+    let currentOverlayTemplateId = null;
+    let currentOverlayTemplatedId = null;
+    let currentOverlayLayersJson = [];
+    
+    // Load templates for frame overlay generation
+    async function loadTemplatesForOverlay() {
+      const select = document.getElementById('overlay_template');
+      
+      try {
+        const { data, error } = await supabaseClient
+          .from('templates')
+          .select('id, templated_id, name, layers_json, frame_overlay_url')
+          .eq('is_active', true)
+          .order('name', { ascending: true });
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+          select.innerHTML = '<option value="">No templates found</option>';
+          return;
+        }
+        
+        select.innerHTML = '<option value="">-- Select a template --</option>' + 
+          data.map(t => {
+            const hasOverlay = t.frame_overlay_url ? ' ✓' : '';
+            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-overlay-url="${t.frame_overlay_url || ''}">${escapeHtml(t.name)}${hasOverlay}</option>`;
+          }).join('');
+        
+      } catch (err) {
+        console.error('Error loading templates for overlay:', err);
+        select.innerHTML = '<option value="">Error loading templates</option>';
+      }
+    }
+    
+    // Handle template selection for overlay
+    document.getElementById('overlay_template').addEventListener('change', (e) => {
+      const select = e.target;
+      const selectedOption = select.options[select.selectedIndex];
+      
+      if (!selectedOption || !selectedOption.value) {
+        document.getElementById('currentOverlayStatus').classList.add('hidden');
+        document.getElementById('slotLayersSection').classList.add('hidden');
+        currentOverlayTemplateId = null;
+        currentOverlayTemplatedId = null;
+        currentOverlayLayersJson = [];
+        return;
+      }
+      
+      currentOverlayTemplateId = selectedOption.value;
+      currentOverlayTemplatedId = selectedOption.dataset.templatedId;
+      currentOverlayLayersJson = JSON.parse(selectedOption.dataset.layers || '[]');
+      const existingOverlayUrl = selectedOption.dataset.overlayUrl;
+      
+      // Show current overlay status
+      document.getElementById('currentOverlayStatus').classList.remove('hidden');
+      const overlayInfoEl = document.getElementById('currentOverlayInfo');
+      
+      if (existingOverlayUrl) {
+        overlayInfoEl.innerHTML = `
+          <div class="flex items-center gap-3">
+            <img src="${existingOverlayUrl}" alt="Frame overlay" class="w-16 h-16 object-contain rounded border bg-gray-100 dark:bg-gray-600" />
+            <div>
+              <span class="text-green-600 dark:text-green-400 text-sm font-medium">✓ Frame overlay exists</span>
+              <a href="${existingOverlayUrl}" target="_blank" class="block text-xs text-blue-500 hover:underline mt-1">View full image</a>
+            </div>
+          </div>
+        `;
+      } else {
+        overlayInfoEl.innerHTML = '<span class="text-orange-500 dark:text-orange-400 text-sm">⚠ No frame overlay generated yet</span>';
+      }
+      
+      // Show slot layers to be hidden
+      document.getElementById('slotLayersSection').classList.remove('hidden');
+      const slotListEl = document.getElementById('slotLayersList');
+      
+      // Auto-detect slot layers (names containing "slot")
+      const slotLayers = currentOverlayLayersJson.filter(layer => {
+        const layerName = (layer.layer || '').toLowerCase();
+        return layerName.includes('slot');
+      });
+      
+      if (slotLayers.length > 0) {
+        slotListEl.innerHTML = slotLayers.map(layer => 
+          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 rounded text-sm">
+            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-14-14z" clip-rule="evenodd"></path><path fill-rule="evenodd" d="M4.293 16.293a1 1 0 010-1.414l10-10a1 1 0 011.414 1.414l-10 10a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+            ${escapeHtml(layer.layer)}
+          </span>`
+        ).join('');
+      } else {
+        slotListEl.innerHTML = '<span class="text-orange-500 dark:text-orange-400 text-sm">⚠ No slot layers found - check template structure</span>';
+      }
+    });
+    
+    // Show overlay status message
+    function showOverlayStatus(message, isSuccess, responseData = null) {
+      const statusEl = document.getElementById('overlayStatusMessage');
+      
+      let detailsHtml = '';
+      if (responseData) {
+        detailsHtml = `
+          <details class="mt-3">
+            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
+            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
+          </details>
+        `;
+      }
+      
+      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
+      statusEl.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
+          <div class="flex-1 min-w-0">
+            <p class="font-medium">${isSuccess ? 'Frame Overlay Generated!' : 'Generation Failed'}</p>
+            <p class="text-sm mt-1">${message}</p>
+            ${detailsHtml}
+          </div>
+        </div>
+      `;
+      statusEl.classList.remove('hidden');
+      
+      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Toggle overlay loading state
+    function setOverlayLoading(isLoading) {
+      const btn = document.getElementById('overlayBtn');
+      const btnText = document.getElementById('overlayBtnText');
+      const btnIcon = document.getElementById('overlayBtnIcon');
+      const btnSpinner = document.getElementById('overlayBtnSpinner');
+      
+      btn.disabled = isLoading;
+      btnText.textContent = isLoading ? 'Generating...' : 'Generate Frame Overlay';
+      btnIcon.classList.toggle('hidden', isLoading);
+      btnSpinner.classList.toggle('hidden', !isLoading);
+      btn.classList.toggle('opacity-75', isLoading);
+      btn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+    
+    // Generate frame overlay for a single template via Edge Function
+    async function generateFrameOverlay(templateId, templatedId, layersJson) {
+      const response = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          template_id: templateId
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
+      
+      return { url: result.url, source: result.source };
+    }
+    
+    // Frame overlay form submission
+    document.getElementById('frameOverlayForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      document.getElementById('overlayStatusMessage').classList.add('hidden');
+      
+      if (!currentOverlayTemplateId || !currentOverlayTemplatedId) {
+        showOverlayStatus('Please select a template first', false);
+        return;
+      }
+      
+      setOverlayLoading(true);
+      
+      try {
+        const result = await generateFrameOverlay(
+          currentOverlayTemplateId,
+          currentOverlayTemplatedId,
+          currentOverlayLayersJson
+        );
+        
+        showOverlayStatus(
+          `Frame overlay generated and saved! Source: ${result.source}`,
+          true,
+          { url: result.url, source: result.source }
+        );
+        
+        // Refresh the dropdown
+        await loadTemplatesForOverlay();
+        
+        // Re-select the current template
+        document.getElementById('overlay_template').value = currentOverlayTemplateId;
+        document.getElementById('overlay_template').dispatchEvent(new Event('change'));
+        
+      } catch (error) {
+        console.error('Frame overlay generation error:', error);
+        showOverlayStatus(error.message || 'Failed to generate frame overlay', false);
+      } finally {
+        setOverlayLoading(false);
+      }
+    });
+    
+    // Bulk generate overlays for all templates via Edge Function
+    async function generateAllOverlays() {
+      const btn = document.getElementById('bulkOverlayBtn');
+      const btnText = document.getElementById('bulkOverlayBtnText');
+      
+      btn.disabled = true;
+      btnText.textContent = 'Processing via Edge Function...';
+      
+      try {
+        const response = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({
+            generate_all: true
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || `HTTP ${response.status}`);
+        }
+        
+        const message = result.message;
+        showOverlayStatus(message, result.failed === 0 || result.failed === undefined, { 
+          processed: result.processed,
+          failed: result.failed,
+          errors: result.errors 
+        });
+        
+        // Refresh the dropdown
+        await loadTemplatesForOverlay();
+        
+      } catch (error) {
+        console.error('Bulk overlay generation error:', error);
+        showOverlayStatus(error.message || 'Bulk generation failed', false);
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Generate for All Templates (Missing Only)';
+      }
+    }
+    
+    // Load templates for overlay on page load
+    loadTemplatesForOverlay();
   </script>
 </body>
 </html>

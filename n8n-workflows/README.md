@@ -14,6 +14,8 @@ Production-ready N8N workflows for AI image processing. Designed with **individu
 
 ## Workflow Files
 
+### AI Processing Workflows
+
 | File | Feature | Webhook Path | Avg. Processing | Est. Cost |
 |------|---------|--------------|-----------------|-----------|
 | `Resulta_AI_Auto_Quality.json` | Image upscaling & enhancement | `/webhook/resulta/auto-quality` | 15-60s | ~$0.015 |
@@ -252,12 +254,12 @@ The Edge Function uses this data to:
 
 ## Production Checklist
 
-- [ ] All 3 workflows imported
+- [ ] All 3 AI workflows imported
 - [ ] Fal.AI API Key credential configured in each workflow
-- [ ] All 3 workflows activated
+- [ ] All 3 AI workflows activated
 - [ ] Webhook URLs copied
 - [ ] `ai_model_config` table updated with webhook URLs
-- [ ] Test each feature end-to-end
+- [ ] Test each AI feature end-to-end
 
 ---
 
