@@ -456,6 +456,8 @@ interface ThemeLayerBase {
   height: number;
   /** Rotation in degrees */
   rotation?: number;
+  /** Opacity from 0.0 (transparent) to 1.0 (opaque), defaults to 1.0 */
+  opacity?: number;
 }
 
 /** Shape theme layer - renders as colored rectangle/background */

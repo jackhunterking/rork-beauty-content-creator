@@ -19,7 +19,6 @@
     }
   </script>
   <style>
-    /* Custom styles for better form appearance */
     input[type="number"]::-webkit-inner-spin-button,
     input[type="number"]::-webkit-outer-spin-button {
       -webkit-appearance: none;
@@ -28,207 +27,64 @@
     input[type="number"] {
       -moz-appearance: textfield;
     }
-    /* Collapsible details styling */
-    details summary {
-      cursor: pointer;
-      user-select: none;
-    }
-    details summary::-webkit-details-marker {
-      display: none;
-    }
-    details summary::before {
-      content: '▶';
-      display: inline-block;
-      margin-right: 0.5rem;
-      transition: transform 0.2s;
-    }
-    details[open] summary::before {
-      transform: rotate(90deg);
-    }
   </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
-  <div class="max-w-2xl mx-auto p-6">
+  <div class="max-w-xl mx-auto p-6">
+    
     <!-- Header -->
-    <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">Template Sync</h1>
-      <p class="text-gray-600 dark:text-gray-400">Sync templates from Templated.io to your app</p>
+    <div class="mb-6">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Template Sync</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400">Add or update templates from Templated.io</p>
     </div>
 
-    <!-- Naming Conventions Guide - IMPORTANT: READ THIS FIRST -->
-    <details class="bg-white dark:bg-gray-800 rounded-xl shadow-lg mb-6 overflow-hidden" open>
-      <summary class="px-6 py-4 font-semibold text-gray-900 dark:text-white bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition cursor-pointer flex items-center gap-2">
-        <svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        📋 Layer Naming Guide - READ FIRST!
-      </summary>
-      <div class="px-6 py-4 space-y-4 border-t border-gray-200 dark:border-gray-700">
-        
-        <!-- CRITICAL: Transparent Background Warning -->
-        <div class="bg-red-50 dark:bg-red-900/30 rounded-lg p-4 border-2 border-red-400 dark:border-red-600 mb-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-2xl">🚨</span>
-            <p class="text-sm font-bold text-red-700 dark:text-red-300 uppercase">CRITICAL: Background Must Be Transparent</p>
-          </div>
-          <p class="text-xs text-red-600 dark:text-red-400 mb-2">
-            <strong>EVERY template in Templated.io MUST have a transparent canvas background.</strong>
-          </p>
-          <ul class="text-xs text-red-600 dark:text-red-400 list-disc list-inside space-y-1">
-            <li>In Templated.io editor, ensure "Transparent background" is checked</li>
-            <li>Do NOT add a background rectangle layer covering the canvas</li>
-            <li>The <strong>Default Background Color</strong> below will be used for the initial preview</li>
-            <li>Users can then change background colors instantly in the app (no API calls)</li>
-          </ul>
-          <p class="text-xs text-red-700 dark:text-red-300 mt-2 font-semibold">
-            ⚠️ If the template has an opaque background, background color changes WILL NOT WORK in the app!
-          </p>
-        </div>
+    <!-- Mode Toggle -->
+    <div class="flex gap-2 mb-6">
+      <button 
+        onclick="setMode('new')" 
+        id="modeNewBtn"
+        class="flex-1 py-3 px-4 rounded-lg font-medium transition-all border-2 border-primary bg-primary/10 text-primary"
+      >
+        + New Template
+      </button>
+      <button 
+        onclick="setMode('existing')" 
+        id="modeExistingBtn"
+        class="flex-1 py-3 px-4 rounded-lg font-medium transition-all border-2 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400"
+      >
+        Update Existing
+      </button>
+    </div>
 
-        <!-- Important Banner -->
-        <div class="bg-gradient-to-r from-primary/10 to-pink-500/10 rounded-lg p-4 border border-primary/30">
-          <p class="text-sm font-semibold text-primary mb-2">🎯 How Layer Naming Works</p>
-          <p class="text-xs text-gray-600 dark:text-gray-400">
-            The app automatically detects special layers by their <strong>prefix</strong>. Name your layers correctly in Templated.io and everything works automatically!
-          </p>
-        </div>
-
-        <!-- Layer Types Grid -->
-        <div class="grid gap-3">
-          
-          <!-- SLOT LAYERS - Required -->
-          <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border-2 border-green-300 dark:border-green-700">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">📸</span>
-              <p class="text-sm font-bold text-green-800 dark:text-green-200">SLOT LAYERS (Photo Placeholders)</p>
-              <span class="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full">Required</span>
-            </div>
-            <p class="text-xs text-green-700 dark:text-green-300 mb-3">Prefix: <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded font-bold">slot-</code></p>
-            <div class="flex flex-wrap gap-2">
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">slot-before</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">slot-after</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">slot-1</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">slot-hero</code>
-            </div>
-            <p class="text-xs text-green-600 dark:text-green-400 mt-2 italic">→ These become photo drop zones in the editor</p>
-          </div>
-
-          <!-- THEME LAYERS - Color-Changeable Elements -->
-          <div class="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 rounded-lg p-4 border-2 border-purple-400 dark:border-purple-600 relative overflow-hidden">
-            <div class="absolute top-0 right-0 bg-purple-500 text-white text-xs px-3 py-1 rounded-bl-lg font-semibold">THEME</div>
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">🎨</span>
-              <p class="text-sm font-bold text-purple-800 dark:text-purple-200">THEME LAYERS (Color-Changeable Elements)</p>
-            </div>
-            <p class="text-xs text-purple-700 dark:text-purple-300 mb-3">Prefix: <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded font-bold text-purple-600">theme-</code></p>
-            <div class="flex flex-wrap gap-2 mb-3">
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-before_label</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-after_label</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-accent-bar</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-frame</code>
-            </div>
-            <div class="bg-white/50 dark:bg-gray-800/50 rounded p-3 text-xs space-y-1">
-              <p class="font-semibold text-purple-800 dark:text-purple-200">How it works:</p>
-              <ol class="list-decimal list-inside text-gray-600 dark:text-gray-400 space-y-1">
-                <li>Name any shape OR text layer with <code class="bg-purple-100 dark:bg-purple-900 px-1 rounded">theme-</code> prefix</li>
-                <li>When you generate the frame overlay, these layers are hidden & their positions saved</li>
-                <li>In the app, users see a "Theme" button to change ALL theme layers at once</li>
-                <li>Both shapes (rectangles) AND text (labels) can be theme-colored!</li>
-              </ol>
-            </div>
-            <div class="bg-yellow-50 dark:bg-yellow-900/30 rounded p-2 mt-3 border border-yellow-300 dark:border-yellow-700">
-              <p class="text-xs text-yellow-700 dark:text-yellow-300">
-                <strong>⚠️ Important:</strong> Only layers with <code class="bg-yellow-100 dark:bg-yellow-800 px-1 rounded">theme-</code> prefix will change color. 
-                <br>Layers <strong>without</strong> this prefix stay exactly as designed - no changes!
-              </p>
-            </div>
-            <p class="text-xs text-purple-600 dark:text-purple-400 mt-2 italic">→ Users can customize theme colors WITHOUT API calls (instant!)</p>
-          </div>
-
-          <!-- WATERMARK LAYER -->
-          <div class="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-300 dark:border-yellow-700">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">©️</span>
-              <p class="text-sm font-bold text-yellow-800 dark:text-yellow-200">WATERMARK LAYER</p>
-              <span class="px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">Optional</span>
-            </div>
-            <p class="text-xs text-yellow-700 dark:text-yellow-300 mb-3">Contains: <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded font-bold">watermark</code></p>
-            <div class="flex flex-wrap gap-2">
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">watermark</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">watermark-logo</code>
-            </div>
-            <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-2 italic">→ Hidden for Pro users automatically</p>
-          </div>
-
-          <!-- Other Layers - STATIC (No Changes) -->
-          <div class="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-300 dark:border-gray-600">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">🔒</span>
-              <p class="text-sm font-bold text-gray-800 dark:text-gray-200">STATIC LAYERS (No User Changes)</p>
-              <span class="px-2 py-0.5 bg-gray-500 text-white text-xs rounded-full">Fixed</span>
-            </div>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">Any layer <strong>without</strong> a special prefix stays exactly as designed</p>
-            <div class="flex flex-wrap gap-2">
-              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">before-label</code>
-              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">after-label</code>
-              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">divider-line</code>
-              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">frame-decoration</code>
-            </div>
-            <div class="bg-blue-50 dark:bg-blue-900/30 rounded p-2 mt-3 border border-blue-300 dark:border-blue-700">
-              <p class="text-xs text-blue-700 dark:text-blue-300">
-                <strong>💡 Tip:</strong> If you want a text or shape to stay the SAME color and not change, 
-                do NOT add the <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">theme-</code> prefix. 
-                It will remain exactly as you designed it in Templated.io.
-              </p>
-            </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">→ Baked into frame overlay PNG - users cannot modify</p>
-          </div>
-        </div>
-
-        <!-- Quick Setup Checklist -->
-        <div class="bg-primary/5 rounded-lg p-4 border border-primary/20">
-          <p class="text-sm font-bold text-primary mb-3">✅ Template Setup Checklist (Before Generating)</p>
-          <div class="grid grid-cols-1 gap-2 text-xs">
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary border-2 border-red-400"> <strong class="text-red-600">CRITICAL:</strong> Canvas background is <strong>TRANSPARENT</strong> in Templated.io
-            </label>
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Photo placeholders named <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">slot-*</code>
-            </label>
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Color-changeable elements named <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-*</code>
-            </label>
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Elements that should NOT change have NO <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-</code> prefix
-            </label>
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Set Default Background Color below (what users see initially)
-            </label>
-            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Set Default Theme Color below (if you have <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-*</code> layers)
-            </label>
-          </div>
-        </div>
-      </div>
-    </details>
-
-    <!-- Form -->
-    <form id="syncForm" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 space-y-6">
+    <!-- Main Form -->
+    <form id="mainForm" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 space-y-5">
       
+      <!-- Existing Template Selector (hidden by default) -->
+      <div id="existingTemplateSection" class="hidden">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          Select Template
+        </label>
+        <select 
+          id="existing_template" 
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary transition"
+        >
+          <option value="">Loading...</option>
+        </select>
+      </div>
+
       <!-- Templated ID -->
-      <div>
+      <div id="templatedIdSection">
         <label for="templated_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Templated ID <span class="text-red-500">*</span>
         </label>
         <input 
           type="text" 
           id="templated_id" 
-          name="templated_id" 
           required
-          placeholder="e.g., clx1234567890"
-          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition"
+          placeholder="e.g., e56ddb13-f39d-4b4b-a2aa-1586c5e17273"
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary transition"
         >
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Found in the Templated.io URL: app.templated.io/editor/<strong>[ID]</strong></p>
+        <p class="mt-1 text-xs text-gray-500">From Templated.io URL or API</p>
       </div>
 
       <!-- Template Name -->
@@ -239,518 +95,92 @@
         <input 
           type="text" 
           id="name" 
-          name="name" 
           required
-          placeholder="e.g., Square-BeforeAfter-Classic"
-          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary focus:border-transparent transition"
+          placeholder="e.g., Story-BeforeAfter-Beige"
+          class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary transition"
         >
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Recommended format: <span class="text-primary font-medium">[Format]-[Type]-[Variant]</span> (e.g., Square-BeforeAfter-Classic)
-        </p>
       </div>
 
-      <!-- Canvas Size Presets -->
+      <!-- Canvas Size -->
       <div>
         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           Canvas Size <span class="text-red-500">*</span>
         </label>
-        <div class="grid grid-cols-3 gap-3 mb-3">
-          <button 
-            type="button" 
-            onclick="setPreset(1080, 1350, this)"
-            class="preset-btn active px-4 py-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium hover:bg-primary/20 transition relative"
-          >
-            <div class="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">Best</div>
-            <div class="text-sm font-semibold">4:5</div>
-            <div class="text-xs opacity-75">1080 × 1350</div>
+        <div class="grid grid-cols-3 gap-2 mb-2">
+          <button type="button" onclick="setPreset(1080, 1350, this)" class="preset-btn py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium text-sm">
+            4:5 <span class="text-xs opacity-75 block">1080×1350</span>
           </button>
-          <button 
-            type="button" 
-            onclick="setPreset(1080, 1080, this)"
-            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
-          >
-            <div class="text-sm font-semibold">1:1</div>
-            <div class="text-xs opacity-75">1080 × 1080</div>
+          <button type="button" onclick="setPreset(1080, 1080, this)" class="preset-btn py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 font-medium text-sm">
+            1:1 <span class="text-xs opacity-75 block">1080×1080</span>
           </button>
-          <button 
-            type="button" 
-            onclick="setPreset(1080, 1920, this)"
-            class="preset-btn px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium hover:border-primary hover:text-primary transition"
-          >
-            <div class="text-sm font-semibold">9:16</div>
-            <div class="text-xs opacity-75">1080 × 1920</div>
+          <button type="button" onclick="setPreset(1080, 1920, this)" class="preset-btn py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 font-medium text-sm">
+            9:16 <span class="text-xs opacity-75 block">1080×1920</span>
           </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <input type="number" id="canvas_width" value="1080" min="100" max="4096" class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+          <input type="number" id="canvas_height" value="1350" min="100" max="4096" class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+        </div>
+      </div>
+
+      <!-- Default Colors Section -->
+      <div class="border-t border-gray-200 dark:border-gray-700 pt-5">
+        <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">🎨 Default Colors</p>
+        
+        <!-- Background Color -->
+        <div class="flex items-center gap-3 mb-3">
+          <input type="color" id="default_bg_color" value="#FFFFFF" class="w-10 h-10 rounded border-2 border-gray-300 cursor-pointer">
+          <div class="flex-1">
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Background Color</label>
+            <input type="text" id="default_bg_color_hex" value="#FFFFFF" placeholder="#FFFFFF" class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono">
+          </div>
         </div>
         
-        <!-- Manual Size Inputs -->
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label for="canvas_width" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Width (px)</label>
-            <input 
-              type="number" 
-              id="canvas_width" 
-              name="canvas_width" 
-              required
-              value="1080"
-              min="100"
-              max="4096"
-              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent transition"
-            >
-          </div>
-          <div>
-            <label for="canvas_height" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Height (px)</label>
-            <input 
-              type="number" 
-              id="canvas_height" 
-              name="canvas_height" 
-              required
-              value="1350"
-              min="100"
-              max="4096"
-              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent transition"
-            >
+        <!-- Theme Color -->
+        <div class="flex items-center gap-3">
+          <input type="color" id="default_theme_color" value="#303030" class="w-10 h-10 rounded border-2 border-purple-300 cursor-pointer">
+          <div class="flex-1">
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Theme Color <span class="text-purple-500">(for theme-* layers)</span></label>
+            <input type="text" id="default_theme_color_hex" value="#303030" placeholder="#303030 or leave empty" class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono">
           </div>
         </div>
+        
+        <p class="text-xs text-gray-500 mt-2">These colors show when user first opens the template. They can change them in the app.</p>
       </div>
 
-      <!-- Supports -->
-      <div>
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Supports
-        </label>
-        <div class="flex gap-4">
-          <label class="flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              id="supports_single" 
-              name="supports" 
-              value="single"
-              checked
-              class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-            >
-            <span class="ml-2 text-gray-700 dark:text-gray-300">Single</span>
-          </label>
-          <label class="flex items-center cursor-pointer">
-            <input 
-              type="checkbox" 
-              id="supports_carousel" 
-              name="supports" 
-              value="carousel"
-              class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-            >
-            <span class="ml-2 text-gray-700 dark:text-gray-300">Carousel</span>
-          </label>
-        </div>
-      </div>
-
-      <!-- Is Active -->
-      <div>
-        <label class="flex items-center cursor-pointer">
-          <input 
-            type="checkbox" 
-            id="is_active" 
-            name="is_active"
-            checked
-            class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
-          >
-          <span class="ml-2 text-gray-700 dark:text-gray-300 font-medium">Active</span>
-          <span class="ml-2 text-sm text-gray-500 dark:text-gray-400">(Template will be visible in the app)</span>
-        </label>
+      <!-- Active Toggle -->
+      <div class="flex items-center gap-2">
+        <input type="checkbox" id="is_active" checked class="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary">
+        <label for="is_active" class="text-sm text-gray-700 dark:text-gray-300">Active (visible in app)</label>
       </div>
 
       <!-- Submit Button -->
-      <div class="pt-4">
-        <button 
-          type="submit" 
-          id="submitBtn"
-          class="w-full py-4 px-6 rounded-xl bg-primary hover:bg-pink-600 text-white font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <span id="btnText">Sync Template</span>
-          <svg id="btnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </button>
-      </div>
+      <button 
+        type="submit" 
+        id="submitBtn"
+        class="w-full py-4 px-6 rounded-xl bg-primary hover:bg-pink-600 text-white font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2"
+      >
+        <span id="btnText">Sync & Generate</span>
+        <svg id="btnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </button>
     </form>
 
     <!-- Status Message -->
     <div id="statusMessage" class="hidden mt-6"></div>
 
-    <!-- Resync Existing Template Section - Simplified -->
-    <details class="bg-white dark:bg-gray-800 rounded-xl shadow-lg mt-8 overflow-hidden">
-      <summary class="px-6 py-4 font-semibold text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-pointer flex items-center gap-2">
-        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-        </svg>
-        🔄 Resync Existing Template
-        <span class="ml-auto text-xs text-gray-500">Pull fresh layers from Templated.io</span>
-      </summary>
-      
-      <div class="p-6 border-t border-gray-200 dark:border-gray-700">
-        <form id="resyncForm" class="space-y-4">
-          <div>
-            <label for="resync_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Select Template
-            </label>
-            <select 
-              id="resync_template" 
-              class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-            >
-              <option value="">Loading templates...</option>
-            </select>
-          </div>
-
-          <label class="flex items-center cursor-pointer">
-            <input type="checkbox" id="resync_update_canvas" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-            <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Also update canvas size</span>
-          </label>
-          
-          <div id="resync_canvas_options" class="hidden grid grid-cols-3 gap-2">
-            <button type="button" onclick="setResyncPreset(1080, 1350, this)" class="resync-preset-btn px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:border-blue-500 transition">
-              <div class="font-semibold">4:5</div><div class="text-xs opacity-75">1080×1350</div>
-            </button>
-            <button type="button" onclick="setResyncPreset(1080, 1080, this)" class="resync-preset-btn px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:border-blue-500 transition">
-              <div class="font-semibold">1:1</div><div class="text-xs opacity-75">1080×1080</div>
-            </button>
-            <button type="button" onclick="setResyncPreset(1080, 1920, this)" class="resync-preset-btn px-3 py-2 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm hover:border-blue-500 transition">
-              <div class="font-semibold">9:16</div><div class="text-xs opacity-75">1080×1920</div>
-            </button>
-            <input type="number" id="resync_canvas_width" value="1080" min="100" max="4096" placeholder="Width" class="col-span-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm">
-            <input type="number" id="resync_canvas_height" value="1350" min="100" max="4096" placeholder="Height" class="col-span-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm">
-          </div>
-          
-          <button type="submit" id="resyncBtn" class="w-full py-3 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold transition-all duration-200 flex items-center justify-center gap-2">
-            <svg id="resyncBtnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-            </svg>
-            <span id="resyncBtnText">Resync Layers</span>
-            <svg id="resyncBtnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </button>
-        </form>
-        <div id="resyncStatusMessage" class="hidden mt-4"></div>
+    <!-- Layer Naming Quick Reference (Collapsed) -->
+    <details class="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <summary class="font-medium text-gray-700 dark:text-gray-300 cursor-pointer">📋 Layer Naming Quick Reference</summary>
+      <div class="mt-3 text-xs space-y-2 text-gray-600 dark:text-gray-400">
+        <p><code class="bg-green-100 dark:bg-green-900 px-1 rounded">slot-*</code> → Photo placeholders (e.g., slot-before, slot-after)</p>
+        <p><code class="bg-purple-100 dark:bg-purple-900 px-1 rounded">theme-*</code> → Color-changeable layers (e.g., theme-frame, theme-label)</p>
+        <p><strong>Important:</strong> Template canvas must be TRANSPARENT in Templated.io!</p>
       </div>
     </details>
 
-    <!-- Advanced: Background Layer Settings (Legacy) -->
-    <details class="bg-white dark:bg-gray-800 rounded-xl shadow-lg mt-8 overflow-hidden">
-      <summary class="px-6 py-4 font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-pointer flex items-center gap-2">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-        </svg>
-        Advanced: API-Based Background Layers (Legacy)
-        <span class="ml-auto text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">Optional</span>
-      </summary>
-      
-      <div class="p-6 border-t border-gray-200 dark:border-gray-700">
-        <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 mb-4 border border-blue-200 dark:border-blue-800">
-          <p class="text-xs text-blue-800 dark:text-blue-200">
-            <strong>💡 Tip:</strong> For new templates, use <code class="bg-white/50 px-1 rounded">theme-</code> prefix layers instead! They work client-side and don't require API calls. This section is for legacy templates that use API-based background overrides.
-          </p>
-        </div>
-
-        <form id="backgroundLayerForm" class="space-y-4">
-          <div>
-            <label for="bg_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Select Template
-            </label>
-            <select 
-              id="bg_template" 
-              class="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-            >
-              <option value="">Loading templates...</option>
-            </select>
-          </div>
-
-          <div id="currentBgLayers" class="hidden">
-            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Current Config</label>
-            <div id="currentBgLayersList" class="flex flex-wrap gap-2 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[32px]">
-              <span class="text-gray-400 dark:text-gray-500 text-xs">None</span>
-            </div>
-          </div>
-
-          <div id="availableLayers" class="hidden">
-            <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Available Layers</label>
-            <div id="availableLayersList" class="space-y-1 max-h-40 overflow-y-auto p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-sm">
-              <p class="text-gray-400 text-xs">Select a template</p>
-            </div>
-          </div>
-
-          <div>
-            <label for="manual_layers" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Manual Layer Names <span class="text-gray-500">(comma-separated)</span>
-            </label>
-            <input 
-              type="text" 
-              id="manual_layers" 
-              placeholder="e.g., background_bar, accent_shape"
-              class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
-            >
-          </div>
-
-          <button 
-            type="submit" 
-            id="bgLayerBtn"
-            class="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm transition-all duration-200 flex items-center justify-center gap-2"
-          >
-            <svg id="bgLayerBtnIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-            </svg>
-            <span id="bgLayerBtnText">Save</span>
-            <svg id="bgLayerBtnSpinner" class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          </button>
-        </form>
-
-        <div id="bgLayerStatusMessage" class="hidden mt-3"></div>
-      </div>
-    </details>
-
-    <!-- Frame Overlay Generation Section - MAIN ACTION -->
-    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mt-8 border-2 border-emerald-300 dark:border-emerald-700">
-      <div class="flex items-center gap-3 mb-4">
-        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg">
-          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-          </svg>
-        </div>
-        <div>
-          <h2 class="text-xl font-bold text-gray-900 dark:text-white">🚀 Generate Frame Overlay</h2>
-          <p class="text-sm text-gray-500 dark:text-gray-400">Required for theme colors & instant previews</p>
-        </div>
-      </div>
-
-      <div class="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 rounded-lg p-4 mb-4 border border-emerald-200 dark:border-emerald-800">
-        <p class="text-sm font-semibold text-emerald-800 dark:text-emerald-200 mb-2">What this does:</p>
-        <ul class="text-xs text-emerald-700 dark:text-emerald-300 space-y-1">
-          <li>✓ Creates a transparent PNG with all decorations (labels, shapes, etc.)</li>
-          <li>✓ Automatically hides <code class="bg-white/50 px-1 rounded">slot-*</code> layers (photo placeholders)</li>
-          <li>✓ Automatically detects & hides <code class="bg-white/50 px-1 rounded">theme-*</code> layers and saves their positions</li>
-          <li>✓ Enables instant color changes WITHOUT calling the Templated.io API</li>
-        </ul>
-      </div>
-
-      <div class="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 mb-4 border border-amber-200 dark:border-amber-800">
-        <p class="text-xs text-amber-800 dark:text-amber-200">
-          <strong>⚠️ Important:</strong> Make sure the template's canvas background is set to <strong>transparent</strong> in Templated.io before generating!
-        </p>
-      </div>
-
-      <form id="frameOverlayForm" class="space-y-4">
-        <!-- Template Selection -->
-        <div>
-          <label for="overlay_template" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Select Template
-          </label>
-          <select 
-            id="overlay_template" 
-            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-          >
-            <option value="">Loading templates...</option>
-          </select>
-        </div>
-
-        <!-- Current Frame Overlay Status -->
-        <div id="currentOverlayStatus" class="hidden">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Current Frame Overlay
-          </label>
-          <div id="currentOverlayInfo" class="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-            <span class="text-gray-400 dark:text-gray-500 text-sm">None generated</span>
-          </div>
-        </div>
-
-        <!-- Detected Layers Section -->
-        <div id="slotLayersSection" class="hidden space-y-3">
-          <!-- Slot Layers -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              📸 Slot Layers <span class="text-xs text-green-600">(will be hidden → photo placeholders)</span>
-            </label>
-            <div id="slotLayersList" class="flex flex-wrap gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg min-h-[40px] border border-green-200 dark:border-green-800">
-              <span class="text-gray-400 dark:text-gray-500 text-sm">No slot layers found</span>
-            </div>
-          </div>
-          
-          <!-- Theme Layers -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              🎨 Theme Layers <span class="text-xs text-purple-600">(will be hidden → positions saved for dynamic coloring)</span>
-            </label>
-            <div id="themeLayersList" class="flex flex-wrap gap-2 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg min-h-[40px] border border-purple-200 dark:border-purple-800">
-              <span class="text-gray-400 dark:text-gray-500 text-sm">No theme layers found</span>
-            </div>
-          </div>
-          
-          <!-- Other Layers -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              🖼️ Other Layers <span class="text-xs text-gray-500">(will be included in overlay)</span>
-            </label>
-            <div id="otherLayersList" class="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg min-h-[40px] border border-gray-200 dark:border-gray-600">
-              <span class="text-gray-400 dark:text-gray-500 text-sm">No other layers</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Default Colors Section -->
-        <div id="defaultColorsSection" class="hidden space-y-4 border-t border-gray-200 dark:border-gray-700 pt-4">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-lg">🎨</span>
-            <p class="text-sm font-bold text-gray-800 dark:text-gray-200">Default Colors</p>
-            <span class="px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">Required</span>
-          </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            These colors appear when users first open the template. Users can change them in the app.
-          </p>
-          
-          <!-- Background Color -->
-          <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
-            <div class="flex items-center gap-4">
-              <label for="default_bg_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
-                <span class="block font-bold text-blue-700 dark:text-blue-300">Background Color</span>
-                <span class="text-xs text-gray-500">(Canvas fill)</span>
-              </label>
-              <div class="flex items-center gap-2 flex-1">
-                <input 
-                  type="color" 
-                  id="default_bg_color" 
-                  value="#FFFFFF"
-                  class="w-12 h-10 rounded border-2 border-blue-300 dark:border-blue-600 cursor-pointer"
-                >
-                <input 
-                  type="text" 
-                  id="default_bg_color_hex" 
-                  value="#FFFFFF"
-                  placeholder="#FFFFFF"
-                  class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
-                >
-              </div>
-            </div>
-            <p class="text-xs text-blue-600 dark:text-blue-400 mt-2">
-              💡 This shows as the initial background. Works because Templated.io template has transparent canvas!
-            </p>
-          </div>
-          
-          <!-- Theme Color -->
-          <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
-            <div class="flex items-center gap-4">
-              <label for="default_theme_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
-                <span class="block font-bold text-purple-700 dark:text-purple-300">Theme Color</span>
-                <span class="text-xs text-gray-500">(for theme-* layers)</span>
-              </label>
-              <div class="flex items-center gap-2 flex-1">
-                <input 
-                  type="color" 
-                  id="default_theme_color" 
-                  value="#6B7B6E"
-                  class="w-12 h-10 rounded border-2 border-purple-300 dark:border-purple-600 cursor-pointer"
-                >
-                <input 
-                  type="text" 
-                  id="default_theme_color_hex" 
-                  value="#6B7B6E"
-                  placeholder="#6B7B6E"
-                  class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
-                >
-                <button 
-                  type="button"
-                  onclick="clearThemeColor()"
-                  class="px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 text-xs"
-                  title="No theme layers = leave empty"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-            <p class="text-xs text-purple-600 dark:text-purple-400 mt-2">
-              💡 Only matters if you have <code class="bg-purple-100 dark:bg-purple-800 px-1 rounded">theme-*</code> prefixed layers. Leave empty if none.
-            </p>
-          </div>
-          
-          <!-- Info Box -->
-          <div class="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
-            <p class="text-xs text-gray-600 dark:text-gray-400">
-              <strong>How it works:</strong> Templates are stored with transparent backgrounds. The default colors above 
-              determine what users see initially. Users can then tap "BG" or "Theme" buttons in the app to customize instantly 
-              (no API calls needed!).
-            </p>
-          </div>
-        </div>
-
-        <!-- Generate Button -->
-        <button 
-          type="submit" 
-          id="overlayBtn"
-          class="w-full py-3 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <svg id="overlayBtnIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
-          </svg>
-          <span id="overlayBtnText">Generate Frame Overlay</span>
-          <svg id="overlayBtnSpinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-          </svg>
-        </button>
-
-        <!-- Bulk Generate Button -->
-        <button 
-          type="button" 
-          id="bulkOverlayBtn"
-          onclick="generateAllOverlays()"
-          class="w-full py-2 px-6 rounded-xl bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium transition-all duration-200 flex items-center justify-center gap-2"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-          </svg>
-          <span id="bulkOverlayBtnText">Generate for All Templates (Missing Only)</span>
-        </button>
-      </form>
-
-      <!-- Frame Overlay Status Message -->
-      <div id="overlayStatusMessage" class="hidden mt-4"></div>
-    </div>
-
-    <!-- Sync History - Collapsible -->
-    <details class="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-      <summary class="px-6 py-4 font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition cursor-pointer flex items-center gap-2">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        Sync History
-        <span class="ml-auto flex items-center gap-3 text-xs">
-          <span class="flex items-center gap-1"><span id="totalSyncs" class="font-bold">-</span> total</span>
-          <span class="flex items-center gap-1 text-green-600"><span id="successSyncs" class="font-bold">-</span> ✓</span>
-          <span class="flex items-center gap-1 text-red-600"><span id="errorSyncs" class="font-bold">-</span> ✗</span>
-        </span>
-      </summary>
-      <div class="p-6 border-t border-gray-200 dark:border-gray-700">
-        <div class="flex items-center justify-end mb-3">
-          <button onclick="loadHistory()" class="text-xs text-primary hover:text-pink-600 flex items-center gap-1">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-            </svg>
-            Refresh
-          </button>
-        </div>
-        <div id="syncHistory" class="space-y-2 max-h-64 overflow-y-auto">
-          <div class="flex items-center justify-center py-4 text-gray-500 dark:text-gray-400 text-sm">
-            <svg class="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Loading...
-          </div>
-        </div>
-      </div>
-    </details>
   </div>
 
   <script>
@@ -758,169 +188,172 @@
     const WEBHOOK_URL = 'https://jackhunterking.app.n8n.cloud/webhook/sync-template';
     const SUPABASE_URL = 'https://tmgjsrxdjbazrwvbdoed.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtZ2pzcnhkamJhenJ3dmJkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3NDE3MDcsImV4cCI6MjA4MzMxNzcwN30.krSbo9fqvKkbQrjFDnQo2s7JiaXwo1wydhvaontxtFE';
+    const FRAME_OVERLAY_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-frame-overlay`;
 
-    // Initialize Supabase client
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // Set preset canvas size
+    let currentMode = 'new';
+    let selectedTemplateId = null;
+
+    // Mode toggle
+    function setMode(mode) {
+      currentMode = mode;
+      const newBtn = document.getElementById('modeNewBtn');
+      const existingBtn = document.getElementById('modeExistingBtn');
+      const existingSection = document.getElementById('existingTemplateSection');
+      const templatedIdSection = document.getElementById('templatedIdSection');
+      const btnText = document.getElementById('btnText');
+      
+      if (mode === 'new') {
+        newBtn.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+        newBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        existingBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        existingBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        existingSection.classList.add('hidden');
+        templatedIdSection.classList.remove('hidden');
+        btnText.textContent = 'Sync & Generate';
+        clearForm();
+      } else {
+        existingBtn.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+        existingBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        newBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        newBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        existingSection.classList.remove('hidden');
+        templatedIdSection.classList.add('hidden');
+        btnText.textContent = 'Update & Regenerate';
+        loadExistingTemplates();
+      }
+    }
+
+    // Clear form
+    function clearForm() {
+      document.getElementById('templated_id').value = '';
+      document.getElementById('name').value = '';
+      document.getElementById('default_bg_color').value = '#FFFFFF';
+      document.getElementById('default_bg_color_hex').value = '#FFFFFF';
+      document.getElementById('default_theme_color').value = '#303030';
+      document.getElementById('default_theme_color_hex').value = '#303030';
+      selectedTemplateId = null;
+    }
+
+    // Load existing templates
+    async function loadExistingTemplates() {
+      const select = document.getElementById('existing_template');
+      try {
+        const { data, error } = await supabaseClient
+          .from('templates')
+          .select('id, templated_id, name, canvas_width, canvas_height, default_background_color, default_theme_color, is_active')
+          .order('name', { ascending: true });
+        
+        if (error) throw error;
+        
+        select.innerHTML = '<option value="">-- Select a template --</option>' + 
+          data.map(t => `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-width="${t.canvas_width}" data-height="${t.canvas_height}" data-bg="${t.default_background_color || '#FFFFFF'}" data-theme="${t.default_theme_color || ''}" data-active="${t.is_active}">${escapeHtml(t.name)}</option>`).join('');
+      } catch (err) {
+        console.error('Error loading templates:', err);
+        select.innerHTML = '<option value="">Error loading</option>';
+      }
+    }
+
+    // Handle existing template selection
+    document.getElementById('existing_template').addEventListener('change', (e) => {
+      const option = e.target.options[e.target.selectedIndex];
+      if (!option.value) {
+        clearForm();
+        return;
+      }
+      
+      selectedTemplateId = option.value;
+      document.getElementById('templated_id').value = option.dataset.templatedId || '';
+      document.getElementById('name').value = option.dataset.name || '';
+      document.getElementById('canvas_width').value = option.dataset.width || 1080;
+      document.getElementById('canvas_height').value = option.dataset.height || 1350;
+      document.getElementById('default_bg_color').value = option.dataset.bg || '#FFFFFF';
+      document.getElementById('default_bg_color_hex').value = option.dataset.bg || '#FFFFFF';
+      document.getElementById('default_theme_color').value = option.dataset.theme || '#303030';
+      document.getElementById('default_theme_color_hex').value = option.dataset.theme || '';
+      document.getElementById('is_active').checked = option.dataset.active === 'true';
+      
+      // Update preset button states
+      updatePresetButtons();
+    });
+
+    // Canvas size presets
     function setPreset(width, height, button) {
       document.getElementById('canvas_width').value = width;
       document.getElementById('canvas_height').value = height;
-      
-      // Update active state on buttons
-      document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.classList.remove('active', 'border-primary', 'bg-primary/10', 'text-primary');
-        btn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
-      });
-      
-      button.classList.add('active', 'border-primary', 'bg-primary/10', 'text-primary');
-      button.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
+      updatePresetButtons();
     }
 
-    // Show status message with detailed response
-    function showStatus(message, isSuccess, responseData = null) {
-      const statusEl = document.getElementById('statusMessage');
+    function updatePresetButtons() {
+      const width = parseInt(document.getElementById('canvas_width').value);
+      const height = parseInt(document.getElementById('canvas_height').value);
       
-      let detailsHtml = '';
-      if (responseData) {
-        detailsHtml = `
-          <details class="mt-3">
-            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
-            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
-          </details>
-        `;
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        btn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+      });
+      
+      // Find matching preset
+      const presets = [[1080, 1350], [1080, 1080], [1080, 1920]];
+      presets.forEach((preset, i) => {
+        if (width === preset[0] && height === preset[1]) {
+          const btn = document.querySelectorAll('.preset-btn')[i];
+          btn.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+          btn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        }
+      });
+    }
+
+    // Sync color pickers with hex inputs
+    document.getElementById('default_bg_color').addEventListener('input', e => {
+      document.getElementById('default_bg_color_hex').value = e.target.value.toUpperCase();
+    });
+    document.getElementById('default_bg_color_hex').addEventListener('input', e => {
+      const hex = e.target.value.trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        document.getElementById('default_bg_color').value = hex;
       }
-      
-      statusEl.className = `mt-6 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
-      statusEl.innerHTML = `
+    });
+    document.getElementById('default_theme_color').addEventListener('input', e => {
+      document.getElementById('default_theme_color_hex').value = e.target.value.toUpperCase();
+    });
+    document.getElementById('default_theme_color_hex').addEventListener('input', e => {
+      const hex = e.target.value.trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        document.getElementById('default_theme_color').value = hex;
+      }
+    });
+
+    // Status display
+    function showStatus(message, isSuccess, details = null) {
+      const el = document.getElementById('statusMessage');
+      el.className = `mt-6 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
+      el.innerHTML = `
         <div class="flex items-start gap-3">
-          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
-          <div class="flex-1 min-w-0">
+          <span class="text-xl">${isSuccess ? '✅' : '❌'}</span>
+          <div class="flex-1">
             <p class="font-medium">${isSuccess ? 'Success!' : 'Error'}</p>
             <p class="text-sm mt-1">${message}</p>
-            ${detailsHtml}
+            ${details ? `<details class="mt-2"><summary class="text-xs cursor-pointer">Details</summary><pre class="mt-1 text-xs overflow-auto p-2 bg-black/10 rounded">${JSON.stringify(details, null, 2)}</pre></details>` : ''}
           </div>
         </div>
       `;
-      statusEl.classList.remove('hidden');
-      
-      // Scroll to status message
-      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      el.classList.remove('hidden');
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // Toggle loading state
+    // Loading state
     function setLoading(isLoading) {
       const btn = document.getElementById('submitBtn');
       const btnText = document.getElementById('btnText');
       const btnSpinner = document.getElementById('btnSpinner');
-      
       btn.disabled = isLoading;
-      btnText.textContent = isLoading ? 'Syncing...' : 'Sync Template';
+      btnText.textContent = isLoading ? 'Processing...' : (currentMode === 'new' ? 'Sync & Generate' : 'Update & Regenerate');
       btnSpinner.classList.toggle('hidden', !isLoading);
-      btn.classList.toggle('opacity-75', isLoading);
-      btn.classList.toggle('cursor-not-allowed', isLoading);
     }
 
-    // Log sync result to Supabase
-    async function logSyncResult(data, success, errorMessage = null) {
-      try {
-        const { error } = await supabaseClient
-          .from('template_sync_logs')
-          .insert({
-            templated_id: data.templated_id,
-            name: data.name,
-            status: success ? 'success' : 'error',
-            error_message: errorMessage
-          });
-        
-        if (error) {
-          console.error('Failed to log sync result:', error);
-        }
-      } catch (err) {
-        console.error('Error logging to Supabase:', err);
-      }
-    }
-
-    // Load sync history from Supabase
-    async function loadHistory() {
-      const container = document.getElementById('syncHistory');
-      
-      try {
-        const { data, error } = await supabaseClient
-          .from('template_sync_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20);
-        
-        if (error) throw error;
-        
-        if (!data || data.length === 0) {
-          container.innerHTML = '<p class="text-gray-500 dark:text-gray-400 text-sm text-center py-4">No sync history yet</p>';
-          updateStats(0, 0, 0);
-          return;
-        }
-        
-        // Calculate stats
-        const successCount = data.filter(item => item.status === 'success').length;
-        const errorCount = data.filter(item => item.status === 'error').length;
-        updateStats(data.length, successCount, errorCount);
-        
-        // Render history
-        container.innerHTML = data.map(item => `
-          <div class="flex items-start justify-between p-3 bg-gray-100 dark:bg-gray-700/50 rounded-lg">
-            <div class="flex items-start gap-3 min-w-0 flex-1">
-              <span class="flex-shrink-0 mt-0.5">${item.status === 'success' ? '✅' : '❌'}</span>
-              <div class="min-w-0 flex-1">
-                <p class="font-medium text-gray-900 dark:text-white text-sm truncate">${escapeHtml(item.name)}</p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 truncate">${escapeHtml(item.templated_id)}</p>
-                ${item.error_message ? `
-                  <details class="mt-1">
-                    <summary class="text-xs text-red-600 dark:text-red-400 cursor-pointer">View error</summary>
-                    <p class="text-xs text-red-600 dark:text-red-400 mt-1 break-all">${escapeHtml(item.error_message)}</p>
-                  </details>
-                ` : ''}
-              </div>
-            </div>
-            <span class="text-xs text-gray-400 flex-shrink-0 ml-2">${formatDate(item.created_at)}</span>
-          </div>
-        `).join('');
-        
-      } catch (err) {
-        console.error('Error loading history:', err);
-        container.innerHTML = `
-          <div class="text-center py-4">
-            <p class="text-red-500 dark:text-red-400 text-sm">Failed to load history</p>
-            <button onclick="loadHistory()" class="text-primary text-sm mt-2 hover:underline">Try again</button>
-          </div>
-        `;
-      }
-    }
-
-    // Update stats display
-    function updateStats(total, success, errors) {
-      document.getElementById('totalSyncs').textContent = total;
-      document.getElementById('successSyncs').textContent = success;
-      document.getElementById('errorSyncs').textContent = errors;
-    }
-
-    // Format date for display
-    function formatDate(dateString) {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffMins < 1) return 'Just now';
-      if (diffMins < 60) return `${diffMins}m ago`;
-      if (diffHours < 24) return `${diffHours}h ago`;
-      if (diffDays < 7) return `${diffDays}d ago`;
-      
-      return date.toLocaleDateString();
-    }
-
-    // Escape HTML to prevent XSS
+    // Escape HTML
     function escapeHtml(text) {
       if (!text) return '';
       const div = document.createElement('div');
@@ -929,909 +362,150 @@
     }
 
     // Form submission
-    document.getElementById('syncForm').addEventListener('submit', async (e) => {
+    document.getElementById('mainForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      
-      // Hide previous status
       document.getElementById('statusMessage').classList.add('hidden');
       
-      // Get form data
-      const formData = {
-        templated_id: document.getElementById('templated_id').value.trim(),
-        name: document.getElementById('name').value.trim(),
-        canvas_width: parseInt(document.getElementById('canvas_width').value),
-        canvas_height: parseInt(document.getElementById('canvas_height').value),
-        is_active: document.getElementById('is_active').checked,
-        supports: Array.from(document.querySelectorAll('input[name="supports"]:checked')).map(cb => cb.value)
-      };
+      const templatedId = document.getElementById('templated_id').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const canvasWidth = parseInt(document.getElementById('canvas_width').value);
+      const canvasHeight = parseInt(document.getElementById('canvas_height').value);
+      const isActive = document.getElementById('is_active').checked;
       
-      // Validate required fields
-      if (!formData.templated_id || !formData.name) {
-        showStatus('Please fill in all required fields', false);
+      // Get colors
+      const bgColorHex = document.getElementById('default_bg_color_hex').value.trim();
+      const themeColorHex = document.getElementById('default_theme_color_hex').value.trim();
+      const defaultBgColor = /^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF';
+      const defaultThemeColor = /^#[0-9A-Fa-f]{6}$/.test(themeColorHex) ? themeColorHex.toUpperCase() : null;
+      
+      if (!name) {
+        showStatus('Please enter a template name', false);
         return;
-      }
-      
-      if (formData.supports.length === 0) {
-        formData.supports = ['single'];
       }
       
       setLoading(true);
       
-      let responseData = null;
-      let success = false;
-      let errorMessage = null;
-      
       try {
-        const response = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData)
-        });
+        let templateId = selectedTemplateId;
         
-        // Try to parse response as JSON
-        const responseText = await response.text();
-        try {
-          responseData = JSON.parse(responseText);
-        } catch {
-          // Response is not JSON
-          responseData = { raw: responseText };
-        }
-        
-        if (response.ok && responseData.success) {
-          success = true;
-          showStatus(
-            `Template "${formData.name}" synced successfully! It should appear in the app shortly.`,
-            true,
-            responseData
-          );
+        if (currentMode === 'new') {
+          // New template: call webhook to sync
+          if (!templatedId) {
+            showStatus('Please enter a Templated ID', false);
+            setLoading(false);
+            return;
+          }
           
-          // Clear form (except canvas size)
-          document.getElementById('templated_id').value = '';
-          document.getElementById('name').value = '';
+          const syncResponse = await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              templated_id: templatedId,
+              name: name,
+              canvas_width: canvasWidth,
+              canvas_height: canvasHeight,
+              is_active: isActive,
+              supports: ['single'],
+              default_background_color: defaultBgColor,
+              default_theme_color: defaultThemeColor
+            })
+          });
+          
+          const syncResult = await syncResponse.json();
+          
+          if (!syncResponse.ok || !syncResult.success) {
+            throw new Error(syncResult.error || syncResult.message || 'Sync failed');
+          }
+          
+          templateId = syncResult.template_id || syncResult.templateId;
+          
+          // If we don't have templateId from sync, fetch it
+          if (!templateId) {
+            const { data } = await supabaseClient
+              .from('templates')
+              .select('id')
+              .eq('templated_id', templatedId)
+              .single();
+            templateId = data?.id;
+          }
         } else {
-          errorMessage = responseData.error || responseData.message || `HTTP ${response.status}: ${response.statusText}`;
-          throw new Error(errorMessage);
+          // Existing template: update in database
+          const { error: updateError } = await supabaseClient
+            .from('templates')
+            .update({
+              name: name,
+              canvas_width: canvasWidth,
+              canvas_height: canvasHeight,
+              is_active: isActive,
+              default_background_color: defaultBgColor,
+              default_theme_color: defaultThemeColor,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', templateId);
+          
+          if (updateError) throw updateError;
         }
+        
+        // Generate frame overlay (extracts theme layers + opacity)
+        if (templateId) {
+          const overlayResponse = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({ template_id: templateId })
+          });
+          
+          const overlayResult = await overlayResponse.json();
+          
+          if (!overlayResponse.ok || !overlayResult.success) {
+            // Show partial success
+            showStatus(`Template saved but frame overlay generation failed: ${overlayResult.error || 'Unknown error'}. You can retry later.`, false, overlayResult);
+            setLoading(false);
+            return;
+          }
+          
+          // Success message with details
+          const themeCount = overlayResult.themeLayerCount || 0;
+          let msg = `Template "${name}" saved successfully!`;
+          if (themeCount > 0) {
+            msg += ` ${themeCount} theme layer(s) detected with opacity preserved.`;
+          }
+          msg += ` Default BG: ${defaultBgColor}${defaultThemeColor ? `, Theme: ${defaultThemeColor}` : ''}.`;
+          
+          showStatus(msg, true, overlayResult);
+          
+          // Clear form for new template mode
+          if (currentMode === 'new') {
+            document.getElementById('templated_id').value = '';
+            document.getElementById('name').value = '';
+          }
+          
+          // Refresh existing templates dropdown
+          if (currentMode === 'existing') {
+            await loadExistingTemplates();
+          }
+          
+        } else {
+          showStatus('Template synced but could not generate overlay (missing template ID). Please try again.', false);
+        }
+        
       } catch (error) {
-        console.error('Sync error:', error);
-        errorMessage = error.message || 'Failed to sync template. Check console for details.';
-        showStatus(errorMessage, false, responseData);
+        console.error('Error:', error);
+        showStatus(error.message || 'An error occurred', false);
       } finally {
-        // Log to Supabase
-        await logSyncResult(formData, success, errorMessage);
-        
-        // Refresh history
-        await loadHistory();
-        
         setLoading(false);
       }
     });
 
-    // Detect system dark mode
+    // Dark mode detection
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
     }
 
-    // Initialize: Load history on page load
-    loadHistory();
-
-    // ==========================================
-    // RESYNC FUNCTIONALITY
-    // ==========================================
-
-    // Load existing templates for resync dropdown
-    async function loadTemplatesForResync() {
-      const select = document.getElementById('resync_template');
-      
-      try {
-        const { data, error } = await supabaseClient
-          .from('templates')
-          .select('id, templated_id, name, updated_at')
-          .eq('is_active', true)
-          .order('name', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (!data || data.length === 0) {
-          select.innerHTML = '<option value="">No templates found</option>';
-          return;
-        }
-        
-        select.innerHTML = '<option value="">-- Select a template --</option>' + 
-          data.map(t => {
-            const lastUpdated = t.updated_at ? formatDate(t.updated_at) : 'Never';
-            return `<option value="${t.templated_id}" data-name="${escapeHtml(t.name)}">${escapeHtml(t.name)} (Updated: ${lastUpdated})</option>`;
-          }).join('');
-        
-      } catch (err) {
-        console.error('Error loading templates for resync:', err);
-        select.innerHTML = '<option value="">Error loading templates</option>';
-      }
-    }
-
-    // Show resync status message
-    function showResyncStatus(message, isSuccess, responseData = null) {
-      const statusEl = document.getElementById('resyncStatusMessage');
-      
-      let detailsHtml = '';
-      if (responseData) {
-        detailsHtml = `
-          <details class="mt-3">
-            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
-            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
-          </details>
-        `;
-      }
-      
-      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
-      statusEl.innerHTML = `
-        <div class="flex items-start gap-3">
-          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
-          <div class="flex-1 min-w-0">
-            <p class="font-medium">${isSuccess ? 'Resync Successful!' : 'Resync Failed'}</p>
-            <p class="text-sm mt-1">${message}</p>
-            ${detailsHtml}
-          </div>
-        </div>
-      `;
-      statusEl.classList.remove('hidden');
-      
-      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    // Toggle resync loading state
-    function setResyncLoading(isLoading) {
-      const btn = document.getElementById('resyncBtn');
-      const btnText = document.getElementById('resyncBtnText');
-      const btnIcon = document.getElementById('resyncBtnIcon');
-      const btnSpinner = document.getElementById('resyncBtnSpinner');
-      
-      btn.disabled = isLoading;
-      btnText.textContent = isLoading ? 'Resyncing...' : 'Resync Layers';
-      btnIcon.classList.toggle('hidden', isLoading);
-      btnSpinner.classList.toggle('hidden', !isLoading);
-      btn.classList.toggle('opacity-75', isLoading);
-      btn.classList.toggle('cursor-not-allowed', isLoading);
-    }
-
-    // Toggle canvas options visibility
-    document.getElementById('resync_update_canvas').addEventListener('change', (e) => {
-      document.getElementById('resync_canvas_options').classList.toggle('hidden', !e.target.checked);
-    });
-
-    // Set resync canvas preset
-    function setResyncPreset(width, height, button) {
-      document.getElementById('resync_canvas_width').value = width;
-      document.getElementById('resync_canvas_height').value = height;
-      
-      document.querySelectorAll('.resync-preset-btn').forEach(btn => {
-        btn.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/30', 'text-blue-600');
-        btn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
-      });
-      
-      button.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/30', 'text-blue-600');
-      button.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-700', 'dark:text-gray-300');
-    }
-
-    // Resync form submission
-    document.getElementById('resyncForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      // Hide previous status
-      document.getElementById('resyncStatusMessage').classList.add('hidden');
-      
-      const select = document.getElementById('resync_template');
-      const templatedId = select.value;
-      const templateName = select.options[select.selectedIndex]?.dataset?.name || templatedId;
-      
-      if (!templatedId) {
-        showResyncStatus('Please select a template to resync', false);
-        return;
-      }
-      
-      setResyncLoading(true);
-      
-      let responseData = null;
-      let success = false;
-      let errorMessage = null;
-      
-      // Build request body
-      const updateCanvas = document.getElementById('resync_update_canvas').checked;
-      const requestBody = {
-        templated_id: templatedId,
-        resync: true  // This flag triggers the resync branch in n8n
-      };
-      
-      // Include canvas dimensions if checkbox is checked
-      if (updateCanvas) {
-        requestBody.canvas_width = parseInt(document.getElementById('resync_canvas_width').value);
-        requestBody.canvas_height = parseInt(document.getElementById('resync_canvas_height').value);
-      }
-      
-      try {
-        const response = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody)
-        });
-        
-        const responseText = await response.text();
-        try {
-          responseData = JSON.parse(responseText);
-        } catch {
-          responseData = { raw: responseText };
-        }
-        
-        if (response.ok && responseData.success) {
-          success = true;
-          const canvasMsg = updateCanvas ? ` Canvas updated to ${requestBody.canvas_width}×${requestBody.canvas_height}.` : '';
-          showResyncStatus(
-            `Template "${templateName}" resynced successfully! Fresh layers and previews have been generated.${canvasMsg}`,
-            true,
-            responseData
-          );
-          
-          // Reload the templates dropdown to show updated timestamp
-          await loadTemplatesForResync();
-        } else {
-          errorMessage = responseData.error || responseData.message || `HTTP ${response.status}: ${response.statusText}`;
-          throw new Error(errorMessage);
-        }
-      } catch (error) {
-        console.error('Resync error:', error);
-        errorMessage = error.message || 'Failed to resync template. Check console for details.';
-        showResyncStatus(errorMessage, false, responseData);
-      } finally {
-        // Log to Supabase
-        const logName = updateCanvas 
-          ? `[RESYNC+SIZE] ${templateName} (${requestBody.canvas_width}×${requestBody.canvas_height})`
-          : `[RESYNC] ${templateName}`;
-        await logSyncResult({ templated_id: templatedId, name: logName }, success, errorMessage);
-        
-        // Refresh history
-        await loadHistory();
-        
-        setResyncLoading(false);
-      }
-    });
-
-    // Load templates for resync on page load
-    loadTemplatesForResync();
-
-    // ==========================================
-    // BACKGROUND LAYER SETTINGS FUNCTIONALITY
-    // ==========================================
-    
-    const BG_LAYER_WEBHOOK_URL = 'https://jackhunterking.app.n8n.cloud/webhook/resulta/template-background-sync';
-    
-    // Track selected layers
-    let selectedBgLayers = [];
-    let currentTemplateId = null;
-    
-    // Load templates for background layer settings
-    async function loadTemplatesForBgSettings() {
-      const select = document.getElementById('bg_template');
-      
-      try {
-        const { data, error } = await supabaseClient
-          .from('templates')
-          .select('id, templated_id, name, layers_json, customizable_background_layers')
-          .eq('is_active', true)
-          .order('name', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (!data || data.length === 0) {
-          select.innerHTML = '<option value="">No templates found</option>';
-          return;
-        }
-        
-        select.innerHTML = '<option value="">-- Select a template --</option>' + 
-          data.map(t => {
-            const hasBgLayers = t.customizable_background_layers && t.customizable_background_layers.length > 0;
-            const badge = hasBgLayers ? ' ✓' : '';
-            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-bg-layers='${JSON.stringify(t.customizable_background_layers || [])}'>${escapeHtml(t.name)}${badge}</option>`;
-          }).join('');
-        
-      } catch (err) {
-        console.error('Error loading templates for bg settings:', err);
-        select.innerHTML = '<option value="">Error loading templates</option>';
-      }
-    }
-    
-    // Handle template selection change
-    document.getElementById('bg_template').addEventListener('change', (e) => {
-      const select = e.target;
-      const selectedOption = select.options[select.selectedIndex];
-      
-      if (!selectedOption || !selectedOption.value) {
-        document.getElementById('currentBgLayers').classList.add('hidden');
-        document.getElementById('availableLayers').classList.add('hidden');
-        selectedBgLayers = [];
-        currentTemplateId = null;
-        return;
-      }
-      
-      currentTemplateId = selectedOption.value;
-      const layersJson = JSON.parse(selectedOption.dataset.layers || '[]');
-      const existingBgLayers = JSON.parse(selectedOption.dataset.bgLayers || '[]');
-      
-      // Show current configured layers
-      document.getElementById('currentBgLayers').classList.remove('hidden');
-      const currentListEl = document.getElementById('currentBgLayersList');
-      
-      if (existingBgLayers.length > 0) {
-        currentListEl.innerHTML = existingBgLayers.map(layer => 
-          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-200 rounded text-sm">
-            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-            ${escapeHtml(layer)}
-          </span>`
-        ).join('');
-      } else {
-        currentListEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 text-sm">None configured</span>';
-      }
-      
-      // Initialize selected layers with existing ones
-      selectedBgLayers = [...existingBgLayers];
-      
-      // Show available layers
-      document.getElementById('availableLayers').classList.remove('hidden');
-      const availableListEl = document.getElementById('availableLayersList');
-      
-      if (layersJson.length > 0) {
-        // Filter out slot and watermark layers - they shouldn't be background customizable
-        const bgCandidateLayers = layersJson.filter(layer => {
-          const layerName = (layer.layer || '').toLowerCase();
-          return !layerName.includes('slot') && !layerName.includes('watermark');
-        });
-        
-        if (bgCandidateLayers.length > 0) {
-          availableListEl.innerHTML = bgCandidateLayers.map(layer => {
-            const layerName = layer.layer;
-            const isChecked = existingBgLayers.includes(layerName);
-            const layerType = layer.type || 'unknown';
-            const hasFill = layer.fill || layer.color;
-            
-            return `
-              <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600/50 cursor-pointer transition">
-                <input 
-                  type="checkbox" 
-                  value="${escapeHtml(layerName)}"
-                  ${isChecked ? 'checked' : ''}
-                  onchange="toggleBgLayer(this)"
-                  class="w-5 h-5 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                >
-                <div class="flex-1">
-                  <span class="font-medium text-gray-900 dark:text-white text-sm">${escapeHtml(layerName)}</span>
-                  <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300">${layerType}</span>
-                  ${hasFill ? `<span class="ml-1 text-xs text-green-600 dark:text-green-400">has fill</span>` : ''}
-                </div>
-              </label>
-            `;
-          }).join('');
-        } else {
-          availableListEl.innerHTML = '<p class="text-gray-400 text-sm">No suitable layers found (all are slots or watermarks)</p>';
-        }
-      } else {
-        availableListEl.innerHTML = '<p class="text-gray-400 text-sm">No layers_json data available. Use manual input below.</p>';
-      }
-      
-      // Pre-fill manual input with existing layers
-      if (existingBgLayers.length > 0) {
-        document.getElementById('manual_layers').value = existingBgLayers.join(', ');
-      } else {
-        document.getElementById('manual_layers').value = '';
-      }
-    });
-    
-    // Toggle layer selection
-    function toggleBgLayer(checkbox) {
-      const layerName = checkbox.value;
-      if (checkbox.checked) {
-        if (!selectedBgLayers.includes(layerName)) {
-          selectedBgLayers.push(layerName);
-        }
-      } else {
-        selectedBgLayers = selectedBgLayers.filter(l => l !== layerName);
-      }
-      // Update manual input to reflect selection
-      document.getElementById('manual_layers').value = selectedBgLayers.join(', ');
-    }
-    
-    // Show background layer status message
-    function showBgLayerStatus(message, isSuccess, responseData = null) {
-      const statusEl = document.getElementById('bgLayerStatusMessage');
-      
-      let detailsHtml = '';
-      if (responseData) {
-        detailsHtml = `
-          <details class="mt-3">
-            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
-            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
-          </details>
-        `;
-      }
-      
-      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
-      statusEl.innerHTML = `
-        <div class="flex items-start gap-3">
-          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
-          <div class="flex-1 min-w-0">
-            <p class="font-medium">${isSuccess ? 'Settings Saved!' : 'Save Failed'}</p>
-            <p class="text-sm mt-1">${message}</p>
-            ${detailsHtml}
-          </div>
-        </div>
-      `;
-      statusEl.classList.remove('hidden');
-      
-      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    
-    // Toggle background layer loading state
-    function setBgLayerLoading(isLoading) {
-      const btn = document.getElementById('bgLayerBtn');
-      const btnText = document.getElementById('bgLayerBtnText');
-      const btnIcon = document.getElementById('bgLayerBtnIcon');
-      const btnSpinner = document.getElementById('bgLayerBtnSpinner');
-      
-      btn.disabled = isLoading;
-      btnText.textContent = isLoading ? 'Saving...' : 'Save Background Layer Settings';
-      btnIcon.classList.toggle('hidden', isLoading);
-      btnSpinner.classList.toggle('hidden', !isLoading);
-      btn.classList.toggle('opacity-75', isLoading);
-      btn.classList.toggle('cursor-not-allowed', isLoading);
-    }
-    
-    // Background layer form submission
-    document.getElementById('backgroundLayerForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      // Hide previous status
-      document.getElementById('bgLayerStatusMessage').classList.add('hidden');
-      
-      if (!currentTemplateId) {
-        showBgLayerStatus('Please select a template first', false);
-        return;
-      }
-      
-      // Get layers from manual input (which reflects checkbox selections)
-      const manualInput = document.getElementById('manual_layers').value.trim();
-      let layersToSave = [];
-      
-      if (manualInput) {
-        layersToSave = manualInput.split(',').map(l => l.trim()).filter(l => l.length > 0);
-      }
-      
-      setBgLayerLoading(true);
-      
-      let responseData = null;
-      let success = false;
-      let errorMessage = null;
-      
-      try {
-        // Update directly in Supabase (simpler than N8N for this use case)
-        const { data, error } = await supabaseClient
-          .from('templates')
-          .update({ 
-            customizable_background_layers: layersToSave.length > 0 ? layersToSave : null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', currentTemplateId)
-          .select()
-          .single();
-        
-        if (error) throw error;
-        
-        success = true;
-        responseData = data;
-        
-        const layerCount = layersToSave.length;
-        const message = layerCount > 0 
-          ? `${layerCount} layer(s) configured as customizable: ${layersToSave.join(', ')}`
-          : 'All background layer customization removed from this template';
-        
-        showBgLayerStatus(message, true, responseData);
-        
-        // Refresh the templates dropdown to show updated data
-        await loadTemplatesForBgSettings();
-        
-        // Re-select the current template to refresh the UI
-        document.getElementById('bg_template').value = currentTemplateId;
-        document.getElementById('bg_template').dispatchEvent(new Event('change'));
-        
-      } catch (error) {
-        console.error('Background layer save error:', error);
-        errorMessage = error.message || 'Failed to save background layer settings.';
-        showBgLayerStatus(errorMessage, false, responseData);
-      } finally {
-        setBgLayerLoading(false);
-      }
-    });
-    
-    // Load templates for background settings on page load
-    loadTemplatesForBgSettings();
-
-    // ==========================================
-    // FRAME OVERLAY GENERATION FUNCTIONALITY
-    // ==========================================
-    
-    // Use Supabase Edge Function to avoid CORS issues
-    const FRAME_OVERLAY_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-frame-overlay`;
-    
-    let currentOverlayTemplateId = null;
-    let currentOverlayTemplatedId = null;
-    let currentOverlayLayersJson = [];
-    
-    // Load templates for frame overlay generation
-    async function loadTemplatesForOverlay() {
-      const select = document.getElementById('overlay_template');
-      
-      try {
-        const { data, error } = await supabaseClient
-          .from('templates')
-          .select('id, templated_id, name, layers_json, frame_overlay_url, theme_layers, default_background_color, default_theme_color')
-          .eq('is_active', true)
-          .order('name', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (!data || data.length === 0) {
-          select.innerHTML = '<option value="">No templates found</option>';
-          return;
-        }
-        
-        select.innerHTML = '<option value="">-- Select a template --</option>' + 
-          data.map(t => {
-            const hasOverlay = t.frame_overlay_url ? ' ✓' : '';
-            const themeCount = (t.theme_layers || []).length;
-            const themeInfo = themeCount > 0 ? ` 🎨${themeCount}` : '';
-            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-overlay-url="${t.frame_overlay_url || ''}" data-theme-layers='${JSON.stringify(t.theme_layers || [])}' data-default-bg-color="${t.default_background_color || '#FFFFFF'}" data-default-theme-color="${t.default_theme_color || ''}">${escapeHtml(t.name)}${hasOverlay}${themeInfo}</option>`;
-          }).join('');
-        
-      } catch (err) {
-        console.error('Error loading templates for overlay:', err);
-        select.innerHTML = '<option value="">Error loading templates</option>';
-      }
-    }
-    
-    // Handle template selection for overlay
-    document.getElementById('overlay_template').addEventListener('change', (e) => {
-      const select = e.target;
-      const selectedOption = select.options[select.selectedIndex];
-      
-      if (!selectedOption || !selectedOption.value) {
-        document.getElementById('currentOverlayStatus').classList.add('hidden');
-        document.getElementById('slotLayersSection').classList.add('hidden');
-        document.getElementById('defaultColorsSection').classList.add('hidden');
-        currentOverlayTemplateId = null;
-        currentOverlayTemplatedId = null;
-        currentOverlayLayersJson = [];
-        return;
-      }
-      
-      currentOverlayTemplateId = selectedOption.value;
-      currentOverlayTemplatedId = selectedOption.dataset.templatedId;
-      currentOverlayLayersJson = JSON.parse(selectedOption.dataset.layers || '[]');
-      const existingOverlayUrl = selectedOption.dataset.overlayUrl;
-      const existingThemeLayers = JSON.parse(selectedOption.dataset.themeLayers || '[]');
-      
-      // Show current overlay status
-      document.getElementById('currentOverlayStatus').classList.remove('hidden');
-      const overlayInfoEl = document.getElementById('currentOverlayInfo');
-      
-      if (existingOverlayUrl) {
-        const themeInfo = existingThemeLayers.length > 0 
-          ? `<span class="text-purple-600 dark:text-purple-400 text-xs">🎨 ${existingThemeLayers.length} theme layers saved</span>`
-          : '<span class="text-gray-400 text-xs">No theme layers</span>';
-        
-        overlayInfoEl.innerHTML = `
-          <div class="flex items-center gap-3">
-            <img src="${existingOverlayUrl}" alt="Frame overlay" class="w-16 h-16 object-contain rounded border bg-gray-100 dark:bg-gray-600" />
-            <div class="space-y-1">
-              <span class="text-green-600 dark:text-green-400 text-sm font-medium block">✓ Frame overlay exists</span>
-              ${themeInfo}
-              <a href="${existingOverlayUrl}" target="_blank" class="block text-xs text-blue-500 hover:underline">View full image</a>
-            </div>
-          </div>
-        `;
-      } else {
-        overlayInfoEl.innerHTML = '<span class="text-orange-500 dark:text-orange-400 text-sm">⚠ No frame overlay generated yet</span>';
-      }
-      
-      // Show detected layers section
-      document.getElementById('slotLayersSection').classList.remove('hidden');
-      const slotListEl = document.getElementById('slotLayersList');
-      const themeListEl = document.getElementById('themeLayersList');
-      const otherListEl = document.getElementById('otherLayersList');
-      
-      // Categorize layers by prefix
-      const slotLayers = [];
-      const themeLayers = [];
-      const otherLayers = [];
-      
-      currentOverlayLayersJson.forEach(layer => {
-        const layerName = (layer.layer || '').toLowerCase();
-        if (layerName.includes('slot')) {
-          slotLayers.push(layer);
-        } else if (layerName.startsWith('theme-')) {
-          themeLayers.push(layer);
-        } else if (!layerName.includes('watermark')) {
-          otherLayers.push(layer);
-        }
-      });
-      
-      // Display slot layers
-      if (slotLayers.length > 0) {
-        slotListEl.innerHTML = slotLayers.map(layer => 
-          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 rounded text-sm">
-            📸 ${escapeHtml(layer.layer)}
-          </span>`
-        ).join('');
-      } else {
-        slotListEl.innerHTML = '<span class="text-orange-500 dark:text-orange-400 text-sm">⚠ No slot layers found - check template!</span>';
-      }
-      
-      // Display theme layers
-      if (themeLayers.length > 0) {
-        themeListEl.innerHTML = themeLayers.map(layer => 
-          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-200 rounded text-sm">
-            🎨 ${escapeHtml(layer.layer)}
-          </span>`
-        ).join('');
-      } else {
-        themeListEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 text-sm">None (add theme- prefix to layers for color customization)</span>';
-      }
-      
-      // Display other layers
-      if (otherLayers.length > 0) {
-        otherListEl.innerHTML = otherLayers.map(layer => 
-          `<span class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded text-sm">
-            ${escapeHtml(layer.layer)}
-          </span>`
-        ).join('');
-      } else {
-        otherListEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 text-sm">None</span>';
-      }
-      
-      // Show and populate default colors section
-      document.getElementById('defaultColorsSection').classList.remove('hidden');
-      
-      // Get saved default colors
-      const savedBgColor = selectedOption.dataset.defaultBgColor || '#FFFFFF';
-      const savedThemeColor = selectedOption.dataset.defaultThemeColor || '';
-      
-      // Populate background color inputs
-      document.getElementById('default_bg_color').value = savedBgColor;
-      document.getElementById('default_bg_color_hex').value = savedBgColor.toUpperCase();
-      
-      // Populate theme color inputs
-      if (savedThemeColor) {
-        document.getElementById('default_theme_color').value = savedThemeColor;
-        document.getElementById('default_theme_color_hex').value = savedThemeColor.toUpperCase();
-      } else {
-        document.getElementById('default_theme_color').value = '#6B7B6E';
-        document.getElementById('default_theme_color_hex').value = '';
-      }
-    });
-    
-    // Show overlay status message
-    function showOverlayStatus(message, isSuccess, responseData = null) {
-      const statusEl = document.getElementById('overlayStatusMessage');
-      
-      let detailsHtml = '';
-      if (responseData) {
-        detailsHtml = `
-          <details class="mt-3">
-            <summary class="text-sm font-medium opacity-75">View Response Details</summary>
-            <pre class="mt-2 p-3 bg-black/10 dark:bg-white/10 rounded-lg text-xs overflow-x-auto">${JSON.stringify(responseData, null, 2)}</pre>
-          </details>
-        `;
-      }
-      
-      statusEl.className = `mt-4 p-4 rounded-xl ${isSuccess ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'}`;
-      statusEl.innerHTML = `
-        <div class="flex items-start gap-3">
-          <span class="text-xl flex-shrink-0">${isSuccess ? '✅' : '❌'}</span>
-          <div class="flex-1 min-w-0">
-            <p class="font-medium">${isSuccess ? 'Frame Overlay Generated!' : 'Generation Failed'}</p>
-            <p class="text-sm mt-1">${message}</p>
-            ${detailsHtml}
-          </div>
-        </div>
-      `;
-      statusEl.classList.remove('hidden');
-      
-      statusEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-    
-    // Toggle overlay loading state
-    function setOverlayLoading(isLoading) {
-      const btn = document.getElementById('overlayBtn');
-      const btnText = document.getElementById('overlayBtnText');
-      const btnIcon = document.getElementById('overlayBtnIcon');
-      const btnSpinner = document.getElementById('overlayBtnSpinner');
-      
-      btn.disabled = isLoading;
-      btnText.textContent = isLoading ? 'Generating...' : 'Generate Frame Overlay';
-      btnIcon.classList.toggle('hidden', isLoading);
-      btnSpinner.classList.toggle('hidden', !isLoading);
-      btn.classList.toggle('opacity-75', isLoading);
-      btn.classList.toggle('cursor-not-allowed', isLoading);
-    }
-    
-    // Sync color picker with hex input - Background
-    document.getElementById('default_bg_color').addEventListener('input', (e) => {
-      document.getElementById('default_bg_color_hex').value = e.target.value.toUpperCase();
-    });
-    document.getElementById('default_bg_color_hex').addEventListener('input', (e) => {
-      const hex = e.target.value.trim();
-      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
-        document.getElementById('default_bg_color').value = hex;
-      }
-    });
-    
-    // Sync color picker with hex input - Theme
-    document.getElementById('default_theme_color').addEventListener('input', (e) => {
-      document.getElementById('default_theme_color_hex').value = e.target.value.toUpperCase();
-    });
-    document.getElementById('default_theme_color_hex').addEventListener('input', (e) => {
-      const hex = e.target.value.trim();
-      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
-        document.getElementById('default_theme_color').value = hex;
-      }
-    });
-    
-    // Clear theme color (set to null)
-    function clearThemeColor() {
-      document.getElementById('default_theme_color_hex').value = '';
-    }
-    
-    // Generate frame overlay for a single template via Edge Function
-    async function generateFrameOverlay(templateId, templatedId, layersJson) {
-      const response = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          template_id: templateId
-        })
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || `HTTP ${response.status}`);
-      }
-      
-      return { 
-        url: result.url || result.frameOverlayUrl, 
-        source: result.source,
-        themeLayerCount: result.themeLayerCount || 0,
-        slotLayerCount: result.slotLayerCount || 0,
-        themeLayers: result.themeLayers || []
-      };
-    }
-    
-    // Frame overlay form submission
-    document.getElementById('frameOverlayForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      document.getElementById('overlayStatusMessage').classList.add('hidden');
-      
-      if (!currentOverlayTemplateId || !currentOverlayTemplatedId) {
-        showOverlayStatus('Please select a template first', false);
-        return;
-      }
-      
-      setOverlayLoading(true);
-      
-      try {
-        const result = await generateFrameOverlay(
-          currentOverlayTemplateId,
-          currentOverlayTemplatedId,
-          currentOverlayLayersJson
-        );
-        
-        // Get default colors from inputs
-        const bgColorHex = document.getElementById('default_bg_color_hex').value.trim();
-        const themeColorHex = document.getElementById('default_theme_color_hex').value.trim();
-        
-        // Validate and set default background color (required)
-        const defaultBgColor = /^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF';
-        // Theme color is optional - null if empty
-        const defaultThemeColor = /^#[0-9A-Fa-f]{6}$/.test(themeColorHex) ? themeColorHex.toUpperCase() : null;
-        
-        // Save default colors to Supabase
-        const { error: colorError } = await supabaseClient
-          .from('templates')
-          .update({
-            default_background_color: defaultBgColor,
-            default_theme_color: defaultThemeColor
-          })
-          .eq('id', currentOverlayTemplateId);
-        
-        if (colorError) {
-          console.error('Error saving default colors:', colorError);
-        }
-        
-        // Build detailed message
-        let message = `Frame overlay generated and saved!`;
-        if (result.themeLayerCount > 0) {
-          message += ` Detected ${result.themeLayerCount} theme layers for dynamic coloring.`;
-        }
-        message += ` Default colors: BG=${defaultBgColor}${defaultThemeColor ? `, Theme=${defaultThemeColor}` : ''}.`;
-        
-        showOverlayStatus(message, true, result);
-        
-        // Refresh the dropdown
-        await loadTemplatesForOverlay();
-        
-        // Re-select the current template
-        document.getElementById('overlay_template').value = currentOverlayTemplateId;
-        document.getElementById('overlay_template').dispatchEvent(new Event('change'));
-        
-      } catch (error) {
-        console.error('Frame overlay generation error:', error);
-        showOverlayStatus(error.message || 'Failed to generate frame overlay', false);
-      } finally {
-        setOverlayLoading(false);
-      }
-    });
-    
-    // Bulk generate overlays for all templates via Edge Function
-    async function generateAllOverlays() {
-      const btn = document.getElementById('bulkOverlayBtn');
-      const btnText = document.getElementById('bulkOverlayBtnText');
-      
-      btn.disabled = true;
-      btnText.textContent = 'Processing via Edge Function...';
-      
-      try {
-        const response = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            generate_all: true
-          })
-        });
-        
-        const result = await response.json();
-        
-        if (!response.ok || !result.success) {
-          throw new Error(result.error || `HTTP ${response.status}`);
-        }
-        
-        const message = result.message;
-        showOverlayStatus(message, result.failed === 0 || result.failed === undefined, { 
-          processed: result.processed,
-          failed: result.failed,
-          errors: result.errors 
-        });
-        
-        // Refresh the dropdown
-        await loadTemplatesForOverlay();
-        
-      } catch (error) {
-        console.error('Bulk overlay generation error:', error);
-        showOverlayStatus(error.message || 'Bulk generation failed', false);
-      } finally {
-        btn.disabled = false;
-        btnText.textContent = 'Generate for All Templates (Missing Only)';
-      }
-    }
-    
-    // Load templates for overlay on page load
-    loadTemplatesForOverlay();
+    // Initial load
+    loadExistingTemplates();
   </script>
 </body>
 </html>

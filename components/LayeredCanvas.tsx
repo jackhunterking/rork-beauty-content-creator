@@ -107,6 +107,8 @@ export function LayeredCanvas({
       width: layer.width * scale.x,
       height: layer.height * scale.y,
       backgroundColor: themeColor || backgroundColor,
+      // Apply opacity from template (defaults to 1.0 if not specified)
+      opacity: layer.opacity ?? 1.0,
     };
 
     // Apply border radius if specified (shape layers only)
@@ -144,6 +146,8 @@ export function LayeredCanvas({
       justifyContent: 'center',
       alignItems: 'center',
       // No background - text only (transparent container)
+      // Apply opacity from template (defaults to 1.0 if not specified)
+      opacity: layer.opacity ?? 1.0,
     };
 
     // Apply rotation around center (React Native default behavior)

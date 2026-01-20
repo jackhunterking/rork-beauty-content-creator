@@ -43,6 +43,8 @@ interface ThemeLayerGeometry {
   width: number;
   height: number;
   rotation?: number;
+  // Opacity from 0.0 to 1.0 (preserves original layer opacity from Templated.io)
+  opacity?: number;
   // Discriminator for layer type
   type: 'shape' | 'text';
   // Shape-specific properties
@@ -66,6 +68,8 @@ interface TemplatedLayer {
   height: number;
   rotation?: number;
   border_radius?: number;
+  // Opacity from Templated.io (0.0 to 1.0, or null if not set)
+  opacity?: number | null;
   // Text layer properties from Templated.io
   text?: string;
   font_family?: string;
@@ -265,6 +269,7 @@ Deno.serve(async (req: Request) => {
     // Now supports both shape (rectangles) and text layers
     const themeLayerGeometries: ThemeLayerGeometry[] = themeLayers.map(layer => {
       // Base geometry shared by all layer types
+      // Opacity defaults to 1.0 (fully opaque) if not set in Templated.io
       const base = {
         id: layer.layer,
         x: layer.x || 0,
@@ -272,11 +277,12 @@ Deno.serve(async (req: Request) => {
         width: layer.width || 0,
         height: layer.height || 0,
         rotation: layer.rotation || 0,
+        opacity: layer.opacity ?? 1.0,
       };
       
       // Check if this is a text layer
       if (layer.type === 'text') {
-        console.log(`[generate-frame-overlay] Text layer found: ${layer.layer}, text: "${layer.text}", font: ${layer.font_family}`);
+        console.log(`[generate-frame-overlay] Text layer found: ${layer.layer}, text: "${layer.text}", font: ${layer.font_family}, opacity: ${base.opacity}`);
         return {
           ...base,
           type: 'text' as const,
@@ -291,7 +297,7 @@ Deno.serve(async (req: Request) => {
       }
       
       // Default to shape layer
-      console.log(`[generate-frame-overlay] Shape layer found: ${layer.layer}`);
+      console.log(`[generate-frame-overlay] Shape layer found: ${layer.layer}, opacity: ${base.opacity}`);
       return {
         ...base,
         type: 'shape' as const,
