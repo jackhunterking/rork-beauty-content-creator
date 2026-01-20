@@ -4,6 +4,8 @@
  * Canva-style main toolbar that sits directly on the canvas without background.
  * Features horizontally scrollable menu items with icon + label.
  * Supports inline expandable menus (like AI feature selection).
+ * 
+ * The toolbar intentionally cuts off the last item to indicate scrollability.
  */
 
 import React, { useCallback } from 'react';
@@ -13,15 +15,17 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   Type,
   Calendar,
   Image as ImageIcon,
   Sparkles,
   Palette,
-  Paintbrush,
+  Layers,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -58,32 +62,32 @@ interface ToolbarItemConfig {
 const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
   {
     id: 'background',
-    icon: (color) => <Palette size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Palette size={24} color={color} strokeWidth={1.5} />,
     label: 'Background',
   },
   {
     id: 'theme',
-    icon: (color) => <Paintbrush size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Layers size={24} color={color} strokeWidth={1.5} />,
     label: 'Theme',
   },
   {
     id: 'text',
-    icon: (color) => <Type size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Type size={24} color={color} strokeWidth={1.5} />,
     label: 'Text',
   },
   {
     id: 'date',
-    icon: (color) => <Calendar size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Calendar size={24} color={color} strokeWidth={1.5} />,
     label: 'Date',
   },
   {
     id: 'logo',
-    icon: (color) => <ImageIcon size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <ImageIcon size={24} color={color} strokeWidth={1.5} />,
     label: 'Logo',
   },
   {
     id: 'ai',
-    icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.5} />,
     label: 'AI Studio',
   },
 ];
@@ -165,8 +169,6 @@ interface EditorMainToolbarProps {
   expandedTool?: MainToolbarItem | null;
   /** Callback when expanded tool changes */
   onExpandedToolChange?: (tool: MainToolbarItem | null) => void;
-  /** Whether the template has theme layers (hides Theme button if false) */
-  hasThemeLayers?: boolean;
 }
 
 export function EditorMainToolbar({
@@ -182,21 +184,14 @@ export function EditorMainToolbar({
   onRequestPremium,
   expandedTool = null,
   onExpandedToolChange,
-  hasThemeLayers = false,
 }: EditorMainToolbarProps) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
 
-  // Filter items if custom list provided, and hide theme button if no theme layers
-  const displayItems = (items
+  // Filter items if custom list provided - Theme is always visible
+  const displayItems = items
     ? TOOLBAR_ITEMS.filter((item) => items.includes(item.id))
-    : TOOLBAR_ITEMS
-  ).filter((item) => {
-    // Hide theme button if template has no theme layers
-    if (item.id === 'theme' && !hasThemeLayers) {
-      return false;
-    }
-    return true;
-  });
+    : TOOLBAR_ITEMS;
 
   const handleToolPress = useCallback((tool: MainToolbarItem) => {
     if (tool === 'ai') {
@@ -247,22 +242,33 @@ export function EditorMainToolbar({
         </Animated.View>
       )}
 
-      {/* Main Toolbar */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        bounces={false}
-      >
-        {displayItems.map((item) => (
-          <ToolbarButton
-            key={item.id}
-            item={item}
-            disabled={disabled}
-            onPress={() => handleToolPress(item.id)}
-          />
-        ))}
-      </ScrollView>
+      {/* Main Toolbar with cut-off effect */}
+      <View style={styles.toolbarWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          bounces={false}
+        >
+          {displayItems.map((item) => (
+            <ToolbarButton
+              key={item.id}
+              item={item}
+              disabled={disabled}
+              onPress={() => handleToolPress(item.id)}
+            />
+          ))}
+        </ScrollView>
+        
+        {/* Right fade gradient to indicate more content */}
+        <LinearGradient
+          colors={['transparent', Colors.light.background]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.fadeGradient}
+          pointerEvents="none"
+        />
+      </View>
     </View>
   );
 }
@@ -277,18 +283,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
+  toolbarWrapper: {
+    position: 'relative',
+  },
   scrollContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingHorizontal: 16,
-    gap: 8,
+    paddingLeft: 16,
+    // No right padding - items will overflow and get cut off
+    // This creates the visual cue that there's more to scroll
+    paddingRight: 60, // Extra space for the last item to extend past fade
+    gap: 4,
+  },
+  fadeGradient: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 40,
   },
   toolbarButton: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 12,
-    minWidth: 56,
+    paddingHorizontal: 10,
+    minWidth: 64,
     borderRadius: 12,
   },
   iconWrapper: {
@@ -296,12 +315,16 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: Colors.light.surface,
+    marginBottom: 4,
   },
   buttonLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: Colors.light.text,
+    color: Colors.light.textSecondary,
     textAlign: 'center',
     letterSpacing: -0.2,
   },

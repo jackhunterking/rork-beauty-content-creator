@@ -2165,7 +2165,6 @@ export default function EditorV2Screen() {
             onRequestPremium={(feature) => requestPremiumAccess(feature)}
             expandedTool={expandedMainTool}
             onExpandedToolChange={setExpandedMainTool}
-            hasThemeLayers={(template?.themeLayers?.length ?? 0) > 0}
           />
         )}
       </SafeAreaView>
