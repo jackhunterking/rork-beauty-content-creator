@@ -1200,6 +1200,9 @@ export function TemplateCanvas({
         ]}
       >
         {/* Client-side LayeredCanvas compositing (zero API calls for color changes) */}
+        {/* #region agent log */}
+        {(() => { fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:render',message:'TemplateCanvas render path',data:{shouldUseLayeredCanvas,templateId:template.id,hasThemeLayers:!!template.themeLayers,themeLayersCount:template.themeLayers?.length||0,themeLayersData:JSON.stringify(template.themeLayers?.slice(0,2))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{}); return null; })()}
+        {/* #endregion */}
         {shouldUseLayeredCanvas ? (
           <LayeredCanvas
             template={template}
@@ -1237,12 +1240,13 @@ export function TemplateCanvas({
           />
         )}
 
-        {/* Invisible slot tap targets - hidden during manipulation or crop mode */}
+        {/* Slot tap targets with placeholder - hidden during manipulation or crop mode */}
         {!manipulationMode && !cropMode && scaledSlots.map(slot => (
           <SlotRegion
             key={slot.layerId}
             slot={slot}
             onPress={() => onSlotPress(slot.layerId)}
+            isEmpty={!capturedImages?.[slot.layerId]}
           />
         ))}
 

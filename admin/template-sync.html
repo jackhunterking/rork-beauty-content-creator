@@ -559,6 +559,71 @@
           </div>
         </div>
 
+        <!-- Default Colors Section -->
+        <div id="defaultColorsSection" class="hidden space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-lg">🎨</span>
+            <p class="text-sm font-bold text-gray-800 dark:text-gray-200">Default Colors</p>
+            <span class="text-xs text-gray-500">(Templates load with these colors)</span>
+          </div>
+          
+          <!-- Background Color -->
+          <div class="flex items-center gap-4">
+            <label for="default_bg_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
+              Background Color
+            </label>
+            <div class="flex items-center gap-2 flex-1">
+              <input 
+                type="color" 
+                id="default_bg_color" 
+                value="#FFFFFF"
+                class="w-12 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
+              >
+              <input 
+                type="text" 
+                id="default_bg_color_hex" 
+                value="#FFFFFF"
+                placeholder="#FFFFFF"
+                class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+              >
+            </div>
+          </div>
+          
+          <!-- Theme Color -->
+          <div class="flex items-center gap-4">
+            <label for="default_theme_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
+              Theme Color <span class="text-xs text-purple-500">(for theme-* layers)</span>
+            </label>
+            <div class="flex items-center gap-2 flex-1">
+              <input 
+                type="color" 
+                id="default_theme_color" 
+                value="#6B7B6E"
+                class="w-12 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
+              >
+              <input 
+                type="text" 
+                id="default_theme_color_hex" 
+                value="#6B7B6E"
+                placeholder="#6B7B6E"
+                class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+              >
+              <button 
+                type="button"
+                onclick="clearThemeColor()"
+                class="px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 text-xs"
+                title="Clear theme color (use null)"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            💡 These colors initialize the editor when users open this template. They can customize from here.
+          </p>
+        </div>
+
         <!-- Generate Button -->
         <button 
           type="submit" 
@@ -1349,7 +1414,7 @@
       try {
         const { data, error } = await supabaseClient
           .from('templates')
-          .select('id, templated_id, name, layers_json, frame_overlay_url, theme_layers')
+          .select('id, templated_id, name, layers_json, frame_overlay_url, theme_layers, default_background_color, default_theme_color')
           .eq('is_active', true)
           .order('name', { ascending: true });
         
@@ -1365,7 +1430,7 @@
             const hasOverlay = t.frame_overlay_url ? ' ✓' : '';
             const themeCount = (t.theme_layers || []).length;
             const themeInfo = themeCount > 0 ? ` 🎨${themeCount}` : '';
-            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-overlay-url="${t.frame_overlay_url || ''}" data-theme-layers='${JSON.stringify(t.theme_layers || [])}'>${escapeHtml(t.name)}${hasOverlay}${themeInfo}</option>`;
+            return `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-layers='${JSON.stringify(t.layers_json || [])}' data-overlay-url="${t.frame_overlay_url || ''}" data-theme-layers='${JSON.stringify(t.theme_layers || [])}' data-default-bg-color="${t.default_background_color || '#FFFFFF'}" data-default-theme-color="${t.default_theme_color || ''}">${escapeHtml(t.name)}${hasOverlay}${themeInfo}</option>`;
           }).join('');
         
       } catch (err) {
@@ -1382,6 +1447,7 @@
       if (!selectedOption || !selectedOption.value) {
         document.getElementById('currentOverlayStatus').classList.add('hidden');
         document.getElementById('slotLayersSection').classList.add('hidden');
+        document.getElementById('defaultColorsSection').classList.add('hidden');
         currentOverlayTemplateId = null;
         currentOverlayTemplatedId = null;
         currentOverlayLayersJson = [];
@@ -1471,6 +1537,26 @@
       } else {
         otherListEl.innerHTML = '<span class="text-gray-400 dark:text-gray-500 text-sm">None</span>';
       }
+      
+      // Show and populate default colors section
+      document.getElementById('defaultColorsSection').classList.remove('hidden');
+      
+      // Get saved default colors
+      const savedBgColor = selectedOption.dataset.defaultBgColor || '#FFFFFF';
+      const savedThemeColor = selectedOption.dataset.defaultThemeColor || '';
+      
+      // Populate background color inputs
+      document.getElementById('default_bg_color').value = savedBgColor;
+      document.getElementById('default_bg_color_hex').value = savedBgColor.toUpperCase();
+      
+      // Populate theme color inputs
+      if (savedThemeColor) {
+        document.getElementById('default_theme_color').value = savedThemeColor;
+        document.getElementById('default_theme_color_hex').value = savedThemeColor.toUpperCase();
+      } else {
+        document.getElementById('default_theme_color').value = '#6B7B6E';
+        document.getElementById('default_theme_color_hex').value = '';
+      }
     });
     
     // Show overlay status message
@@ -1516,6 +1602,33 @@
       btnSpinner.classList.toggle('hidden', !isLoading);
       btn.classList.toggle('opacity-75', isLoading);
       btn.classList.toggle('cursor-not-allowed', isLoading);
+    }
+    
+    // Sync color picker with hex input - Background
+    document.getElementById('default_bg_color').addEventListener('input', (e) => {
+      document.getElementById('default_bg_color_hex').value = e.target.value.toUpperCase();
+    });
+    document.getElementById('default_bg_color_hex').addEventListener('input', (e) => {
+      const hex = e.target.value.trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        document.getElementById('default_bg_color').value = hex;
+      }
+    });
+    
+    // Sync color picker with hex input - Theme
+    document.getElementById('default_theme_color').addEventListener('input', (e) => {
+      document.getElementById('default_theme_color_hex').value = e.target.value.toUpperCase();
+    });
+    document.getElementById('default_theme_color_hex').addEventListener('input', (e) => {
+      const hex = e.target.value.trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+        document.getElementById('default_theme_color').value = hex;
+      }
+    });
+    
+    // Clear theme color (set to null)
+    function clearThemeColor() {
+      document.getElementById('default_theme_color_hex').value = '';
     }
     
     // Generate frame overlay for a single template via Edge Function
@@ -1566,11 +1679,34 @@
           currentOverlayLayersJson
         );
         
+        // Get default colors from inputs
+        const bgColorHex = document.getElementById('default_bg_color_hex').value.trim();
+        const themeColorHex = document.getElementById('default_theme_color_hex').value.trim();
+        
+        // Validate and set default background color (required)
+        const defaultBgColor = /^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF';
+        // Theme color is optional - null if empty
+        const defaultThemeColor = /^#[0-9A-Fa-f]{6}$/.test(themeColorHex) ? themeColorHex.toUpperCase() : null;
+        
+        // Save default colors to Supabase
+        const { error: colorError } = await supabaseClient
+          .from('templates')
+          .update({
+            default_background_color: defaultBgColor,
+            default_theme_color: defaultThemeColor
+          })
+          .eq('id', currentOverlayTemplateId);
+        
+        if (colorError) {
+          console.error('Error saving default colors:', colorError);
+        }
+        
         // Build detailed message
         let message = `Frame overlay generated and saved!`;
         if (result.themeLayerCount > 0) {
           message += ` Detected ${result.themeLayerCount} theme layers for dynamic coloring.`;
         }
+        message += ` Default colors: BG=${defaultBgColor}${defaultThemeColor ? `, Theme=${defaultThemeColor}` : ''}.`;
         
         showOverlayStatus(message, true, result);
         

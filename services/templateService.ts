@@ -86,6 +86,9 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // Theme layer geometries for client-side rendering
     // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
     themeLayers: row.theme_layers || undefined,
+    // Default colors for template design (used to initialize editor)
+    defaultBackgroundColor: row.default_background_color || '#FFFFFF',
+    defaultThemeColor: row.default_theme_color || undefined,
   };
 }
 

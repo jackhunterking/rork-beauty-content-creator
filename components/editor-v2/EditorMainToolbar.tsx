@@ -3,7 +3,7 @@
  * 
  * Canva-style main toolbar that sits directly on the canvas without background.
  * Features horizontally scrollable menu items with icon + label.
- * Supports inline expandable menus (like AI feature selection).
+ * Supports inline expandable menus (like AI feature selection, background/theme color pickers).
  * 
  * The toolbar intentionally cuts off the last item to indicate scrollability.
  */
@@ -15,10 +15,8 @@ import {
   Text,
   TouchableOpacity,
   ScrollView,
-  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   Type,
   Calendar,
@@ -26,6 +24,8 @@ import {
   Sparkles,
   Palette,
   Layers,
+  Plus,
+  Check,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -34,7 +34,7 @@ import Animated, {
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
-import Colors from '@/constants/colors';
+import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
 import { AIFeatureMenu } from './AIFeatureMenu';
 import type { AIFeatureKey } from '@/types';
 
@@ -62,32 +62,32 @@ interface ToolbarItemConfig {
 const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
   {
     id: 'background',
-    icon: (color) => <Palette size={24} color={color} strokeWidth={1.5} />,
-    label: 'Background',
+    icon: (color) => <Palette size={24} color={color} strokeWidth={1.8} />,
+    label: 'BG',
   },
   {
     id: 'theme',
-    icon: (color) => <Layers size={24} color={color} strokeWidth={1.5} />,
+    icon: (color) => <Layers size={24} color={color} strokeWidth={1.8} />,
     label: 'Theme',
   },
   {
     id: 'text',
-    icon: (color) => <Type size={24} color={color} strokeWidth={1.5} />,
+    icon: (color) => <Type size={24} color={color} strokeWidth={1.8} />,
     label: 'Text',
   },
   {
     id: 'date',
-    icon: (color) => <Calendar size={24} color={color} strokeWidth={1.5} />,
+    icon: (color) => <Calendar size={24} color={color} strokeWidth={1.8} />,
     label: 'Date',
   },
   {
     id: 'logo',
-    icon: (color) => <ImageIcon size={24} color={color} strokeWidth={1.5} />,
+    icon: (color) => <ImageIcon size={24} color={color} strokeWidth={1.8} />,
     label: 'Logo',
   },
   {
     id: 'ai',
-    icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.5} />,
+    icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.8} />,
     label: 'AI Studio',
   },
 ];
@@ -169,6 +169,12 @@ interface EditorMainToolbarProps {
   expandedTool?: MainToolbarItem | null;
   /** Callback when expanded tool changes */
   onExpandedToolChange?: (tool: MainToolbarItem | null) => void;
+  /** Background color props (for 'background' tool) */
+  backgroundColor?: string;
+  onBackgroundColorChange?: (color: string) => void;
+  /** Theme color props (for 'theme' tool) */
+  themeColor?: string;
+  onThemeColorChange?: (color: string) => void;
 }
 
 export function EditorMainToolbar({
@@ -184,9 +190,12 @@ export function EditorMainToolbar({
   onRequestPremium,
   expandedTool = null,
   onExpandedToolChange,
+  backgroundColor = '#FFFFFF',
+  onBackgroundColorChange,
+  themeColor,
+  onThemeColorChange,
 }: EditorMainToolbarProps) {
   const insets = useSafeAreaInsets();
-  const { width: screenWidth } = useWindowDimensions();
 
   // Filter items if custom list provided - Theme is always visible
   const displayItems = items
@@ -194,12 +203,12 @@ export function EditorMainToolbar({
     : TOOLBAR_ITEMS;
 
   const handleToolPress = useCallback((tool: MainToolbarItem) => {
-    if (tool === 'ai') {
-      // Toggle AI menu expansion
-      if (expandedTool === 'ai') {
+    if (tool === 'ai' || tool === 'background' || tool === 'theme') {
+      // Toggle expandable menu
+      if (expandedTool === tool) {
         onExpandedToolChange?.(null);
       } else {
-        onExpandedToolChange?.('ai');
+        onExpandedToolChange?.(tool);
       }
     } else {
       // Close any expanded menu and select the tool
@@ -212,6 +221,21 @@ export function EditorMainToolbar({
     onExpandedToolChange?.(null);
     onAIFeatureSelect?.(featureKey);
   }, [onExpandedToolChange, onAIFeatureSelect]);
+
+  // Handle background color selection
+  const handleBackgroundColorSelect = useCallback((color: string) => {
+    onBackgroundColorChange?.(color);
+  }, [onBackgroundColorChange]);
+
+  // Handle theme color selection
+  const handleThemeColorSelect = useCallback((color: string) => {
+    onThemeColorChange?.(color);
+  }, [onThemeColorChange]);
+
+  // Close color picker and confirm
+  const handleColorPickerConfirm = useCallback(() => {
+    onExpandedToolChange?.(null);
+  }, [onExpandedToolChange]);
 
   if (!visible) {
     return null;
@@ -242,13 +266,96 @@ export function EditorMainToolbar({
         </Animated.View>
       )}
 
-      {/* Main Toolbar with cut-off effect */}
-      <View style={styles.toolbarWrapper}>
+      {/* Expanded Background Color Picker */}
+      {expandedTool === 'background' && (
+        <Animated.View 
+          style={styles.colorPickerContainer}
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(100)}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.colorScrollContent}
+            bounces={false}
+          >
+            {/* Custom color button */}
+            <TouchableOpacity 
+              style={styles.colorWheelButton} 
+              activeOpacity={0.7}
+            >
+              <View style={styles.colorWheelGradient}>
+                <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Background color presets */}
+            {BACKGROUND_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: color },
+                  backgroundColor === color && styles.colorOptionSelected,
+                  color === '#FFFFFF' && styles.colorOptionWhite,
+                ]}
+                onPress={() => handleBackgroundColorSelect(color)}
+                activeOpacity={0.7}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
+
+      {/* Expanded Theme Color Picker */}
+      {expandedTool === 'theme' && (
+        <Animated.View 
+          style={styles.colorPickerContainer}
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(100)}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.colorScrollContent}
+            bounces={false}
+          >
+            {/* Custom color button */}
+            <TouchableOpacity 
+              style={styles.colorWheelButton} 
+              activeOpacity={0.7}
+            >
+              <View style={styles.colorWheelGradient}>
+                <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Theme color presets */}
+            {BACKGROUND_COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: color },
+                  themeColor === color && styles.colorOptionSelected,
+                  color === '#FFFFFF' && styles.colorOptionWhite,
+                ]}
+                onPress={() => handleThemeColorSelect(color)}
+                activeOpacity={0.7}
+              />
+            ))}
+          </ScrollView>
+        </Animated.View>
+      )}
+
+      {/* Main Toolbar */}
+      <View style={styles.mainToolbarRow}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           bounces={false}
+          style={styles.scrollView}
         >
           {displayItems.map((item) => (
             <ToolbarButton
@@ -259,15 +366,17 @@ export function EditorMainToolbar({
             />
           ))}
         </ScrollView>
-        
-        {/* Right fade gradient to indicate more content */}
-        <LinearGradient
-          colors={['transparent', Colors.light.background]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.fadeGradient}
-          pointerEvents="none"
-        />
+
+        {/* Confirm button - only shown when color picker is expanded */}
+        {(expandedTool === 'background' || expandedTool === 'theme') && (
+          <TouchableOpacity
+            style={styles.confirmButton}
+            onPress={handleColorPickerConfirm}
+            activeOpacity={0.8}
+          >
+            <Check size={20} color={Colors.light.text} strokeWidth={2.5} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -283,31 +392,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 8,
   },
-  toolbarWrapper: {
-    position: 'relative',
+  // Color picker styles
+  colorPickerContainer: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 10,
+  },
+  colorScrollContent: {
+    paddingHorizontal: 12,
+    gap: 10,
+    alignItems: 'center',
+  },
+  colorWheelButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  colorWheelGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B5CF6',
+    borderWidth: 3,
+    borderColor: '#EC4899',
+  },
+  colorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorOptionSelected: {
+    borderColor: Colors.light.accent,
+    borderWidth: 3,
+  },
+  colorOptionWhite: {
+    borderColor: Colors.light.border,
+    borderWidth: 2,
+  },
+  // Main toolbar row with optional confirm button
+  mainToolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContent: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    paddingLeft: 16,
-    // No right padding - items will overflow and get cut off
-    // This creates the visual cue that there's more to scroll
-    paddingRight: 60, // Extra space for the last item to extend past fade
-    gap: 4,
-  },
-  fadeGradient: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 40,
+    // flexGrow allows centering when content fits on screen
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    gap: 0,
+    // Minimum width ensures overflow on smaller screens
+    // 6 buttons × 68px = 408px - will overflow on screens < 408px
+    minWidth: 420,
   },
   toolbarButton: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 10,
-    minWidth: 64,
+    paddingHorizontal: 6,
+    width: 68,
     borderRadius: 12,
   },
   iconWrapper: {
@@ -315,21 +473,27 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: Colors.light.surface,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   buttonLabel: {
     fontSize: 11,
     fontWeight: '500',
-    color: Colors.light.textSecondary,
+    color: Colors.light.text,
     textAlign: 'center',
     letterSpacing: -0.2,
   },
   buttonLabelDisabled: {
     color: Colors.light.textTertiary,
+  },
+  confirmButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.light.surfaceSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    marginTop: 4,
   },
 });
 

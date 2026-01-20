@@ -407,6 +407,12 @@ export interface Template {
   // Theme layer geometries for client-side rendering
   // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
   themeLayers?: ThemeLayer[];
+  
+  // Default colors for template design (used to initialize editor)
+  /** Original background color of template design (hex) */
+  defaultBackgroundColor?: string;
+  /** Original theme color for theme-prefixed layers (hex) */
+  defaultThemeColor?: string;
 }
 
 // Templated.io layer structure
@@ -432,7 +438,12 @@ export interface TemplatedLayer {
  * Theme layers are identified by 'theme-' prefix in Templated.io
  * These are rendered as colored shapes that change with the theme color
  */
-export interface ThemeLayer {
+// ============================================================================
+// Theme Layer Types (for client-side rendering of customizable layers)
+// ============================================================================
+
+/** Base properties shared by all theme layers */
+interface ThemeLayerBase {
   /** Layer ID from Templated.io (e.g., 'theme-before-label') */
   id: string;
   /** X position in template pixels */
@@ -445,8 +456,45 @@ export interface ThemeLayer {
   height: number;
   /** Rotation in degrees */
   rotation?: number;
+}
+
+/** Shape theme layer - renders as colored rectangle/background */
+export interface ShapeThemeLayer extends ThemeLayerBase {
+  type: 'shape';
   /** Border radius in pixels */
   borderRadius?: number;
+}
+
+/** Text theme layer - renders as styled, colorable text */
+export interface TextThemeLayer extends ThemeLayerBase {
+  type: 'text';
+  /** The actual text content to display */
+  text: string;
+  /** Font family name from Templated.io */
+  fontFamily?: string;
+  /** Font size in pixels (parsed from "58px" format) */
+  fontSize?: number;
+  /** Font weight (e.g., 'normal', 'bold', '600') */
+  fontWeight?: string;
+  /** Horizontal text alignment */
+  horizontalAlign?: 'left' | 'center' | 'right';
+  /** Vertical text alignment */
+  verticalAlign?: 'top' | 'center' | 'bottom';
+  /** Letter spacing */
+  letterSpacing?: number;
+}
+
+/** Discriminated union of all theme layer types */
+export type ThemeLayer = ShapeThemeLayer | TextThemeLayer;
+
+/** Type guard to check if layer is text type */
+export function isTextThemeLayer(layer: ThemeLayer): layer is TextThemeLayer {
+  return layer.type === 'text';
+}
+
+/** Type guard to check if layer is shape type */
+export function isShapeThemeLayer(layer: ThemeLayer): layer is ShapeThemeLayer {
+  return layer.type === 'shape' || !('type' in layer);
 }
 
 // Database row type (snake_case from Supabase)
@@ -491,6 +539,9 @@ export interface TemplateRow {
   frame_overlay_url: string | null;
   // Theme layer geometries for client-side rendering
   theme_layers: ThemeLayer[] | null;
+  // Default colors for template design (used to initialize editor)
+  default_background_color: string | null;
+  default_theme_color: string | null;
 }
 
 // ============================================

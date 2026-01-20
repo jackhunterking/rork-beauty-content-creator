@@ -35,6 +35,7 @@ interface FrameOverlayRequest {
   generate_all?: boolean;
 }
 
+// Theme layer geometry - supports both shapes and text
 interface ThemeLayerGeometry {
   id: string;
   x: number;
@@ -42,7 +43,18 @@ interface ThemeLayerGeometry {
   width: number;
   height: number;
   rotation?: number;
+  // Discriminator for layer type
+  type: 'shape' | 'text';
+  // Shape-specific properties
   borderRadius?: number;
+  // Text-specific properties
+  text?: string;
+  fontFamily?: string;
+  fontSize?: number;
+  fontWeight?: string;
+  horizontalAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'center' | 'bottom';
+  letterSpacing?: number;
 }
 
 interface TemplatedLayer {
@@ -54,6 +66,14 @@ interface TemplatedLayer {
   height: number;
   rotation?: number;
   border_radius?: number;
+  // Text layer properties from Templated.io
+  text?: string;
+  font_family?: string;
+  font_size?: string; // e.g., "58px"
+  font_weight?: string;
+  horizontal_align?: string;
+  vertical_align?: string;
+  letter_spacing?: string;
   [key: string]: unknown;
 }
 
@@ -148,23 +168,70 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Count text vs shape theme layers
+    const textThemeLayers = themeLayers.filter(l => l.type === 'text');
+    const shapeThemeLayers = themeLayers.filter(l => l.type !== 'text');
+
     console.log(`[generate-frame-overlay] Layer categorization:`);
     console.log(`  - Slot layers (hidden, photos): ${slotLayers.length} - ${slotLayers.map(l => l.layer).join(', ')}`);
-    console.log(`  - Theme layers (hidden, colored shapes): ${themeLayers.length} - ${themeLayers.map(l => l.layer).join(', ')}`);
+    console.log(`  - Theme layers (hidden, rendered by app): ${themeLayers.length}`);
+    console.log(`    - Text layers: ${textThemeLayers.length} - ${textThemeLayers.map(l => l.layer).join(', ')}`);
+    console.log(`    - Shape layers: ${shapeThemeLayers.length} - ${shapeThemeLayers.map(l => l.layer).join(', ')}`);
     console.log(`  - Other layers (in overlay): ${otherLayers.length} - ${otherLayers.map(l => l.layer).join(', ')}`);
 
-    // Extract theme layer geometries for client-side rendering
-    const themeLayerGeometries: ThemeLayerGeometry[] = themeLayers.map(layer => ({
-      id: layer.layer,
-      x: layer.x || 0,
-      y: layer.y || 0,
-      width: layer.width || 0,
-      height: layer.height || 0,
-      rotation: layer.rotation || 0,
-      borderRadius: layer.border_radius || 0,
-    }));
+    // Helper function to parse font size from "58px" format to number
+    const parseFontSize = (fontSize: string | undefined): number => {
+      if (!fontSize) return 16; // Default
+      const match = fontSize.match(/(\d+(?:\.\d+)?)/);
+      return match ? parseFloat(match[1]) : 16;
+    };
 
-    console.log(`[generate-frame-overlay] Theme layer geometries:`, JSON.stringify(themeLayerGeometries));
+    // Helper function to parse letter spacing
+    const parseLetterSpacing = (spacing: string | undefined): number | undefined => {
+      if (!spacing) return undefined;
+      const match = spacing.match(/(-?\d+(?:\.\d+)?)/);
+      return match ? parseFloat(match[1]) : undefined;
+    };
+
+    // Extract theme layer geometries for client-side rendering
+    // Now supports both shape (rectangles) and text layers
+    const themeLayerGeometries: ThemeLayerGeometry[] = themeLayers.map(layer => {
+      // Base geometry shared by all layer types
+      const base = {
+        id: layer.layer,
+        x: layer.x || 0,
+        y: layer.y || 0,
+        width: layer.width || 0,
+        height: layer.height || 0,
+        rotation: layer.rotation || 0,
+      };
+      
+      // Check if this is a text layer
+      if (layer.type === 'text') {
+        console.log(`[generate-frame-overlay] Text layer found: ${layer.layer}, text: "${layer.text}", font: ${layer.font_family}`);
+        return {
+          ...base,
+          type: 'text' as const,
+          text: layer.text || '',
+          fontFamily: layer.font_family || 'System',
+          fontSize: parseFontSize(layer.font_size),
+          fontWeight: layer.font_weight || 'normal',
+          horizontalAlign: (layer.horizontal_align as 'left' | 'center' | 'right') || 'center',
+          verticalAlign: (layer.vertical_align as 'top' | 'center' | 'bottom') || 'center',
+          letterSpacing: parseLetterSpacing(layer.letter_spacing),
+        };
+      }
+      
+      // Default to shape layer
+      console.log(`[generate-frame-overlay] Shape layer found: ${layer.layer}`);
+      return {
+        ...base,
+        type: 'shape' as const,
+        borderRadius: layer.border_radius || 0,
+      };
+    });
+
+    console.log(`[generate-frame-overlay] Theme layer geometries:`, JSON.stringify(themeLayerGeometries, null, 2));
 
     // Build layers object - hide slot AND theme layers
     const hiddenLayers: { [key: string]: { hide: boolean } } = {};

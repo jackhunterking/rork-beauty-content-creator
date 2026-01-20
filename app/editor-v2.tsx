@@ -131,16 +131,17 @@ export default function EditorV2Screen() {
   );
   
   // Canvas background color state (NEW - for client-side compositing)
-  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string>('#FFFFFF');
+  // Initialized from template's default background color
+  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string>(
+    template?.defaultBackgroundColor || '#FFFFFF'
+  );
   
   // Theme color state (for theme layers - layers prefixed with 'theme-')
-  const [selectedThemeColor, setSelectedThemeColor] = useState<string | undefined>(undefined);
+  // Initialized from template's default theme color
+  const [selectedThemeColor, setSelectedThemeColor] = useState<string | undefined>(
+    template?.defaultThemeColor
+  );
   
-  // Whether background tool is active (for showing context bar)
-  const [isBackgroundToolActive, setIsBackgroundToolActive] = useState(false);
-  
-  // Whether theme tool is active (for showing theme context bar)
-  const [isThemeToolActive, setIsThemeToolActive] = useState(false);
   
   // Ref to track overlay interaction - prevents canvas tap from deselecting during overlay tap
   const overlayInteractionRef = useRef<boolean>(false);
@@ -317,6 +318,14 @@ export default function EditorV2Screen() {
       setBackgroundOverrides(currentProject.backgroundOverrides);
     }
   }, [currentProject.draftId, currentProject.backgroundOverrides]);
+
+  // Reset colors to template defaults when template changes
+  useEffect(() => {
+    if (template) {
+      setSelectedBackgroundColor(template.defaultBackgroundColor || '#FFFFFF');
+      setSelectedThemeColor(template.defaultThemeColor);
+    }
+  }, [template?.id]);
 
   // Load overlays when loading a draft (FIX: was missing in EditorV2)
   useEffect(() => {
@@ -826,22 +835,6 @@ export default function EditorV2Screen() {
     } else if (tool === 'logo') {
       // Open logo picker panel
       logoPanelRef.current?.openPicker();
-    } else if (tool === 'background') {
-      // Show background color picker via context bar (not bottom sheet)
-      // Deselect any current selection first
-      setSelection(DEFAULT_SELECTION);
-      setSelectedOverlayId(null);
-      // Activate background tool to show context bar
-      setIsBackgroundToolActive(true);
-      setIsThemeToolActive(false);
-    } else if (tool === 'theme') {
-      // Show theme color picker via context bar
-      // Deselect any current selection first
-      setSelection(DEFAULT_SELECTION);
-      setSelectedOverlayId(null);
-      // Activate theme tool to show context bar
-      setIsThemeToolActive(true);
-      setIsBackgroundToolActive(false);
     } else if (tool === 'ai') {
       // Open AI Studio panel (unified AI experience)
       aiStudioRef.current?.snapToIndex(0);
@@ -850,9 +843,6 @@ export default function EditorV2Screen() {
 
   // Get element type for context bar based on selection
   const contextBarElementType = useMemo((): ContextBarElementType | null => {
-    // Background/theme tool active takes precedence
-    if (isBackgroundToolActive) return 'background';
-    if (isThemeToolActive) return 'theme';
     if (selection.type === 'slot') return 'photo';
     if (selectedOverlayId) {
       const overlay = overlays.find(o => o.id === selectedOverlayId);
@@ -863,10 +853,10 @@ export default function EditorV2Screen() {
       }
     }
     return null;
-  }, [isBackgroundToolActive, isThemeToolActive, selection.type, selectedOverlayId, overlays]);
+  }, [selection.type, selectedOverlayId, overlays]);
 
   // Check if something is selected (for showing context bar vs main toolbar)
-  const hasSelection = selection.id !== null || selectedOverlayId !== null || isBackgroundToolActive || isThemeToolActive;
+  const hasSelection = selection.id !== null || selectedOverlayId !== null;
 
   // Handle confirm/done from context bar
   const handleContextBarConfirm = useCallback(() => {
@@ -878,8 +868,6 @@ export default function EditorV2Screen() {
     setPendingManipulationAdjustments(null);
     setSelectedOverlayId(null);
     setActiveMainTool(null);
-    setIsBackgroundToolActive(false);
-    setIsThemeToolActive(false);
     
     // Close panels
     textStylePanelRef.current?.close();
@@ -2165,6 +2153,10 @@ export default function EditorV2Screen() {
             onRequestPremium={(feature) => requestPremiumAccess(feature)}
             expandedTool={expandedMainTool}
             onExpandedToolChange={setExpandedMainTool}
+            backgroundColor={selectedBackgroundColor}
+            onBackgroundColorChange={handleCanvasBackgroundColorChange}
+            themeColor={selectedThemeColor}
+            onThemeColorChange={handleThemeColorChange}
           />
         )}
       </SafeAreaView>
