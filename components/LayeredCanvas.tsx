@@ -123,32 +123,16 @@ export function LayeredCanvas({
   };
 
   // Get style for a text theme layer container
-  // Handles positioning for rotated text layers where Templated.io uses center-based coordinates
+  // Use ORIGINAL Templated.io dimensions - text lays out first, then container rotates
   const getTextLayerContainerStyle = (layer: TextThemeLayer): ViewStyle => {
-    // For rotated layers, we need to position based on where the CENTER should be
-    // In Templated.io, x,y represents the position before rotation is applied
-    // The rotation happens around the center of the element
-    
+    // Scale the original dimensions (DO NOT swap for rotation)
     const scaledWidth = layer.width * scale.x;
     const scaledHeight = layer.height * scale.y;
     
-    // Calculate where the center should be positioned
-    // Templated.io x,y seems to be the top-left corner of the unrotated bounding box
-    // We need to find the center and position relative to that
-    const unrotatedCenterX = (layer.x + layer.width / 2) * scale.x;
-    const unrotatedCenterY = (layer.y + layer.height / 2) * scale.y;
-    
-    // For React Native, we position top-left and it rotates around the center
-    // So top-left = center - (width/2, height/2)
-    const left = unrotatedCenterX - scaledWidth / 2;
-    const top = unrotatedCenterY - scaledHeight / 2;
-    
-    console.log(`[LayeredCanvas] Text layer positioning:`, {
-      id: layer.id,
-      original: { x: layer.x, y: layer.y, w: layer.width, h: layer.height, r: layer.rotation },
-      center: { x: unrotatedCenterX, y: unrotatedCenterY },
-      final: { left, top, scaledWidth, scaledHeight },
-    });
+    // Position: Templated.io x,y is the top-left corner of the unrotated element
+    // The rotation happens around the CENTER of the element
+    const left = layer.x * scale.x;
+    const top = layer.y * scale.y;
     
     const style: ViewStyle = {
       position: 'absolute',
@@ -156,15 +140,10 @@ export function LayeredCanvas({
       top,
       width: scaledWidth,
       height: scaledHeight,
-      // Use flexbox for text alignment within the container
-      justifyContent: layer.verticalAlign === 'top' ? 'flex-start' 
-                   : layer.verticalAlign === 'bottom' ? 'flex-end' 
-                   : 'center',
-      alignItems: layer.horizontalAlign === 'left' ? 'flex-start'
-               : layer.horizontalAlign === 'right' ? 'flex-end'
-               : 'center',
-      // DEBUG: Add visible background to see positioning (remove after testing)
-      backgroundColor: 'rgba(255, 0, 0, 0.2)',
+      // Center the text within the container
+      justifyContent: 'center',
+      alignItems: 'center',
+      // No background - text only (transparent container)
     };
 
     // Apply rotation around center (React Native default behavior)
@@ -177,14 +156,15 @@ export function LayeredCanvas({
 
   // Get text style for a text theme layer
   const getTextLayerStyle = (layer: TextThemeLayer): TextStyle => {
-    // Calculate scaled font size
-    const scaledFontSize = (layer.fontSize || 16) * Math.min(scale.x, scale.y);
+    // Calculate scaled font size - use uniform scale to maintain proportions
+    const uniformScale = Math.min(scale.x, scale.y);
+    const scaledFontSize = (layer.fontSize || 16) * uniformScale;
     
     const style: TextStyle = {
-      color: themeColor || '#000000', // Use theme color or default black
+      color: themeColor || '#000000', // Use theme color (dynamic) or default black
       fontSize: scaledFontSize,
       fontWeight: layer.fontWeight as TextStyle['fontWeight'] || 'normal',
-      textAlign: layer.horizontalAlign || 'center',
+      textAlign: 'center',
     };
 
     // Apply font family mapping
@@ -195,7 +175,7 @@ export function LayeredCanvas({
 
     // Apply letter spacing if specified
     if (layer.letterSpacing !== undefined) {
-      style.letterSpacing = layer.letterSpacing * Math.min(scale.x, scale.y);
+      style.letterSpacing = layer.letterSpacing * uniformScale;
     }
 
     return style;
@@ -212,13 +192,18 @@ export function LayeredCanvas({
   }, [template.themeLayers]);
 
   // Container style - keeps overflow hidden for proper canvas clipping
-  const containerStyle: ViewStyle = useMemo(() => ({
-    width: canvasWidth,
-    height: canvasHeight,
-    backgroundColor: backgroundColor,
-    position: 'relative',
-    overflow: 'hidden',
-  }), [canvasWidth, canvasHeight, backgroundColor]);
+  const containerStyle: ViewStyle = useMemo(() => {
+    return {
+      width: canvasWidth,
+      height: canvasHeight,
+      backgroundColor: backgroundColor,
+      position: 'relative',
+      overflow: 'hidden',
+      // DEBUG: Add border to see container bounds
+      // borderWidth: 5,
+      // borderColor: '#FF00FF', // Magenta
+    };
+  }, [canvasWidth, canvasHeight, backgroundColor]);
   
   // Theme layer wrapper style - allows rotated layers to show even if
   // their unrotated bounding box extends outside the canvas
@@ -240,42 +225,17 @@ export function LayeredCanvas({
     height: canvasHeight,
   }), [canvasWidth, canvasHeight]);
 
-  // #region agent log
-  console.log('[LayeredCanvas] Rendering with:', {
-    backgroundColor,
-    themeColor: themeColor || '(none)',
-    frameOverlayUrl: template.frameOverlayUrl?.substring(0, 80) + '...',
-    canvasSize: `${canvasWidth}x${canvasHeight}`,
-    photoCount: Object.values(capturedImages).filter(img => img !== null).length,
-    themeLayerCount: template.themeLayers?.length || 0,
-    textLayerCount: template.themeLayers?.filter(l => isTextThemeLayer(l)).length || 0,
-    shapeLayerCount: template.themeLayers?.filter(l => !isTextThemeLayer(l)).length || 0,
-  });
-  // #endregion
-
   // Render a single theme layer (text or shape)
   const renderThemeLayer = (layer: ThemeLayer) => {
-    // #region agent log
-    // Hypothesis B: Check if isTextThemeLayer returns correct value
-    const isText = isTextThemeLayer(layer);
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LayeredCanvas.tsx:renderThemeLayer',message:'Type guard check',data:{layerId:layer.id,layerType:layer.type,isTextResult:isText,hasTypeProperty:'type' in layer,fullLayer:JSON.stringify(layer)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
     // Check if this is a text layer
-    if (isText) {
-      console.log('[LayeredCanvas] Rendering text layer:', layer.id, 'text:', (layer as any).text);
-      const containerStyle = getTextLayerContainerStyle(layer as any);
-      const textStyle = getTextLayerStyle(layer as any);
-      
-      // #region agent log
-      // Hypothesis D: Log text styling to see if it's visible
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LayeredCanvas.tsx:renderTextLayer',message:'Text layer styles',data:{layerId:layer.id,text:(layer as any).text,containerStyle:JSON.stringify(containerStyle),textStyle:JSON.stringify(textStyle)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
+    if (isTextThemeLayer(layer)) {
+      const containerStyle = getTextLayerContainerStyle(layer as TextThemeLayer);
+      const textStyle = getTextLayerStyle(layer as TextThemeLayer);
       
       return (
         <View key={layer.id} style={containerStyle}>
           <Text style={textStyle}>
-            {(layer as any).text}
+            {(layer as TextThemeLayer).text}
           </Text>
         </View>
       );
@@ -283,7 +243,6 @@ export function LayeredCanvas({
 
     // Shape layer - only render if we have a theme color
     if (themeColor) {
-      console.log('[LayeredCanvas] Rendering shape layer:', layer.id);
       return (
         <View
           key={layer.id}
@@ -295,28 +254,9 @@ export function LayeredCanvas({
     return null;
   };
 
-  // #region agent log
-  // Hypothesis A & E: Check if LayeredCanvas is rendering and has correct data
-  fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LayeredCanvas.tsx:render',message:'LayeredCanvas render entry',data:{hasThemeLayers,themeLayerCount:template.themeLayers?.length||0,themeLayersRaw:JSON.stringify(template.themeLayers),backgroundColor,themeColor,canvasWidth,canvasHeight},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-  // #endregion
-
   return (
     <View style={containerStyle}>
-      {/* Layer 1: Background Color - handled by container backgroundColor */}
-
-      {/* Layer 2: Theme Layers (colored shapes or styled text) */}
-      {/* Wrapped in a container with overflow:visible to allow rotated text */}
-      {hasThemeLayers && (
-        <View style={themeLayerWrapperStyle}>
-          {/* #region agent log */}
-          {/* Hypothesis C: Log that wrapper is rendering */}
-          {(() => { fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'LayeredCanvas.tsx:themeWrapper',message:'Theme wrapper rendering',data:{wrapperStyle:JSON.stringify(themeLayerWrapperStyle)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{}); return null; })()}
-          {/* #endregion */}
-          {template.themeLayers?.map(renderThemeLayer)}
-        </View>
-      )}
-
-      {/* Layer 3: User Photos */}
+      {/* Layer 1: User Photos */}
       {slots.map((slot) => {
         const image = capturedImages[slot.id];
         if (!image) return null;
@@ -331,19 +271,23 @@ export function LayeredCanvas({
         );
       })}
 
-      {/* Layer 4: Frame Overlay PNG */}
+      {/* Layer 2: Frame Overlay PNG */}
       {template.frameOverlayUrl && (
         <Image
-          source={{ 
-            uri: template.frameOverlayUrl + (template.frameOverlayUrl.includes('?') ? '&' : '?') + `v=${template.updatedAt || Date.now()}`,
-            cache: 'reload',  // Force reload to get fresh overlay
-          }}
+          source={{ uri: template.frameOverlayUrl }}
           style={frameOverlayStyle}
           resizeMode="contain"
         />
       )}
 
-      {/* Layer 5: User Overlays (children) */}
+      {/* Layer 3: Theme Layers (rendered on top of frame overlay) */}
+      {hasThemeLayers && (
+        <View style={[themeLayerWrapperStyle, { zIndex: 10 }]}>
+          {template.themeLayers?.map(renderThemeLayer)}
+        </View>
+      )}
+
+      {/* Layer 4: User Overlays (children) */}
       {children}
     </View>
   );

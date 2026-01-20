@@ -65,6 +65,26 @@
       </summary>
       <div class="px-6 py-4 space-y-4 border-t border-gray-200 dark:border-gray-700">
         
+        <!-- CRITICAL: Transparent Background Warning -->
+        <div class="bg-red-50 dark:bg-red-900/30 rounded-lg p-4 border-2 border-red-400 dark:border-red-600 mb-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-2xl">🚨</span>
+            <p class="text-sm font-bold text-red-700 dark:text-red-300 uppercase">CRITICAL: Background Must Be Transparent</p>
+          </div>
+          <p class="text-xs text-red-600 dark:text-red-400 mb-2">
+            <strong>EVERY template in Templated.io MUST have a transparent canvas background.</strong>
+          </p>
+          <ul class="text-xs text-red-600 dark:text-red-400 list-disc list-inside space-y-1">
+            <li>In Templated.io editor, ensure "Transparent background" is checked</li>
+            <li>Do NOT add a background rectangle layer covering the canvas</li>
+            <li>The <strong>Default Background Color</strong> below will be used for the initial preview</li>
+            <li>Users can then change background colors instantly in the app (no API calls)</li>
+          </ul>
+          <p class="text-xs text-red-700 dark:text-red-300 mt-2 font-semibold">
+            ⚠️ If the template has an opaque background, background color changes WILL NOT WORK in the app!
+          </p>
+        </div>
+
         <!-- Important Banner -->
         <div class="bg-gradient-to-r from-primary/10 to-pink-500/10 rounded-lg p-4 border border-primary/30">
           <p class="text-sm font-semibold text-primary mb-2">🎯 How Layer Naming Works</p>
@@ -93,30 +113,36 @@
             <p class="text-xs text-green-600 dark:text-green-400 mt-2 italic">→ These become photo drop zones in the editor</p>
           </div>
 
-          <!-- THEME LAYERS - New Feature! -->
+          <!-- THEME LAYERS - Color-Changeable Elements -->
           <div class="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 rounded-lg p-4 border-2 border-purple-400 dark:border-purple-600 relative overflow-hidden">
-            <div class="absolute top-0 right-0 bg-purple-500 text-white text-xs px-3 py-1 rounded-bl-lg font-semibold">✨ NEW</div>
+            <div class="absolute top-0 right-0 bg-purple-500 text-white text-xs px-3 py-1 rounded-bl-lg font-semibold">THEME</div>
             <div class="flex items-center gap-2 mb-2">
               <span class="text-lg">🎨</span>
-              <p class="text-sm font-bold text-purple-800 dark:text-purple-200">THEME LAYERS (Color-Changeable)</p>
+              <p class="text-sm font-bold text-purple-800 dark:text-purple-200">THEME LAYERS (Color-Changeable Elements)</p>
             </div>
-            <p class="text-xs text-purple-700 dark:text-purple-300 mb-3">Prefix: <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded font-bold">theme-</code></p>
+            <p class="text-xs text-purple-700 dark:text-purple-300 mb-3">Prefix: <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded font-bold text-purple-600">theme-</code></p>
             <div class="flex flex-wrap gap-2 mb-3">
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-background</code>
+              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-before_label</code>
+              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-after_label</code>
               <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-accent-bar</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-header-shape</code>
-              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-footer</code>
+              <code class="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs font-mono">theme-frame</code>
             </div>
             <div class="bg-white/50 dark:bg-gray-800/50 rounded p-3 text-xs space-y-1">
               <p class="font-semibold text-purple-800 dark:text-purple-200">How it works:</p>
               <ol class="list-decimal list-inside text-gray-600 dark:text-gray-400 space-y-1">
-                <li>Name any shape/rectangle layer with <code class="bg-purple-100 dark:bg-purple-900 px-1 rounded">theme-</code> prefix</li>
+                <li>Name any shape OR text layer with <code class="bg-purple-100 dark:bg-purple-900 px-1 rounded">theme-</code> prefix</li>
                 <li>When you generate the frame overlay, these layers are hidden & their positions saved</li>
                 <li>In the app, users see a "Theme" button to change ALL theme layers at once</li>
-                <li>All theme layers change to the same color → unified look!</li>
+                <li>Both shapes (rectangles) AND text (labels) can be theme-colored!</li>
               </ol>
             </div>
-            <p class="text-xs text-purple-600 dark:text-purple-400 mt-2 italic">→ Users can customize colors WITHOUT API calls (instant!)</p>
+            <div class="bg-yellow-50 dark:bg-yellow-900/30 rounded p-2 mt-3 border border-yellow-300 dark:border-yellow-700">
+              <p class="text-xs text-yellow-700 dark:text-yellow-300">
+                <strong>⚠️ Important:</strong> Only layers with <code class="bg-yellow-100 dark:bg-yellow-800 px-1 rounded">theme-</code> prefix will change color. 
+                <br>Layers <strong>without</strong> this prefix stay exactly as designed - no changes!
+              </p>
+            </div>
+            <p class="text-xs text-purple-600 dark:text-purple-400 mt-2 italic">→ Users can customize theme colors WITHOUT API calls (instant!)</p>
           </div>
 
           <!-- WATERMARK LAYER -->
@@ -134,38 +160,52 @@
             <p class="text-xs text-yellow-600 dark:text-yellow-400 mt-2 italic">→ Hidden for Pro users automatically</p>
           </div>
 
-          <!-- Other Layers -->
+          <!-- Other Layers - STATIC (No Changes) -->
           <div class="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-300 dark:border-gray-600">
             <div class="flex items-center gap-2 mb-2">
-              <span class="text-lg">🖼️</span>
-              <p class="text-sm font-bold text-gray-800 dark:text-gray-200">OTHER LAYERS (Static Decorations)</p>
+              <span class="text-lg">🔒</span>
+              <p class="text-sm font-bold text-gray-800 dark:text-gray-200">STATIC LAYERS (No User Changes)</p>
+              <span class="px-2 py-0.5 bg-gray-500 text-white text-xs rounded-full">Fixed</span>
             </div>
-            <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">Any name without special prefix - these stay fixed</p>
+            <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">Any layer <strong>without</strong> a special prefix stays exactly as designed</p>
             <div class="flex flex-wrap gap-2">
               <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">before-label</code>
               <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">after-label</code>
               <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">divider-line</code>
-              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">logo</code>
+              <code class="bg-white dark:bg-gray-600 px-2 py-1 rounded text-xs font-mono">frame-decoration</code>
             </div>
-            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">→ Included in frame overlay, users cannot change</p>
+            <div class="bg-blue-50 dark:bg-blue-900/30 rounded p-2 mt-3 border border-blue-300 dark:border-blue-700">
+              <p class="text-xs text-blue-700 dark:text-blue-300">
+                <strong>💡 Tip:</strong> If you want a text or shape to stay the SAME color and not change, 
+                do NOT add the <code class="bg-blue-100 dark:bg-blue-800 px-1 rounded">theme-</code> prefix. 
+                It will remain exactly as you designed it in Templated.io.
+              </p>
+            </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">→ Baked into frame overlay PNG - users cannot modify</p>
           </div>
         </div>
 
         <!-- Quick Setup Checklist -->
         <div class="bg-primary/5 rounded-lg p-4 border border-primary/20">
-          <p class="text-sm font-bold text-primary mb-3">✅ Template Setup Checklist</p>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+          <p class="text-sm font-bold text-primary mb-3">✅ Template Setup Checklist (Before Generating)</p>
+          <div class="grid grid-cols-1 gap-2 text-xs">
+            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <input type="checkbox" class="rounded text-primary border-2 border-red-400"> <strong class="text-red-600">CRITICAL:</strong> Canvas background is <strong>TRANSPARENT</strong> in Templated.io
+            </label>
             <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
               <input type="checkbox" class="rounded text-primary"> Photo placeholders named <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">slot-*</code>
             </label>
             <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Theme shapes named <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-*</code>
+              <input type="checkbox" class="rounded text-primary"> Color-changeable elements named <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-*</code>
             </label>
             <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Canvas background is TRANSPARENT in Templated.io
+              <input type="checkbox" class="rounded text-primary"> Elements that should NOT change have NO <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-</code> prefix
             </label>
             <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
-              <input type="checkbox" class="rounded text-primary"> Frame overlay generated (green section below)
+              <input type="checkbox" class="rounded text-primary"> Set Default Background Color below (what users see initially)
+            </label>
+            <label class="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <input type="checkbox" class="rounded text-primary"> Set Default Theme Color below (if you have <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">theme-*</code> layers)
             </label>
           </div>
         </div>
@@ -560,68 +600,88 @@
         </div>
 
         <!-- Default Colors Section -->
-        <div id="defaultColorsSection" class="hidden space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
-          <div class="flex items-center gap-2 mb-3">
+        <div id="defaultColorsSection" class="hidden space-y-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <div class="flex items-center gap-2 mb-1">
             <span class="text-lg">🎨</span>
             <p class="text-sm font-bold text-gray-800 dark:text-gray-200">Default Colors</p>
-            <span class="text-xs text-gray-500">(Templates load with these colors)</span>
+            <span class="px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">Required</span>
           </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+            These colors appear when users first open the template. Users can change them in the app.
+          </p>
           
           <!-- Background Color -->
-          <div class="flex items-center gap-4">
-            <label for="default_bg_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
-              Background Color
-            </label>
-            <div class="flex items-center gap-2 flex-1">
-              <input 
-                type="color" 
-                id="default_bg_color" 
-                value="#FFFFFF"
-                class="w-12 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
-              >
-              <input 
-                type="text" 
-                id="default_bg_color_hex" 
-                value="#FFFFFF"
-                placeholder="#FFFFFF"
-                class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
-              >
+          <div class="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-700">
+            <div class="flex items-center gap-4">
+              <label for="default_bg_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
+                <span class="block font-bold text-blue-700 dark:text-blue-300">Background Color</span>
+                <span class="text-xs text-gray-500">(Canvas fill)</span>
+              </label>
+              <div class="flex items-center gap-2 flex-1">
+                <input 
+                  type="color" 
+                  id="default_bg_color" 
+                  value="#FFFFFF"
+                  class="w-12 h-10 rounded border-2 border-blue-300 dark:border-blue-600 cursor-pointer"
+                >
+                <input 
+                  type="text" 
+                  id="default_bg_color_hex" 
+                  value="#FFFFFF"
+                  placeholder="#FFFFFF"
+                  class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+                >
+              </div>
             </div>
+            <p class="text-xs text-blue-600 dark:text-blue-400 mt-2">
+              💡 This shows as the initial background. Works because Templated.io template has transparent canvas!
+            </p>
           </div>
           
           <!-- Theme Color -->
-          <div class="flex items-center gap-4">
-            <label for="default_theme_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
-              Theme Color <span class="text-xs text-purple-500">(for theme-* layers)</span>
-            </label>
-            <div class="flex items-center gap-2 flex-1">
-              <input 
-                type="color" 
-                id="default_theme_color" 
-                value="#6B7B6E"
-                class="w-12 h-10 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
-              >
-              <input 
-                type="text" 
-                id="default_theme_color_hex" 
-                value="#6B7B6E"
-                placeholder="#6B7B6E"
-                class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
-              >
-              <button 
-                type="button"
-                onclick="clearThemeColor()"
-                class="px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 text-xs"
-                title="Clear theme color (use null)"
-              >
-                Clear
-              </button>
+          <div class="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-700">
+            <div class="flex items-center gap-4">
+              <label for="default_theme_color" class="text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
+                <span class="block font-bold text-purple-700 dark:text-purple-300">Theme Color</span>
+                <span class="text-xs text-gray-500">(for theme-* layers)</span>
+              </label>
+              <div class="flex items-center gap-2 flex-1">
+                <input 
+                  type="color" 
+                  id="default_theme_color" 
+                  value="#6B7B6E"
+                  class="w-12 h-10 rounded border-2 border-purple-300 dark:border-purple-600 cursor-pointer"
+                >
+                <input 
+                  type="text" 
+                  id="default_theme_color_hex" 
+                  value="#6B7B6E"
+                  placeholder="#6B7B6E"
+                  class="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono"
+                >
+                <button 
+                  type="button"
+                  onclick="clearThemeColor()"
+                  class="px-2 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 text-xs"
+                  title="No theme layers = leave empty"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
+            <p class="text-xs text-purple-600 dark:text-purple-400 mt-2">
+              💡 Only matters if you have <code class="bg-purple-100 dark:bg-purple-800 px-1 rounded">theme-*</code> prefixed layers. Leave empty if none.
+            </p>
           </div>
           
-          <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            💡 These colors initialize the editor when users open this template. They can customize from here.
-          </p>
+          <!-- Info Box -->
+          <div class="bg-gray-100 dark:bg-gray-700/50 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+            <p class="text-xs text-gray-600 dark:text-gray-400">
+              <strong>How it works:</strong> Templates are stored with transparent backgrounds. The default colors above 
+              determine what users see initially. Users can then tap "BG" or "Theme" buttons in the app to customize instantly 
+              (no API calls needed!).
+            </p>
+          </div>
         </div>
 
         <!-- Generate Button -->

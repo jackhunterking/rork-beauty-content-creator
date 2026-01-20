@@ -1174,16 +1174,8 @@ export function TemplateCanvas({
 
   const shouldUseLayeredCanvas = useMemo(() => {
     // Use LayeredCanvas whenever we have a frame overlay (works with or without photos)
-    const result = useClientSideCompositing && !!template.frameOverlayUrl;
-    console.log('[TemplateCanvas] shouldUseLayeredCanvas:', { 
-      result, 
-      useClientSideCompositing, 
-      hasFrameOverlay: !!template.frameOverlayUrl,
-      hasPhotos,
-      backgroundColor 
-    });
-    return result;
-  }, [useClientSideCompositing, template.frameOverlayUrl, hasPhotos, backgroundColor]);
+    return useClientSideCompositing && !!template.frameOverlayUrl;
+  }, [useClientSideCompositing, template.frameOverlayUrl]);
 
   // Get slots for LayeredCanvas
   const slots = useMemo(() => extractSlots(template), [template]);
@@ -1200,9 +1192,6 @@ export function TemplateCanvas({
         ]}
       >
         {/* Client-side LayeredCanvas compositing (zero API calls for color changes) */}
-        {/* #region agent log */}
-        {(() => { fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'TemplateCanvas.tsx:render',message:'TemplateCanvas render path',data:{shouldUseLayeredCanvas,templateId:template.id,hasThemeLayers:!!template.themeLayers,themeLayersCount:template.themeLayers?.length||0,themeLayersData:JSON.stringify(template.themeLayers?.slice(0,2))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{}); return null; })()}
-        {/* #endregion */}
         {shouldUseLayeredCanvas ? (
           <LayeredCanvas
             template={template}
@@ -1225,7 +1214,6 @@ export function TemplateCanvas({
             onLoad={() => {
               // Notify parent that the preview image has loaded
               if (onPreviewLoad) {
-                console.log('[TemplateCanvas] Preview image loaded:', previewUrl?.substring(0, 50) + '...');
                 onPreviewLoad();
               }
             }}
