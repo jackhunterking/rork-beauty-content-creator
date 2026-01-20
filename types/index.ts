@@ -403,6 +403,10 @@ export interface Template {
   // PNG URL with transparent slots and background - for client-side compositing
   // Used by LayeredCanvas for zero-API-call background color changes
   frameOverlayUrl?: string;
+  
+  // Theme layer geometries for client-side rendering
+  // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
+  themeLayers?: ThemeLayer[];
 }
 
 // Templated.io layer structure
@@ -413,12 +417,36 @@ export interface TemplatedLayer {
   y: number;
   width: number;
   height: number;
+  rotation?: number;
   image_url?: string;
   text?: string;
   color?: string;
   fill?: string;
+  border_radius?: number;
   // Other properties can be added as needed
   [key: string]: unknown;
+}
+
+/**
+ * Theme layer geometry for client-side rendering
+ * Theme layers are identified by 'theme-' prefix in Templated.io
+ * These are rendered as colored shapes that change with the theme color
+ */
+export interface ThemeLayer {
+  /** Layer ID from Templated.io (e.g., 'theme-before-label') */
+  id: string;
+  /** X position in template pixels */
+  x: number;
+  /** Y position in template pixels */
+  y: number;
+  /** Width in template pixels */
+  width: number;
+  /** Height in template pixels */
+  height: number;
+  /** Rotation in degrees */
+  rotation?: number;
+  /** Border radius in pixels */
+  borderRadius?: number;
 }
 
 // Database row type (snake_case from Supabase)
@@ -461,6 +489,8 @@ export interface TemplateRow {
   customizable_background_layers: string[] | null;
   // PNG URL with transparent slots and background - for client-side compositing
   frame_overlay_url: string | null;
+  // Theme layer geometries for client-side rendering
+  theme_layers: ThemeLayer[] | null;
 }
 
 // ============================================

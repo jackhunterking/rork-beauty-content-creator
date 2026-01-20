@@ -100,7 +100,7 @@ const textColorIconStyles = StyleSheet.create({
 /**
  * Element types for context bar
  */
-export type ContextBarElementType = 'photo' | 'text' | 'date' | 'logo' | 'background';
+export type ContextBarElementType = 'photo' | 'text' | 'date' | 'logo' | 'background' | 'theme';
 
 /**
  * Text format options
@@ -202,6 +202,9 @@ interface ElementContextBarProps {
   /** Background actions (for canvas background color) */
   canvasBackgroundColor?: string;
   onCanvasBackgroundColorChange?: (color: string) => void;
+  /** Theme actions (for theme layer colors) */
+  themeColor?: string;
+  onThemeColorChange?: (color: string) => void;
   /** Common actions */
   onConfirm?: () => void;
 }
@@ -241,6 +244,8 @@ export function ElementContextBar({
   onLogoSize,
   canvasBackgroundColor = '#FFFFFF',
   onCanvasBackgroundColorChange,
+  themeColor = '#FFFFFF',
+  onThemeColorChange,
   onConfirm,
 }: ElementContextBarProps) {
   const insets = useSafeAreaInsets();
@@ -502,6 +507,10 @@ export function ElementContextBar({
         // Background element type - shows color picker immediately
         return [];
 
+      case 'theme':
+        // Theme element type - shows color picker immediately
+        return [];
+
       default:
         return [];
     }
@@ -510,6 +519,11 @@ export function ElementContextBar({
   // Handle canvas background color selection
   const handleCanvasBackgroundColorSelect = (color: string) => {
     onCanvasBackgroundColorChange?.(color);
+  };
+
+  // Handle theme color selection
+  const handleThemeColorSelect = (color: string) => {
+    onThemeColorChange?.(color);
   };
 
   const actions = getActions();
@@ -778,6 +792,51 @@ export function ElementContextBar({
     </Animated.View>
   );
 
+  // Render theme color picker row (for 'theme' element type)
+  const renderThemeColorPicker = () => (
+    <Animated.View 
+      style={styles.expandedRow}
+      entering={FadeIn.duration(150)}
+      exiting={FadeOut.duration(100)}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.colorScrollContent}
+        bounces={false}
+      >
+        {/* Custom color button - opens full picker */}
+        <TouchableOpacity 
+          style={styles.colorWheelButton} 
+          activeOpacity={0.7}
+          onPress={() => {
+            setColorPickerMode('background');
+            setShowColorPicker(true);
+          }}
+        >
+          <View style={styles.colorWheelGradient}>
+            <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Theme color presets (same as background colors) */}
+        {BACKGROUND_COLORS.map((color) => (
+          <TouchableOpacity
+            key={color}
+            style={[
+              styles.colorOption,
+              { backgroundColor: color },
+              themeColor === color && styles.colorOptionSelected,
+              color === '#FFFFFF' && styles.colorOptionWhite,
+            ]}
+            onPress={() => handleThemeColorSelect(color)}
+            activeOpacity={0.7}
+          />
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+
   // Render format panel (Bold, Italic, Underline, Strikethrough, aA, Alignment)
   const renderFormatPanel = () => (
     <Animated.View 
@@ -1003,6 +1062,8 @@ export function ElementContextBar({
       
       {/* Canvas background color picker (for 'background' element type - shown always) */}
       {elementType === 'background' && renderCanvasBackgroundPicker()}
+      {/* Theme color picker (for 'theme' element type - shown always) */}
+      {elementType === 'theme' && renderThemeColorPicker()}
       {expandedOption === 'ai' && (
         <AIFeatureMenu
           isPremium={isPremium}
@@ -1052,9 +1113,25 @@ export function ElementContextBar({
     {/* Color Picker Modal */}
     <ColorPickerModal
       visible={showColorPicker}
-      currentColor={colorPickerMode === 'text' ? currentColor : (currentBackgroundColor || '#000000')}
-      title={colorPickerMode === 'text' ? 'Text Color' : 'Background Color'}
-      onSelectColor={handleColorPickerSelect}
+      currentColor={
+        colorPickerMode === 'text' 
+          ? currentColor 
+          : (elementType === 'theme' ? themeColor : (currentBackgroundColor || '#000000'))
+      }
+      title={
+        colorPickerMode === 'text' 
+          ? 'Text Color' 
+          : (elementType === 'theme' ? 'Theme Color' : 'Background Color')
+      }
+      onSelectColor={(color) => {
+        if (colorPickerMode === 'text') {
+          onTextColor?.(color);
+        } else if (elementType === 'theme') {
+          onThemeColorChange?.(color);
+        } else {
+          onTextBackground?.(color);
+        }
+      }}
       onClose={() => setShowColorPicker(false)}
     />
     </>

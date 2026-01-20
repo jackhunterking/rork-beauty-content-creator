@@ -21,6 +21,7 @@ import {
   Image as ImageIcon,
   Sparkles,
   Palette,
+  Paintbrush,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -40,6 +41,7 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
  */
 export type MainToolbarItem = 
   | 'background'
+  | 'theme'
   | 'text'
   | 'date'
   | 'logo'
@@ -58,6 +60,11 @@ const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
     id: 'background',
     icon: (color) => <Palette size={24} color={color} strokeWidth={1.8} />,
     label: 'Background',
+  },
+  {
+    id: 'theme',
+    icon: (color) => <Paintbrush size={24} color={color} strokeWidth={1.8} />,
+    label: 'Theme',
   },
   {
     id: 'text',
@@ -158,6 +165,8 @@ interface EditorMainToolbarProps {
   expandedTool?: MainToolbarItem | null;
   /** Callback when expanded tool changes */
   onExpandedToolChange?: (tool: MainToolbarItem | null) => void;
+  /** Whether the template has theme layers (hides Theme button if false) */
+  hasThemeLayers?: boolean;
 }
 
 export function EditorMainToolbar({
@@ -173,13 +182,21 @@ export function EditorMainToolbar({
   onRequestPremium,
   expandedTool = null,
   onExpandedToolChange,
+  hasThemeLayers = false,
 }: EditorMainToolbarProps) {
   const insets = useSafeAreaInsets();
 
-  // Filter items if custom list provided
-  const displayItems = items
+  // Filter items if custom list provided, and hide theme button if no theme layers
+  const displayItems = (items
     ? TOOLBAR_ITEMS.filter((item) => items.includes(item.id))
-    : TOOLBAR_ITEMS;
+    : TOOLBAR_ITEMS
+  ).filter((item) => {
+    // Hide theme button if template has no theme layers
+    if (item.id === 'theme' && !hasThemeLayers) {
+      return false;
+    }
+    return true;
+  });
 
   const handleToolPress = useCallback((tool: MainToolbarItem) => {
     if (tool === 'ai') {

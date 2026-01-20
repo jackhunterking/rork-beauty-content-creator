@@ -133,8 +133,14 @@ export default function EditorV2Screen() {
   // Canvas background color state (NEW - for client-side compositing)
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string>('#FFFFFF');
   
+  // Theme color state (for theme layers - layers prefixed with 'theme-')
+  const [selectedThemeColor, setSelectedThemeColor] = useState<string | undefined>(undefined);
+  
   // Whether background tool is active (for showing context bar)
   const [isBackgroundToolActive, setIsBackgroundToolActive] = useState(false);
+  
+  // Whether theme tool is active (for showing theme context bar)
+  const [isThemeToolActive, setIsThemeToolActive] = useState(false);
   
   // Ref to track overlay interaction - prevents canvas tap from deselecting during overlay tap
   const overlayInteractionRef = useRef<boolean>(false);
@@ -827,6 +833,15 @@ export default function EditorV2Screen() {
       setSelectedOverlayId(null);
       // Activate background tool to show context bar
       setIsBackgroundToolActive(true);
+      setIsThemeToolActive(false);
+    } else if (tool === 'theme') {
+      // Show theme color picker via context bar
+      // Deselect any current selection first
+      setSelection(DEFAULT_SELECTION);
+      setSelectedOverlayId(null);
+      // Activate theme tool to show context bar
+      setIsThemeToolActive(true);
+      setIsBackgroundToolActive(false);
     } else if (tool === 'ai') {
       // Open AI Studio panel (unified AI experience)
       aiStudioRef.current?.snapToIndex(0);
@@ -835,8 +850,9 @@ export default function EditorV2Screen() {
 
   // Get element type for context bar based on selection
   const contextBarElementType = useMemo((): ContextBarElementType | null => {
-    // Background tool active takes precedence
+    // Background/theme tool active takes precedence
     if (isBackgroundToolActive) return 'background';
+    if (isThemeToolActive) return 'theme';
     if (selection.type === 'slot') return 'photo';
     if (selectedOverlayId) {
       const overlay = overlays.find(o => o.id === selectedOverlayId);
@@ -847,10 +863,10 @@ export default function EditorV2Screen() {
       }
     }
     return null;
-  }, [isBackgroundToolActive, selection.type, selectedOverlayId, overlays]);
+  }, [isBackgroundToolActive, isThemeToolActive, selection.type, selectedOverlayId, overlays]);
 
   // Check if something is selected (for showing context bar vs main toolbar)
-  const hasSelection = selection.id !== null || selectedOverlayId !== null || isBackgroundToolActive;
+  const hasSelection = selection.id !== null || selectedOverlayId !== null || isBackgroundToolActive || isThemeToolActive;
 
   // Handle confirm/done from context bar
   const handleContextBarConfirm = useCallback(() => {
@@ -863,17 +879,58 @@ export default function EditorV2Screen() {
     setSelectedOverlayId(null);
     setActiveMainTool(null);
     setIsBackgroundToolActive(false);
+    setIsThemeToolActive(false);
     
     // Close panels
     textStylePanelRef.current?.close();
     logoPanelRef.current?.close();
   }, [pendingManipulationAdjustments, saveManipulationAdjustments]);
   
-  // Handle canvas background color change (for client-side compositing)
+  // Check if we can use client-side compositing (LayeredCanvas)
+  const canUseClientSideCompositing = useMemo(() => {
+    return !!template?.frameOverlayUrl;
+  }, [template?.frameOverlayUrl]);
+
+  // Get the customizable background layer ID (if available)
+  const backgroundLayerId = useMemo(() => {
+    // customizableBackgroundLayers is an array of layer IDs that can be color-customized
+    // Use the first one as the "main" background layer
+    return template?.customizableBackgroundLayers?.[0] || null;
+  }, [template?.customizableBackgroundLayers]);
+
+  // Check if user has any photos captured
+  const hasAnyCapturedPhotos = useMemo(() => {
+    return Object.values(capturedImages).some(img => img !== null);
+  }, [capturedImages]);
+
+  // Handle canvas background color change - CLIENT-SIDE ONLY (no API calls)
+  // Uses LayeredCanvas with transparent frame overlay PNG
   const handleCanvasBackgroundColorChange = useCallback((color: string) => {
+    console.log('[EditorV2] BG color change:', { color, canUseClientSide: canUseClientSideCompositing });
     setSelectedBackgroundColor(color);
-    // No API call needed - instant color change via client-side compositing!
-  }, []);
+    
+    // Background color changes work instantly via LayeredCanvas
+    // Frame overlay PNG has transparent background - color shows through
+    if (canUseClientSideCompositing) {
+      console.log('[EditorV2] ✓ Using LayeredCanvas for instant BG change (no API call)');
+    } else {
+      console.log('[EditorV2] ⚠️ Template does not support background changes (no frameOverlayUrl)');
+    }
+  }, [canUseClientSideCompositing]);
+
+  // Handle theme color change - CLIENT-SIDE ONLY (no API calls)
+  // Theme layers (prefixed with 'theme-') are rendered as colored shapes by LayeredCanvas
+  const handleThemeColorChange = useCallback((color: string) => {
+    const hasThemeLayers = template?.themeLayers && template.themeLayers.length > 0;
+    console.log('[EditorV2] Theme color change:', { color, hasThemeLayers, themeLayerCount: template?.themeLayers?.length || 0 });
+    setSelectedThemeColor(color);
+    
+    if (hasThemeLayers) {
+      console.log('[EditorV2] ✓ Theme color applied to', template?.themeLayers?.length, 'theme layers');
+    } else {
+      console.log('[EditorV2] ⚠️ Template has no theme layers');
+    }
+  }, [template?.themeLayers]);
 
   // Handle text edit action - enters editing mode with keyboard
   const handleTextEditAction = useCallback(() => {
@@ -2008,6 +2065,7 @@ export default function EditorV2Screen() {
                   onAdjustmentChange: handleCropAdjustmentChange,
                 } : null}
                 backgroundColor={selectedBackgroundColor}
+                themeColor={selectedThemeColor}
                 capturedImages={capturedImages}
                 useClientSideCompositing={!!template?.frameOverlayUrl}
               />
@@ -2091,6 +2149,8 @@ export default function EditorV2Screen() {
             onLogoSize={handleLogoSizeAction}
             canvasBackgroundColor={selectedBackgroundColor}
             onCanvasBackgroundColorChange={handleCanvasBackgroundColorChange}
+            themeColor={selectedThemeColor}
+            onThemeColorChange={handleThemeColorChange}
             onConfirm={handleContextBarConfirm}
           />
         ) : (
@@ -2105,6 +2165,7 @@ export default function EditorV2Screen() {
             onRequestPremium={(feature) => requestPremiumAccess(feature)}
             expandedTool={expandedMainTool}
             onExpandedToolChange={setExpandedMainTool}
+            hasThemeLayers={(template?.themeLayers?.length ?? 0) > 0}
           />
         )}
       </SafeAreaView>

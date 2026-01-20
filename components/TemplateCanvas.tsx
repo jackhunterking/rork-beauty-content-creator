@@ -11,9 +11,9 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { Template, CapturedImages } from '@/types';
+import { Template, CapturedImages, Slot } from '@/types';
 import { SlotRegion } from './SlotRegion';
-import { extractSlots, scaleSlots, Slot } from '@/utils/slotParser';
+import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
 import { withCacheBust } from '@/services/imageUtils';
 import { LayeredCanvas } from './LayeredCanvas';
@@ -79,6 +79,8 @@ interface TemplateCanvasProps {
   cropMode?: CropModeConfig | null;
   /** Background color for LayeredCanvas mode (when frameOverlayUrl is available) */
   backgroundColor?: string;
+  /** Theme color for theme layers in LayeredCanvas mode */
+  themeColor?: string;
   /** Captured images for LayeredCanvas mode */
   capturedImages?: CapturedImages;
   /** Whether to use client-side LayeredCanvas compositing instead of Templated.io preview */
@@ -274,6 +276,58 @@ function CropOverlay({
     translateY.value = u * sin + v * cos;
   }, []);
   
+  // Get max translation in rotated coordinates for normalization
+  // NOTE: Defined before the useEffect that depends on it
+  const getMaxUV = useCallback((currentScale: number, rotationDeg: number) => {
+    'worklet';
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    const halfW = scaledWidth / 2;
+    const halfH = scaledHeight / 2;
+    const halfSlotW = slotWidth / 2;
+    const halfSlotH = slotHeight / 2;
+    
+    const angleRad = (rotationDeg * Math.PI) / 180;
+    const absCos = Math.abs(Math.cos(angleRad));
+    const absSin = Math.abs(Math.sin(angleRad));
+    
+    return {
+      maxU: Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin)),
+      maxV: Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos)),
+    };
+  }, [baseImageSize, slotWidth, slotHeight]);
+
+  // Report adjustment to parent - normalize in ROTATED coordinates
+  // This ensures the saved values can be properly reconstructed
+  // NOTE: Defined before the useEffect that depends on it
+  const reportAdjustment = useCallback(() => {
+    const currentScale = scale.value;
+    const currentRot = rotation.value;
+    const tx = translateX.value;
+    const ty = translateY.value;
+    
+    // Convert screen coords (tx, ty) to rotated coords (u, v)
+    const angleRad = (currentRot * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    const u = tx * cos + ty * sin;
+    const v = -tx * sin + ty * cos;
+    
+    // Get max values in rotated coordinates
+    const { maxU, maxV } = getMaxUV(currentScale, currentRot);
+    
+    const adjustments = {
+      scale: currentScale,
+      translateX: maxU > 0 ? u / maxU : 0,
+      translateY: maxV > 0 ? v / maxV : 0,
+      rotation: currentRot,
+    };
+    
+    // Report normalized values in rotated coordinate system
+    // translateX now represents normalized U, translateY represents normalized V
+    onAdjustmentChange(adjustments);
+  }, [getMaxUV, onAdjustmentChange, scale, translateX, translateY, rotation, baseImageSize, slotWidth, slotHeight]);
+
   // Respond to rotation changes from slider
   React.useEffect(() => {
     if (!hasInitialized.current) return;
@@ -401,56 +455,6 @@ function CropOverlay({
       y: uClamped * sin + vClamped * cos,
     };
   }, [baseImageSize, slotWidth, slotHeight]);
-  
-  // Get max translation in rotated coordinates for normalization
-  const getMaxUV = useCallback((currentScale: number, rotationDeg: number) => {
-    'worklet';
-    const scaledWidth = baseImageSize.width * currentScale;
-    const scaledHeight = baseImageSize.height * currentScale;
-    const halfW = scaledWidth / 2;
-    const halfH = scaledHeight / 2;
-    const halfSlotW = slotWidth / 2;
-    const halfSlotH = slotHeight / 2;
-    
-    const angleRad = (rotationDeg * Math.PI) / 180;
-    const absCos = Math.abs(Math.cos(angleRad));
-    const absSin = Math.abs(Math.sin(angleRad));
-    
-    return {
-      maxU: Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin)),
-      maxV: Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos)),
-    };
-  }, [baseImageSize, slotWidth, slotHeight]);
-
-  // Report adjustment to parent - normalize in ROTATED coordinates
-  // This ensures the saved values can be properly reconstructed
-  const reportAdjustment = useCallback(() => {
-    const currentScale = scale.value;
-    const currentRot = rotation.value;
-    const tx = translateX.value;
-    const ty = translateY.value;
-    
-    // Convert screen coords (tx, ty) to rotated coords (u, v)
-    const angleRad = (currentRot * Math.PI) / 180;
-    const cos = Math.cos(angleRad);
-    const sin = Math.sin(angleRad);
-    const u = tx * cos + ty * sin;
-    const v = -tx * sin + ty * cos;
-    
-    // Get max values in rotated coordinates
-    const { maxU, maxV } = getMaxUV(currentScale, currentRot);
-    
-    const adjustments = {
-      scale: currentScale,
-      translateX: maxU > 0 ? u / maxU : 0,
-      translateY: maxV > 0 ? v / maxV : 0,
-      rotation: currentRot,
-    };
-    
-    // Report normalized values in rotated coordinate system
-    // translateX now represents normalized U, translateY represents normalized V
-    onAdjustmentChange(adjustments);
-  }, [getMaxUV, onAdjustmentChange, scale, translateX, translateY, rotation, baseImageSize, slotWidth, slotHeight]);
 
   // Pan gesture - drag to reposition
   const panGesture = useMemo(() =>
@@ -1086,6 +1090,7 @@ export function TemplateCanvas({
   manipulationMode = null,
   cropMode = null,
   backgroundColor = '#FFFFFF',
+  themeColor,
   capturedImages = {},
   useClientSideCompositing = false,
   children,
@@ -1161,15 +1166,24 @@ export function TemplateCanvas({
   // Determine if we should use client-side compositing
   // Use LayeredCanvas when:
   // 1. useClientSideCompositing is explicitly true
-  // 2. Template has a frame overlay URL
-  // 3. User has captured at least one photo
+  // 2. Template has a frame overlay URL with transparent background
+  // Works with OR without photos - enables instant background color changes
   const hasPhotos = useMemo(() => {
     return Object.values(capturedImages).some(img => img !== null);
   }, [capturedImages]);
 
   const shouldUseLayeredCanvas = useMemo(() => {
-    return useClientSideCompositing && template.frameOverlayUrl && hasPhotos;
-  }, [useClientSideCompositing, template.frameOverlayUrl, hasPhotos]);
+    // Use LayeredCanvas whenever we have a frame overlay (works with or without photos)
+    const result = useClientSideCompositing && !!template.frameOverlayUrl;
+    console.log('[TemplateCanvas] shouldUseLayeredCanvas:', { 
+      result, 
+      useClientSideCompositing, 
+      hasFrameOverlay: !!template.frameOverlayUrl,
+      hasPhotos,
+      backgroundColor 
+    });
+    return result;
+  }, [useClientSideCompositing, template.frameOverlayUrl, hasPhotos, backgroundColor]);
 
   // Get slots for LayeredCanvas
   const slots = useMemo(() => extractSlots(template), [template]);
@@ -1192,6 +1206,7 @@ export function TemplateCanvas({
             slots={slots}
             capturedImages={capturedImages}
             backgroundColor={backgroundColor}
+            themeColor={themeColor}
             canvasWidth={displayWidth}
             canvasHeight={displayHeight}
           >

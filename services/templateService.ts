@@ -83,6 +83,9 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     customizableBackgroundLayers: row.customizable_background_layers || undefined,
     // PNG URL with transparent slots and background - for client-side compositing
     frameOverlayUrl: row.frame_overlay_url || undefined,
+    // Theme layer geometries for client-side rendering
+    // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
+    themeLayers: row.theme_layers || undefined,
   };
 }
 

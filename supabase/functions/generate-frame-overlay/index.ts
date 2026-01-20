@@ -5,12 +5,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
  * Generate Frame Overlay Edge Function
  * 
  * Generates a transparent PNG frame overlay for a template by:
- * 1. Calling Templated.io with transparent=true and hiding slot layers
- * 2. Uploading the result to Supabase Storage
- * 3. Updating the template's frame_overlay_url
+ * 1. Calling Templated.io with transparent=true and hiding slot + theme layers
+ * 2. Extracting theme layer geometries for client-side rendering
+ * 3. Uploading the result to Supabase Storage
+ * 4. Updating the template's frame_overlay_url and theme_layers
  * 
- * This enables client-side compositing for instant background color changes
- * without API calls.
+ * This enables client-side compositing for:
+ * - Instant background color changes without API calls
+ * - Theme color customization (layers prefixed with 'theme-')
+ * 
+ * Layer Naming Convention:
+ * - 'slot-*': Photo placeholder layers (hidden, photos rendered by app)
+ * - 'theme-*': Theme-colored layers (hidden, colored shapes rendered by app)
+ * - Other layers: Rendered normally in frame overlay
  */
 
 const corsHeaders = {
@@ -21,9 +28,33 @@ const corsHeaders = {
 const TEMPLATED_API_URL = 'https://api.templated.io/v1/render';
 
 interface FrameOverlayRequest {
-  templateId: string;
-  templatedId: string;
-  layersJson: Array<{ layer: string; [key: string]: unknown }>;
+  /** Template ID (UUID) - can use snake_case or camelCase */
+  template_id?: string;
+  templateId?: string;
+  /** Generate for all templates without frame overlays */
+  generate_all?: boolean;
+}
+
+interface ThemeLayerGeometry {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  borderRadius?: number;
+}
+
+interface TemplatedLayer {
+  layer: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  border_radius?: number;
+  [key: string]: unknown;
 }
 
 Deno.serve(async (req: Request) => {
@@ -51,48 +82,123 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Initialize Supabase admin client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
+
     // Parse request body
     const body: FrameOverlayRequest = await req.json();
-    const { templateId, templatedId, layersJson } = body;
+    const templateId = body.template_id || body.templateId;
 
     // Validate required fields
-    if (!templateId || !templatedId) {
+    if (!templateId) {
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: templateId and templatedId' }),
+        JSON.stringify({ error: 'Missing required field: template_id' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Fetch template data from database
+    console.log(`[generate-frame-overlay] Fetching template: ${templateId}`);
+    const { data: template, error: fetchError } = await adminClient
+      .from('templates')
+      .select('id, templated_id, layers_json, customizable_background_layers')
+      .eq('id', templateId)
+      .single();
+
+    if (fetchError || !template) {
+      console.error('[generate-frame-overlay] Template not found:', fetchError?.message);
+      return new Response(
+        JSON.stringify({ error: `Template not found: ${templateId}` }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const templatedId = template.templated_id;
+    const layersJson: TemplatedLayer[] = template.layers_json || [];
+
+    if (!templatedId) {
+      return new Response(
+        JSON.stringify({ error: 'Template does not have a Templated.io ID configured' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log(`[generate-frame-overlay] Processing template: ${templateId}, templated: ${templatedId}`);
+    console.log(`[generate-frame-overlay] Total layers in template: ${layersJson.length}`);
 
-    // Auto-detect slot layers (layers with "slot" in their name)
-    const slotLayers = (layersJson || []).filter((layer) => {
+    // Categorize layers by naming convention
+    const slotLayers: TemplatedLayer[] = [];
+    const themeLayers: TemplatedLayer[] = [];
+    const otherLayers: TemplatedLayer[] = [];
+
+    for (const layer of layersJson) {
       const layerName = (layer.layer || '').toLowerCase();
-      return layerName.includes('slot');
-    });
+      
+      if (layerName.includes('slot')) {
+        // Slot layers: photo placeholders (hidden, photos rendered by app)
+        slotLayers.push(layer);
+      } else if (layerName.includes('theme-')) {
+        // Theme layers: customizable colored shapes (hidden, rendered by app)
+        themeLayers.push(layer);
+      } else {
+        // Other layers: rendered normally in frame overlay
+        otherLayers.push(layer);
+      }
+    }
 
-    console.log(`[generate-frame-overlay] Found ${slotLayers.length} slot layers to hide`);
+    console.log(`[generate-frame-overlay] Layer categorization:`);
+    console.log(`  - Slot layers (hidden, photos): ${slotLayers.length} - ${slotLayers.map(l => l.layer).join(', ')}`);
+    console.log(`  - Theme layers (hidden, colored shapes): ${themeLayers.length} - ${themeLayers.map(l => l.layer).join(', ')}`);
+    console.log(`  - Other layers (in overlay): ${otherLayers.length} - ${otherLayers.map(l => l.layer).join(', ')}`);
 
-    // Build layers object with hidden slots
+    // Extract theme layer geometries for client-side rendering
+    const themeLayerGeometries: ThemeLayerGeometry[] = themeLayers.map(layer => ({
+      id: layer.layer,
+      x: layer.x || 0,
+      y: layer.y || 0,
+      width: layer.width || 0,
+      height: layer.height || 0,
+      rotation: layer.rotation || 0,
+      borderRadius: layer.border_radius || 0,
+    }));
+
+    console.log(`[generate-frame-overlay] Theme layer geometries:`, JSON.stringify(themeLayerGeometries));
+
+    // Build layers object - hide slot AND theme layers
     const hiddenLayers: { [key: string]: { hide: boolean } } = {};
+    
+    // Hide slot layers (image placeholders - photos rendered by app)
     slotLayers.forEach((layer) => {
       hiddenLayers[layer.layer] = { hide: true };
     });
+    
+    // Hide theme layers (colored shapes - rendered by app with theme color)
+    themeLayers.forEach((layer) => {
+      hiddenLayers[layer.layer] = { hide: true };
+    });
+    
+    console.log(`[generate-frame-overlay] Layers to hide:`, Object.keys(hiddenLayers));
 
-    // Call Templated.io API with transparent background and hidden slots
-    console.log(`[generate-frame-overlay] Calling Templated.io API...`);
+    // Call Templated.io API with transparent background and hidden layers
+    const renderPayload = {
+      template: templatedId,
+      format: 'png',
+      transparent: true,
+      background_color: 'rgba(0,0,0,0)',
+      layers: hiddenLayers
+    };
+    
+    console.log(`[generate-frame-overlay] API payload:`, JSON.stringify(renderPayload));
+    
     const renderResponse = await fetch(TEMPLATED_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${templatedApiKey}`
       },
-      body: JSON.stringify({
-        template: templatedId,
-        format: 'png',
-        transparent: true,
-        layers: hiddenLayers
-      })
+      body: JSON.stringify(renderPayload)
     });
 
     if (!renderResponse.ok) {
@@ -131,11 +237,6 @@ Deno.serve(async (req: Request) => {
     const imageArrayBuffer = await imageResponse.arrayBuffer();
     const imageData = new Uint8Array(imageArrayBuffer);
 
-    // Initialize Supabase admin client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-
     // Generate a unique filename
     const filename = `${templatedId}-frame-overlay.png`;
 
@@ -166,12 +267,13 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Update template with the final URL
-    console.log(`[generate-frame-overlay] Updating template ${templateId} with frame_overlay_url`);
+    // Update template with frame_overlay_url and theme_layers
+    console.log(`[generate-frame-overlay] Updating template ${templateId} with frame_overlay_url and theme_layers`);
     const { error: updateError } = await adminClient
       .from('templates')
       .update({
         frame_overlay_url: finalOverlayUrl,
+        theme_layers: themeLayerGeometries,
         updated_at: new Date().toISOString()
       })
       .eq('id', templateId);
@@ -185,13 +287,20 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(`[generate-frame-overlay] Success! Template ${templateId} updated with ${source} URL`);
+    console.log(`[generate-frame-overlay] Theme layers saved: ${themeLayerGeometries.length}`);
 
     return new Response(
       JSON.stringify({ 
+        success: true,
+        url: finalOverlayUrl,
         frameOverlayUrl: finalOverlayUrl, 
         source,
         templateId,
-        templatedId
+        templatedId,
+        themeLayers: themeLayerGeometries,
+        themeLayerCount: themeLayerGeometries.length,
+        slotLayerCount: slotLayers.length,
+        otherLayerCount: otherLayers.length
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
