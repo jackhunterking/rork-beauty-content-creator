@@ -104,10 +104,11 @@ export function TextEditToolbar({
     if (visible) {
       // Dismiss any existing keyboard first to ensure clean state
       Keyboard.dismiss();
-      // Then focus our input after a brief delay
+      // Delay focus to give InputAccessoryView time to register with iOS
+      // before the TextInput gains focus and triggers the keyboard
       const timer = setTimeout(() => {
         inputRef.current?.focus();
-      }, 200);
+      }, 350);
       return () => clearTimeout(timer);
     } else {
       Keyboard.dismiss();
@@ -405,13 +406,14 @@ export function TextEditToolbar({
   return (
     <>
       {/* Hidden TextInput that triggers the keyboard */}
+      {/* FIX: Removed autoFocus - it was causing keyboard to appear BEFORE InputAccessoryView registered */}
+      {/* Focus is now handled by useEffect with a delay to ensure InputAccessoryView is ready */}
       <TextInput
         ref={inputRef}
         style={styles.hiddenInput}
         value={text}
         onChangeText={handleTextChange}
         multiline
-        autoFocus
         blurOnSubmit={false}
         selectTextOnFocus={true}
         inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}

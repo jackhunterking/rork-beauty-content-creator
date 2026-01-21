@@ -8,7 +8,7 @@
  * The toolbar intentionally cuts off the last item to indicate scrollability.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -36,9 +36,119 @@ import Animated, {
 } from 'react-native-reanimated';
 import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
 import { AIFeatureMenu } from './AIFeatureMenu';
+import { ColorPickerModal } from './ColorPickerModal';
 import type { AIFeatureKey } from '@/types';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+/**
+ * AIBadge Component
+ * 
+ * Creates a badge effect where the icon is surrounded by a border,
+ * but the top-right corner has a notch where "AI" text sits.
+ * The design gives the appearance of a cutoff border with the AI label.
+ */
+function AIBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={aiBadgeStyles.container}>
+      {/* Border with notch cutout - using 4 border segments */}
+      <View style={aiBadgeStyles.borderContainer}>
+        {/* Top border - shorter to make room for AI label */}
+        <View style={aiBadgeStyles.borderTop} />
+        {/* Right border - shorter to make room for AI label */}
+        <View style={aiBadgeStyles.borderRight} />
+        {/* Bottom border - full width */}
+        <View style={aiBadgeStyles.borderBottom} />
+        {/* Left border - full height */}
+        <View style={aiBadgeStyles.borderLeft} />
+      </View>
+      
+      {/* AI label positioned in the cutoff area */}
+      <View style={aiBadgeStyles.aiLabelContainer}>
+        <Text style={aiBadgeStyles.aiLabel}>AI</Text>
+      </View>
+      
+      {/* Icon content */}
+      <View style={aiBadgeStyles.content}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+const aiBadgeStyles = StyleSheet.create({
+  container: {
+    width: 34,
+    height: 34,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2, // Extra space between icon and label
+  },
+  borderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  borderTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 12, // Leave space for AI label
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 7,
+  },
+  borderRight: {
+    position: 'absolute',
+    top: 10, // Start below AI label
+    right: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomRightRadius: 7,
+  },
+  borderBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomLeftRadius: 7,
+    borderBottomRightRadius: 7,
+  },
+  borderLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 7,
+    borderBottomLeftRadius: 7,
+  },
+  aiLabelContainer: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    zIndex: 1,
+  },
+  aiLabel: {
+    fontSize: 7,
+    fontWeight: '700',
+    color: Colors.light.ai.primary,
+    letterSpacing: 0.2,
+  },
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 /**
  * Available tools in the main toolbar
@@ -57,6 +167,7 @@ interface ToolbarItemConfig {
   id: MainToolbarItem;
   icon: (color: string) => React.ReactNode;
   label: string;
+  isAI?: boolean;
 }
 
 const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
@@ -87,8 +198,9 @@ const TOOLBAR_ITEMS: ToolbarItemConfig[] = [
   },
   {
     id: 'ai',
-    icon: (color) => <Sparkles size={24} color={color} strokeWidth={1.8} />,
+    icon: (color) => <Sparkles size={18} color={color} strokeWidth={1.8} />,
     label: 'AI Studio',
+    isAI: true,
   },
 ];
 
@@ -119,6 +231,8 @@ function ToolbarButton({
 
   const iconColor = disabled
     ? Colors.light.textTertiary
+    : item.isAI
+    ? Colors.light.ai.primary
     : Colors.light.text;
 
   return (
@@ -130,12 +244,16 @@ function ToolbarButton({
       disabled={disabled}
       activeOpacity={0.7}
     >
-      {/* Icon */}
+      {/* Icon - wrapped in AIBadge if it's an AI item */}
       <View style={styles.iconWrapper}>
-        {item.icon(iconColor)}
+        {item.isAI ? (
+          <AIBadge>{item.icon(iconColor)}</AIBadge>
+        ) : (
+          item.icon(iconColor)
+        )}
       </View>
 
-      {/* Label */}
+      {/* Label - same color for all items */}
       <Text
         style={[
           styles.buttonLabel,
@@ -196,6 +314,10 @@ export function EditorMainToolbar({
   onThemeColorChange,
 }: EditorMainToolbarProps) {
   const insets = useSafeAreaInsets();
+  
+  // Color picker modal state
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [colorPickerMode, setColorPickerMode] = useState<'background' | 'theme'>('background');
 
   // Filter items if custom list provided - Theme is always visible
   const displayItems = items
@@ -241,6 +363,27 @@ export function EditorMainToolbar({
     onExpandedToolChange?.(null);
   }, [onExpandedToolChange]);
 
+  // Open color picker modal for background
+  const handleOpenBackgroundColorPicker = useCallback(() => {
+    setColorPickerMode('background');
+    setShowColorPicker(true);
+  }, []);
+
+  // Open color picker modal for theme
+  const handleOpenThemeColorPicker = useCallback(() => {
+    setColorPickerMode('theme');
+    setShowColorPicker(true);
+  }, []);
+
+  // Handle color picker modal selection
+  const handleColorPickerSelect = useCallback((color: string) => {
+    if (colorPickerMode === 'background') {
+      onBackgroundColorChange?.(color);
+    } else {
+      onThemeColorChange?.(color);
+    }
+  }, [colorPickerMode, onBackgroundColorChange, onThemeColorChange]);
+
   if (!visible) {
     return null;
   }
@@ -285,10 +428,11 @@ export function EditorMainToolbar({
             contentContainerStyle={styles.colorScrollContent}
             bounces={false}
           >
-            {/* Custom color button */}
+            {/* Custom color button - opens full color picker modal */}
             <TouchableOpacity 
               style={styles.colorWheelButton} 
               activeOpacity={0.7}
+              onPress={handleOpenBackgroundColorPicker}
             >
               <View style={styles.colorWheelGradient}>
                 <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
@@ -326,10 +470,11 @@ export function EditorMainToolbar({
             contentContainerStyle={styles.colorScrollContent}
             bounces={false}
           >
-            {/* Custom color button */}
+            {/* Custom color button - opens full color picker modal */}
             <TouchableOpacity 
               style={styles.colorWheelButton} 
               activeOpacity={0.7}
+              onPress={handleOpenThemeColorPicker}
             >
               <View style={styles.colorWheelGradient}>
                 <Plus size={16} color={Colors.light.surface} strokeWidth={2.5} />
@@ -384,6 +529,15 @@ export function EditorMainToolbar({
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Color Picker Modal */}
+      <ColorPickerModal
+        visible={showColorPicker}
+        currentColor={colorPickerMode === 'background' ? backgroundColor : (themeColor || '#FFFFFF')}
+        title={colorPickerMode === 'background' ? 'Background Color' : 'Theme Color'}
+        onSelectColor={handleColorPickerSelect}
+        onClose={() => setShowColorPicker(false)}
+      />
     </View>
   );
 }

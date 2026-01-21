@@ -8,10 +8,10 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  runOnJS,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { ImagePlus, ChevronLeft, Zap, ZapOff, SwitchCamera } from "lucide-react-native";
+import { ImagePlus, ChevronLeft, Zap, ZapOff, SwitchCamera, RefreshCw, Sparkles } from "lucide-react-native";
+import BottomSheet from '@gorhom/bottom-sheet';
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { 
@@ -22,6 +22,9 @@ import {
 } from "@/utils/imageProcessing";
 import { ImageSlot, FramePositionInfo } from "@/types";
 import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
+import { uploadCapturedImage } from "@/services/tempUploadService";
+import { AIStudioSheet } from "@/components/ai";
+import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -59,12 +62,25 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
   const [previewUri, setPreviewUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [flashEnabled, setFlashEnabled] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'front' | 'back'>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
   const isCapturingRef = useRef(false);
+  
+  // AI Studio integration
+  const aiStudioSheetRef = useRef<BottomSheet>(null);
+  const { isPremium } = usePremiumStatus();
+  const [aiEnhancedUri, setAiEnhancedUri] = useState<string | null>(null);
+  
+  // Store pending adjustments for retry
+  const pendingUploadRef = useRef<{
+    uri: string;
+    adjustments: { translateX: number; translateY: number; scale: number };
+  } | null>(null);
   
   // Get safe area insets for proper positioning
   const insets = useSafeAreaInsets();
@@ -356,36 +372,95 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
     }
   }, [slot, processAndSetImage]);
 
-  const handleContinue = useCallback(() => {
-    if (previewUri) {
-      // Convert pixel translation back to relative (-0.5 to 0.5) format
-      const currentScale = scale.value;
-      const scaledWidth = baseImageSize.width * currentScale;
-      const scaledHeight = baseImageSize.height * currentScale;
-      const excessWidth = Math.max(0, scaledWidth - frameDimensions.width);
-      const excessHeight = Math.max(0, scaledHeight - frameDimensions.height);
+  const handleContinue = useCallback(async () => {
+    if (!previewUri || !slot) return;
+    
+    // Convert pixel translation back to relative (-0.5 to 0.5) format
+    const currentScale = scale.value;
+    const scaledWidth = baseImageSize.width * currentScale;
+    const scaledHeight = baseImageSize.height * currentScale;
+    const excessWidth = Math.max(0, scaledWidth - frameDimensions.width);
+    const excessHeight = Math.max(0, scaledHeight - frameDimensions.height);
+    
+    const relativeX = excessWidth > 0 ? translateX.value / excessWidth : 0;
+    const relativeY = excessHeight > 0 ? translateY.value / excessHeight : 0;
+    
+    const adjustments = {
+      translateX: relativeX,
+      translateY: relativeY,
+      scale: currentScale,
+    };
+    
+    console.log('[CaptureScreen] Continue with adjustments:', adjustments);
+    
+    // Store for potential retry
+    pendingUploadRef.current = { uri: previewUri, adjustments };
+    
+    // Clear any previous error
+    setUploadError(null);
+    setIsUploading(true);
+    
+    try {
+      // Upload the image to Supabase immediately (cloud-first approach)
+      // This returns a durable Supabase URL instead of a fragile iOS temp file URI
+      const supabaseUrl = await uploadCapturedImage(previewUri, slot.layerId || 'slot');
       
-      const relativeX = excessWidth > 0 ? translateX.value / excessWidth : 0;
-      const relativeY = excessHeight > 0 ? translateY.value / excessHeight : 0;
+      if (!isMountedRef.current) return;
       
-      console.log('[CaptureScreen] Continue with adjustments:', {
-        scale: currentScale,
-        translateX: relativeX,
-        translateY: relativeY,
-      });
+      console.log('[CaptureScreen] Image uploaded successfully, continuing with Supabase URL');
       
+      // Call onContinue with the Supabase URL instead of local URI
       onContinue({
-        uri: previewUri,
+        uri: supabaseUrl,
         width: imageSize.width,
         height: imageSize.height,
-        adjustments: {
-          translateX: relativeX,
-          translateY: relativeY,
-          scale: currentScale,
-        },
+        adjustments,
       });
+    } catch (error) {
+      console.error('[CaptureScreen] Upload failed:', error);
+      if (isMountedRef.current) {
+        setUploadError(error instanceof Error ? error.message : 'Upload failed');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsUploading(false);
+      }
     }
-  }, [previewUri, imageSize, onContinue, baseImageSize, frameDimensions, scale, translateX, translateY]);
+  }, [previewUri, imageSize, onContinue, baseImageSize, frameDimensions, scale, translateX, translateY, slot]);
+
+  // Retry upload after failure
+  const handleRetryUpload = useCallback(async () => {
+    if (!pendingUploadRef.current || !slot) return;
+    
+    const { adjustments } = pendingUploadRef.current;
+    
+    setUploadError(null);
+    setIsUploading(true);
+    
+    try {
+      const supabaseUrl = await uploadCapturedImage(previewUri!, slot.layerId || 'slot');
+      
+      if (!isMountedRef.current) return;
+      
+      console.log('[CaptureScreen] Retry upload successful');
+      
+      onContinue({
+        uri: supabaseUrl,
+        width: imageSize.width,
+        height: imageSize.height,
+        adjustments,
+      });
+    } catch (error) {
+      console.error('[CaptureScreen] Retry upload failed:', error);
+      if (isMountedRef.current) {
+        setUploadError(error instanceof Error ? error.message : 'Upload failed');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsUploading(false);
+      }
+    }
+  }, [previewUri, imageSize, onContinue, slot]);
 
   const handleRetake = useCallback(() => {
     setPreviewUri(null);
@@ -403,6 +478,25 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
 
   const toggleCameraFacing = useCallback(() => {
     setCameraFacing(prev => prev === 'back' ? 'front' : 'back');
+  }, []);
+
+  // Open AI Studio
+  const handleOpenAIStudio = useCallback(() => {
+    aiStudioSheetRef.current?.expand();
+  }, []);
+
+  // Apply AI enhanced image
+  const handleAIApply = useCallback((enhancedUri: string) => {
+    console.log('[CaptureScreen] AI enhancement applied:', enhancedUri);
+    setAiEnhancedUri(enhancedUri);
+    // Update previewUri to show the enhanced version
+    setPreviewUri(enhancedUri);
+  }, []);
+
+  // Skip AI enhancement
+  const handleAISkip = useCallback(() => {
+    console.log('[CaptureScreen] AI enhancement skipped');
+    // Continue with the original image
   }, []);
 
   // Permission not yet determined
@@ -492,9 +586,10 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
           {previewUri ? (
-            <View style={styles.dimensionBadge}>
-              <Text style={styles.dimensionText}>{imageSize.width}x{imageSize.height}</Text>
-            </View>
+            <TouchableOpacity style={styles.headerAIButton} onPress={handleOpenAIStudio}>
+              <Sparkles size={18} color={Colors.light.accent} />
+              <Text style={styles.headerAIText}>AI</Text>
+            </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.headerFlashButton} onPress={toggleFlash}>
               {flashEnabled ? (
@@ -512,17 +607,67 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         {/* Bottom Controls */}
         {previewUri ? (
           <View style={styles.previewActionsContainer}>
-            <Text style={styles.adjustmentInstructions}>
-              Pinch to zoom • Drag to position
-            </Text>
-            <View style={styles.previewActions}>
-              <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
-                <Text style={styles.retakeText}>Retake</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
-                <Text style={styles.continueText}>Continue</Text>
-              </TouchableOpacity>
-            </View>
+            {uploadError ? (
+              // Upload error state with retry option
+              <View style={styles.uploadErrorContainer}>
+                <Text style={styles.uploadErrorText}>Upload failed</Text>
+                <Text style={styles.uploadErrorDetail}>{uploadError}</Text>
+                <View style={styles.previewActions}>
+                  <TouchableOpacity style={styles.retakeButton} onPress={handleRetake}>
+                    <Text style={styles.retakeText}>Retake</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.retryButton} 
+                    onPress={handleRetryUpload}
+                    disabled={isUploading}
+                  >
+                    <RefreshCw size={18} color={Colors.light.text} style={{ marginRight: 6 }} />
+                    <Text style={styles.continueText}>Retry</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              // Normal preview state - AI-first layout
+              <>
+                <Text style={styles.adjustmentInstructions}>
+                  Pinch to zoom • Drag to position
+                </Text>
+                
+                {/* AI Enhancement Button - Primary Action */}
+                <TouchableOpacity 
+                  style={[styles.aiEnhanceButton, isUploading && styles.buttonDisabled]}
+                  onPress={handleOpenAIStudio}
+                  disabled={isUploading}
+                  activeOpacity={0.8}
+                >
+                  <Sparkles size={20} color="#FFFFFF" />
+                  <Text style={styles.aiEnhanceText}>Enhance with AI</Text>
+                </TouchableOpacity>
+                
+                {/* Secondary Actions Row */}
+                <View style={styles.secondaryActionsRow}>
+                  <TouchableOpacity 
+                    style={styles.secondaryAction} 
+                    onPress={handleRetake}
+                    disabled={isUploading}
+                  >
+                    <Text style={styles.secondaryActionText}>Retake</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.secondaryAction} 
+                    onPress={handleContinue}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? (
+                      <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
+                    ) : (
+                      <Text style={styles.secondaryActionText}>Continue</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         ) : (
           <View style={styles.captureControls}>
@@ -547,6 +692,18 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
           <ActivityIndicator size="large" color={Colors.light.accent} />
           <Text style={styles.processingText}>Processing image...</Text>
         </View>
+      )}
+
+      {/* AI Studio Sheet */}
+      {previewUri && (
+        <AIStudioSheet
+          bottomSheetRef={aiStudioSheetRef}
+          imageUri={aiEnhancedUri || previewUri}
+          imageSize={imageSize}
+          isPremium={isPremium}
+          onApply={handleAIApply}
+          onSkip={handleAISkip}
+        />
       )}
     </View>
   );
@@ -607,16 +764,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dimensionBadge: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  headerAIButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(201, 168, 124, 0.25)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.light.accent,
   },
-  dimensionText: {
-    color: Colors.light.surface,
-    fontSize: 12,
-    fontWeight: '600',
+  headerAIText: {
+    color: Colors.light.accent,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 4,
   },
   captureControls: {
     flexDirection: 'row',
@@ -714,6 +876,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.light.text,
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  uploadErrorContainer: {
+    paddingHorizontal: 20,
+  },
+  uploadErrorText: {
+    textAlign: 'center',
+    color: '#ff6b6b',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  uploadErrorDetail: {
+    textAlign: 'center',
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  retryButton: {
+    flex: 1,
+    paddingVertical: 16,
+    backgroundColor: Colors.light.surface,
+    borderRadius: 14,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
   processingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10, // Highest z-index for processing overlay
@@ -748,6 +938,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
+  },
+  // AI-first layout styles
+  aiEnhanceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.accent,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 30,
+    marginHorizontal: 24,
+    marginBottom: 12,
+    shadowColor: Colors.light.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  aiEnhanceText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 32,
+    marginTop: 4,
+  },
+  secondaryAction: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  secondaryActionText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
 });
 

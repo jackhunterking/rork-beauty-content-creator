@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { deleteDraft as deleteDraftService, saveDraftWithImages, duplicateDraft as duplicateDraftService, renameDraft as renameDraftService } from '@/services/draftService';
@@ -12,6 +12,7 @@ import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { getDefaultFormat } from '@/constants/formats';
+import { cleanupCapturedImages, getCurrentSessionId, resetSession, generateSessionId } from '@/services/tempUploadService';
 
 const STORAGE_KEYS = {
   LEGACY_PORTFOLIO: 'resulta_work',
@@ -210,6 +211,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath,
       projectName,
       backgroundOverrides,
+      capturedImageAdjustments,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -221,6 +223,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath?: string | null;
       projectName?: string | null;
       backgroundOverrides?: Record<string, string> | null;
+      capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -232,7 +235,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         wasRenderedAsPremium,
         localPreviewPath,
         projectName,
-        backgroundOverrides
+        backgroundOverrides,
+        capturedImageAdjustments
       );
     },
     onSuccess: (savedDraft) => {
@@ -347,6 +351,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setSlotStatesMap(initialSlotStates);
     setComposedPreviewUri(null);
     
+    // Generate a new upload session for this project
+    // This groups all captured images for cleanup if the project is discarded
+    const sessionId = generateSessionId();
+    console.log('[AppContext] Starting new project with upload session:', sessionId);
+    
     setCurrentProject(prev => ({ 
       ...prev, 
       template,
@@ -438,7 +447,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, [setCapturedImage]);
 
-  const resetProject = useCallback(() => {
+  const resetProject = useCallback((wasSaved: boolean = false) => {
+    // If project was NOT saved, cleanup any temp-uploads from this session
+    // This prevents orphaned files in Supabase storage
+    if (!wasSaved) {
+      const sessionId = getCurrentSessionId();
+      if (sessionId) {
+        console.log('[AppContext] Cleaning up temp uploads for discarded project, session:', sessionId);
+        // Fire and forget - don't block the reset
+        cleanupCapturedImages(sessionId).catch(err => {
+          console.warn('[AppContext] Failed to cleanup temp uploads:', err);
+        });
+      }
+    } else {
+      // Project was saved - just reset the session without cleanup
+      // (temp files become permanent draft images)
+      resetSession();
+    }
+    
     setCurrentProject({
       contentType: 'single',
       template: null,
@@ -458,6 +484,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Load a draft into the current project
   const loadDraft = useCallback((draft: Draft, template: Template) => {
+    console.log('[AppContext] Loading draft:', draft.id, 'with adjustments:', draft.capturedImageAdjustments);
     const slots = extractSlots(template);
     
     const capturedImages: CapturedImages = {};
@@ -492,16 +519,17 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Step 2: Load from capturedImageUrls (overrides legacy fields for newer drafts)
     // This ensures the most recent saved data takes precedence
-    // BUG: Adjustments are NOT stored in the database, so they're lost when loading!
     if (draft.capturedImageUrls) {
       for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
         const slot = slots.find(s => s.layerId === layerId);
         if (slot && url) {
+          // Also restore adjustments if they were saved
+          const adjustments = draft.capturedImageAdjustments?.[layerId];
           capturedImages[layerId] = {
             uri: url,
             width: slot.width,
             height: slot.height,
-            // MISSING: No adjustments loaded! They were never saved.
+            adjustments: adjustments || undefined,
           };
           slotStates[layerId] = { state: 'ready' };
         }

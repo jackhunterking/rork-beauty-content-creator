@@ -5,19 +5,33 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
  * Generate Frame Overlay Edge Function
  * 
  * Generates a transparent PNG frame overlay for a template by:
- * 1. Calling Templated.io with transparent=true and hiding slot + theme layers
- * 2. Extracting theme layer geometries for client-side rendering
+ * 1. Calling Templated.io with transparent=true
+ * 2. Extracting ALL shape/text/vector layers for client-side rendering with z-index
  * 3. Uploading the result to Supabase Storage
  * 4. Updating the template's frame_overlay_url and theme_layers
  * 
  * This enables client-side compositing for:
  * - Instant background color changes without API calls
  * - Theme color customization (layers prefixed with 'theme-')
+ * - Correct z-index layering between photos and other elements
  * 
- * Layer Naming Convention:
- * - 'slot-*': Photo placeholder layers (hidden, photos rendered by app)
- * - 'theme-*': Theme-colored layers (hidden, colored shapes rendered by app)
- * - Other layers: Rendered normally in frame overlay
+ * ============================================================
+ * LAYER NAMING CONVENTION (Only TWO patterns matter!)
+ * ============================================================
+ * 
+ * 1. 'slot-*': Photo placeholder (hidden, app renders user photo)
+ *    Examples: slot-before, slot-after-image
+ * 
+ * 2. 'theme-*': Color customizable (extracted, theme color applied)
+ *    Examples: theme-before-label, theme-arrow-circle
+ * 
+ * All other layers are handled automatically by TYPE:
+ * - shape/text/vector → Extracted with original colors + z-index
+ * - image → Stays in frame overlay PNG (blur shadows, etc.)
+ * 
+ * NO hardcoded layer names! Any shape/text/vector layer automatically
+ * gets correct z-index without special naming conventions.
+ * ============================================================
  */
 
 const corsHeaders = {
@@ -45,10 +59,18 @@ interface ThemeLayerGeometry {
   rotation?: number;
   // Opacity from 0.0 to 1.0 (preserves original layer opacity from Templated.io)
   opacity?: number;
+  // Fill color from Templated.io (can include RGBA with embedded opacity)
+  fill?: string;
+  // Stroke/border color
+  stroke?: string;
+  // Stroke width for borders
+  strokeWidth?: number;
   // Discriminator for layer type
   type: 'shape' | 'text';
   // Shape-specific properties
   borderRadius?: number;
+  // Shape variant (rectangle, ellipse, circle, custom)
+  shapeType?: 'rectangle' | 'ellipse' | 'circle' | 'custom';
   // Text-specific properties
   text?: string;
   fontFamily?: string;
@@ -57,6 +79,27 @@ interface ThemeLayerGeometry {
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'center' | 'bottom';
   letterSpacing?: number;
+  // Text color (separate from fill for text layers)
+  color?: string;
+}
+
+// Vector layer geometry - for rendering icons/shapes with SVG
+interface VectorLayerGeometry {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+  opacity?: number;
+  // SVG viewBox (e.g., "0 0 448 512")
+  viewBox: string;
+  // SVG path 'd' attribute
+  pathData: string;
+  // Fill color (hex or rgb format)
+  fill: string;
+  // Whether this vector should change with theme color
+  isThemed?: boolean;
 }
 
 interface TemplatedLayer {
@@ -70,6 +113,14 @@ interface TemplatedLayer {
   border_radius?: number;
   // Opacity from Templated.io (0.0 to 1.0, or null if not set)
   opacity?: number | null;
+  // Fill color - can be hex, rgb(), or rgba() format
+  fill?: string | null;
+  // Stroke/border color
+  stroke?: string | null;
+  // Color property (used for text color)
+  color?: string | null;
+  // HTML SVG content (contains border radius, shape type info)
+  html?: string | null;
   // Text layer properties from Templated.io
   text?: string;
   font_family?: string;
@@ -152,11 +203,13 @@ Deno.serve(async (req: Request) => {
     console.log(`[generate-frame-overlay] Processing template: ${templateId}, templated: ${templatedId}`);
     console.log(`[generate-frame-overlay] Layers from database: ${layersJson.length}`);
     
-    // IMPORTANT: Fetch template info from Templated.io to get ALL layers
-    // This ensures we can hide background layers even if they're not in our database
+    // IMPORTANT: Fetch layers directly from Templated.io /layers endpoint to get ALL layers with CURRENT names
+    // This ensures we always use the latest layer names from Templated.io, not stale database data
+    // MUST use /layers endpoint (not /template/{id}) to get fresh layer data with all properties
+    // Include locked layers to ensure we get everything
     try {
-      const templateInfoUrl = `https://api.templated.io/v1/template/${templatedId}`;
-      console.log(`[generate-frame-overlay] Fetching template info from Templated.io: ${templateInfoUrl}`);
+      const templateInfoUrl = `https://api.templated.io/v1/template/${templatedId}/layers?includeLockedLayers=true&_t=${Date.now()}`;
+      console.log(`[generate-frame-overlay] Fetching layers from Templated.io /layers endpoint: ${templateInfoUrl}`);
       
       const templateInfoResponse = await fetch(templateInfoUrl, {
         method: 'GET',
@@ -168,16 +221,46 @@ Deno.serve(async (req: Request) => {
       
       if (templateInfoResponse.ok) {
         const templateInfo = await templateInfoResponse.json();
-        if (templateInfo.layers && Array.isArray(templateInfo.layers)) {
-          console.log(`[generate-frame-overlay] Got ${templateInfo.layers.length} layers from Templated.io`);
+        
+        // /layers endpoint may return layers directly as array or nested inside object
+        let freshLayers: TemplatedLayer[] = [];
+        if (Array.isArray(templateInfo)) {
+          // Direct array response
+          freshLayers = templateInfo;
+        } else if (templateInfo.layers && Array.isArray(templateInfo.layers)) {
+          // Nested in "layers" property
+          freshLayers = templateInfo.layers;
+        }
+        
+        if (freshLayers.length > 0) {
+          console.log(`[generate-frame-overlay] Got ${freshLayers.length} fresh layers from Templated.io /layers endpoint`);
+          console.log(`[generate-frame-overlay] Layer names from API: ${freshLayers.map((l: TemplatedLayer) => l.layer).join(', ')}`);
+          
+          // Log specific properties for debugging
+          const slotLayers = freshLayers.filter(l => l.layer.toLowerCase().includes('slot'));
+          const themeLayers = freshLayers.filter(l => l.layer.toLowerCase().startsWith('theme-'));
+          console.log(`[generate-frame-overlay] Detected ${slotLayers.length} slot layers: ${slotLayers.map(l => l.layer).join(', ')}`);
+          console.log(`[generate-frame-overlay] Detected ${themeLayers.length} theme layers`);
+          
+          // Log opacity values for theme layers
+          themeLayers.forEach(l => {
+            console.log(`[generate-frame-overlay]   ${l.layer}: fill=${l.fill}, opacity=${l.opacity}`);
+          });
+          
+          // IMPORTANT: Use fresh layers from Templated.io API instead of potentially stale database data
+          // This ensures renamed layers (e.g., "before-image" → "slot-before-image") are detected correctly
+          // AND ensures opacity property is correctly captured (not just RGBA embedded opacity)
+          layersJson = freshLayers;
+          console.log(`[generate-frame-overlay] Using ${layersJson.length} fresh layers from Templated.io API`);
           
           // Get canvas dimensions for detecting full-canvas background layers
-          const canvasWidth = templateInfo.width || 1080;
-          const canvasHeight = templateInfo.height || 1350;
+          // Note: /layers endpoint doesn't return canvas dimensions, use defaults or fetch from main endpoint
+          const canvasWidth = 1080;
+          const canvasHeight = 1920;
           console.log(`[generate-frame-overlay] Canvas dimensions: ${canvasWidth}x${canvasHeight}`);
           
           // Identify layers that are likely backgrounds (cover entire canvas)
-          const bgFromTemplated = templateInfo.layers.filter((l: TemplatedLayer) => {
+          const bgFromTemplated = freshLayers.filter((l: TemplatedLayer) => {
             const isFullCanvas = l.x <= 0 && l.y <= 0 && 
               l.width >= canvasWidth * 0.95 && 
               l.height >= canvasHeight * 0.95;
@@ -191,11 +274,11 @@ Deno.serve(async (req: Request) => {
             console.log(`[generate-frame-overlay] Detected ${bgFromTemplated.length} full-canvas background layers:`, 
               bgFromTemplated.map((l: TemplatedLayer) => l.layer).join(', '));
             
-            // Merge with our layers - add any background layers not in our database
+            // Mark auto-detected background layers
             bgFromTemplated.forEach((bgLayer: TemplatedLayer) => {
-              if (!layersJson.find(l => l.layer === bgLayer.layer)) {
-                layersJson.push({ ...bgLayer, _autoDetectedBg: true } as TemplatedLayer);
-                console.log(`[generate-frame-overlay] Added auto-detected bg layer: ${bgLayer.layer}`);
+              const idx = layersJson.findIndex(l => l.layer === bgLayer.layer);
+              if (idx >= 0) {
+                (layersJson[idx] as TemplatedLayer & { _autoDetectedBg?: boolean })._autoDetectedBg = true;
               }
             });
           }
@@ -210,34 +293,63 @@ Deno.serve(async (req: Request) => {
     console.log(`[generate-frame-overlay] Total layers after merge: ${layersJson.length}`);
 
     // Categorize layers by naming convention
-    const slotLayers: TemplatedLayer[] = [];
-    const themeLayers: TemplatedLayer[] = [];
-    const otherLayers: TemplatedLayer[] = [];
+    // IMPORTANT: Preserve original index for z-order (higher index = in front)
+    type LayerWithIndex = TemplatedLayer & { _originalIndex: number };
+    
+    const slotLayers: LayerWithIndex[] = [];
+    const themeLayers: LayerWithIndex[] = [];
+    const vectorLayers: LayerWithIndex[] = [];
+    const otherLayers: LayerWithIndex[] = [];
 
     // Background layers to hide (for transparent background support)
-    const bgLayers: TemplatedLayer[] = [];
+    const bgLayers: LayerWithIndex[] = [];
     
-    for (const layer of layersJson) {
+    for (let i = 0; i < layersJson.length; i++) {
+      const layer = layersJson[i];
+      const layerWithIndex: LayerWithIndex = { ...layer, _originalIndex: i };
       const layerName = (layer.layer || '').toLowerCase();
       const isAutoDetectedBg = (layer as TemplatedLayer & { _autoDetectedBg?: boolean })._autoDetectedBg;
       
-      if (isAutoDetectedBg) {
-        // Auto-detected background layer from Templated.io
-        bgLayers.push(layer);
-      } else if (layerName.includes('slot')) {
-        // Slot layers: photo placeholders (hidden, photos rendered by app)
-        slotLayers.push(layer);
-      } else if (layerName.includes('theme-')) {
-        // Theme layers: customizable colored shapes (hidden, rendered by app)
-        themeLayers.push(layer);
-      } else if (layerName.includes('bg-') || layerName.includes('background')) {
+      // ========================================================
+      // LAYER CATEGORIZATION - TYPE-BASED (NO HARDCODED NAMES)
+      // ========================================================
+      // Only TWO naming conventions matter:
+      //   1. 'slot-*' → Photo placeholder (hidden, app renders user photo)
+      //   2. 'theme-*' → Color customizable (extracted, theme color applied)
+      // All other shape/text/vector layers → Extracted with original colors + z-index
+      // Image layers → Stay in frame overlay (blur shadows, etc.)
+      // ========================================================
+      
+      if (isAutoDetectedBg || layerName.startsWith('bg-') || 
+          layerName.startsWith('background-') || layerName === 'background') {
         // Background layers: hidden to allow dynamic background colors
-        bgLayers.push(layer);
-      } else {
-        // Other layers: rendered normally in frame overlay
-        otherLayers.push(layer);
+        bgLayers.push(layerWithIndex);
+      } 
+      else if (layerName.includes('slot')) {
+        // Slot layers: photo placeholders (hidden, app renders user photos)
+        slotLayers.push(layerWithIndex);
+      } 
+      else if (layerName.startsWith('theme-')) {
+        // Theme layers: color-customizable shapes/text (theme color applied)
+        themeLayers.push(layerWithIndex);
+      } 
+      else if (layer.type === 'shape' || layer.type === 'text' || layer.type === 'vector') {
+        // ALL shape/text/vector layers get extracted for z-index control
+        // These keep their original colors and respect layer order
+        // This automatically handles: card backgrounds, decorations, icons, labels, etc.
+        themeLayers.push(layerWithIndex);
+      } 
+      else {
+        // Only image-type layers (blur shadows with S3 URLs) stay in frame overlay
+        // These are baked into the PNG at z=0
+        otherLayers.push(layerWithIndex);
       }
     }
+    
+    console.log(`[generate-frame-overlay] Layer z-indices:`);
+    console.log(`  - Slot layers: ${slotLayers.map(l => `${l.layer}@z${l._originalIndex + 1}`).join(', ')}`);
+    console.log(`  - Theme layers: ${themeLayers.map(l => `${l.layer}@z${l._originalIndex + 1}`).join(', ')}`);
+    console.log(`  - Vector layers: ${vectorLayers.map(l => `${l.layer}@z${l._originalIndex + 1}`).join(', ')}`);
 
     // Count text vs shape theme layers
     const textThemeLayers = themeLayers.filter(l => l.type === 'text');
@@ -248,8 +360,9 @@ Deno.serve(async (req: Request) => {
     console.log(`  - Theme layers (hidden, rendered by app): ${themeLayers.length}`);
     console.log(`    - Text layers: ${textThemeLayers.length} - ${textThemeLayers.map(l => l.layer).join(', ')}`);
     console.log(`    - Shape layers: ${shapeThemeLayers.length} - ${shapeThemeLayers.map(l => l.layer).join(', ')}`);
+    console.log(`  - Vector layers (extracted, rendered by app): ${vectorLayers.length} - ${vectorLayers.map(l => l.layer).join(', ')}`);
     console.log(`  - Background layers (hidden, transparent): ${bgLayers.length} - ${bgLayers.map(l => l.layer).join(', ')}`);
-    console.log(`  - Other layers (in overlay): ${otherLayers.length} - ${otherLayers.map(l => l.layer).join(', ')}`);
+    console.log(`  - Other layers (in overlay, includes card frames): ${otherLayers.length} - ${otherLayers.map(l => l.layer).join(', ')}`);
 
     // Helper function to parse font size from "58px" format to number
     const parseFontSize = (fontSize: string | undefined): number => {
@@ -264,25 +377,128 @@ Deno.serve(async (req: Request) => {
       const match = spacing.match(/(-?\d+(?:\.\d+)?)/);
       return match ? parseFloat(match[1]) : undefined;
     };
+    
+    /**
+     * Parse RGBA color string and extract opacity
+     * Returns { color: normalized hex/rgb, opacity: 0-1 }
+     * Handles: rgba(r,g,b,a), rgb(r,g,b), #hex
+     */
+    const parseColorAndOpacity = (colorStr: string | null | undefined): { color: string | null; opacity: number } => {
+      if (!colorStr) return { color: null, opacity: 1.0 };
+      
+      // Check for rgba format: rgba(48,48,48,0.08)
+      const rgbaMatch = colorStr.match(/rgba\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/i);
+      if (rgbaMatch) {
+        const [, r, g, b, a] = rgbaMatch;
+        const opacity = parseFloat(a);
+        // Convert to hex for easier handling
+        const hex = `#${parseInt(r).toString(16).padStart(2, '0')}${parseInt(g).toString(16).padStart(2, '0')}${parseInt(b).toString(16).padStart(2, '0')}`;
+        return { color: hex.toUpperCase(), opacity };
+      }
+      
+      // Check for rgb format: rgb(48, 48, 48)
+      const rgbMatch = colorStr.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+      if (rgbMatch) {
+        const [, r, g, b] = rgbMatch;
+        const hex = `#${parseInt(r).toString(16).padStart(2, '0')}${parseInt(g).toString(16).padStart(2, '0')}${parseInt(b).toString(16).padStart(2, '0')}`;
+        return { color: hex.toUpperCase(), opacity: 1.0 };
+      }
+      
+      // Already hex or other format
+      return { color: colorStr, opacity: 1.0 };
+    };
+    
+    /**
+     * Extract border radius from HTML SVG content
+     * Looks for rx="X" ry="Y" attributes in rect elements
+     */
+    const extractBorderRadiusFromHtml = (html: string | null | undefined): number => {
+      if (!html) return 0;
+      
+      // Look for rx="18" or ry="18" pattern in SVG rect
+      const rxMatch = html.match(/rx\s*=\s*["'](\d+(?:\.\d+)?)["']/i);
+      if (rxMatch) {
+        return parseFloat(rxMatch[1]);
+      }
+      
+      return 0;
+    };
+    
+    /**
+     * Detect shape type from HTML SVG content
+     * Returns: 'rectangle' | 'ellipse' | 'circle' | 'custom'
+     */
+    const detectShapeTypeFromHtml = (html: string | null | undefined): 'rectangle' | 'ellipse' | 'circle' | 'custom' => {
+      if (!html) return 'rectangle';
+      
+      if (html.includes('<ellipse')) {
+        // Check if it's a circle (rx == ry or equal width/height)
+        const rxMatch = html.match(/rx\s*=\s*["'](\d+(?:\.\d+)?)["']/i);
+        const ryMatch = html.match(/ry\s*=\s*["'](\d+(?:\.\d+)?)["']/i);
+        if (rxMatch && ryMatch && rxMatch[1] === ryMatch[1]) {
+          return 'circle';
+        }
+        return 'ellipse';
+      }
+      
+      if (html.includes('<rect')) {
+        return 'rectangle';
+      }
+      
+      if (html.includes('<path')) {
+        return 'custom';
+      }
+      
+      return 'rectangle';
+    };
 
     // Extract theme layer geometries for client-side rendering
-    // Now supports both shape (rectangles) and text layers
+    // Now supports both shape (rectangles) and text layers with full styling
     const themeLayerGeometries: ThemeLayerGeometry[] = themeLayers.map(layer => {
+      // Parse fill color - may contain embedded opacity (e.g., rgba(48,48,48,0.08))
+      const fillParsed = parseColorAndOpacity(layer.fill);
+      const strokeParsed = parseColorAndOpacity(layer.stroke);
+      
+      // Extract border radius from HTML SVG if not directly specified
+      const borderRadiusFromHtml = extractBorderRadiusFromHtml(layer.html);
+      const borderRadius = layer.border_radius || borderRadiusFromHtml;
+      
+      // Detect shape type from SVG HTML
+      const shapeType = detectShapeTypeFromHtml(layer.html);
+      
+      // Determine final opacity:
+      // 1. Use explicit opacity property if set
+      // 2. Otherwise, use opacity from RGBA fill color
+      // 3. Default to 1.0
+      const finalOpacity = layer.opacity ?? fillParsed.opacity ?? 1.0;
+      
       // Base geometry shared by all layer types
-      // Opacity defaults to 1.0 (fully opaque) if not set in Templated.io
+      // zIndex is originalIndex + 1 (higher = in front, matching Templated.io layer order)
       const base = {
         id: layer.layer,
         x: layer.x || 0,
         y: layer.y || 0,
         width: layer.width || 0,
         height: layer.height || 0,
+        zIndex: (layer as LayerWithIndex)._originalIndex + 1,
         rotation: layer.rotation || 0,
-        opacity: layer.opacity ?? 1.0,
+        opacity: finalOpacity,
+        fill: fillParsed.color,
+        stroke: strokeParsed.color,
+        strokeWidth: layer.stroke ? 1 : undefined, // Default stroke width if stroke color exists
       };
       
       // Check if this is a text layer
       if (layer.type === 'text') {
-        console.log(`[generate-frame-overlay] Text layer found: ${layer.layer}, text: "${layer.text}", font: ${layer.font_family}, opacity: ${base.opacity}`);
+        // For text, parse color property separately (text color)
+        const textColorParsed = parseColorAndOpacity(layer.color);
+        
+        console.log(`[generate-frame-overlay] Text layer found: ${layer.layer}`);
+        console.log(`  - text: "${layer.text}"`);
+        console.log(`  - font: ${layer.font_family}, size: ${layer.font_size}, weight: ${layer.font_weight}`);
+        console.log(`  - color: ${layer.color} -> ${textColorParsed.color}`);
+        console.log(`  - opacity: ${finalOpacity}`);
+        
         return {
           ...base,
           type: 'text' as const,
@@ -293,19 +509,125 @@ Deno.serve(async (req: Request) => {
           horizontalAlign: (layer.horizontal_align as 'left' | 'center' | 'right') || 'center',
           verticalAlign: (layer.vertical_align as 'top' | 'center' | 'bottom') || 'center',
           letterSpacing: parseLetterSpacing(layer.letter_spacing),
+          color: textColorParsed.color, // Original text color
         };
       }
       
-      // Default to shape layer
-      console.log(`[generate-frame-overlay] Shape layer found: ${layer.layer}, opacity: ${base.opacity}`);
+      // Shape layer
+      console.log(`[generate-frame-overlay] Shape layer found: ${layer.layer}`);
+      console.log(`  - fill: ${layer.fill} -> color: ${fillParsed.color}, opacity: ${fillParsed.opacity}`);
+      console.log(`  - stroke: ${layer.stroke} -> ${strokeParsed.color}`);
+      console.log(`  - borderRadius: ${borderRadius} (from property: ${layer.border_radius}, from HTML: ${borderRadiusFromHtml})`);
+      console.log(`  - shapeType: ${shapeType}`);
+      console.log(`  - final opacity: ${finalOpacity}`);
+      
+      // For custom shapes (like heart-icon), extract SVG path data from HTML
+      // This allows rendering as SVG instead of simple rectangle
+      let viewBox: string | undefined;
+      let pathData: string | undefined;
+      
+      if (shapeType === 'custom' && layer.html) {
+        // Extract viewBox from SVG
+        const viewBoxMatch = layer.html.match(/viewBox\s*=\s*["']([^"']+)["']/i);
+        viewBox = viewBoxMatch ? viewBoxMatch[1] : undefined;
+        
+        // Extract path 'd' attribute from SVG
+        const pathMatch = layer.html.match(/<path[^>]*\sd\s*=\s*["']([^"']+)["']/i);
+        pathData = pathMatch ? pathMatch[1] : undefined;
+        
+        console.log(`  - custom shape SVG: viewBox=${viewBox}, pathData length=${pathData?.length || 0}`);
+      }
+      
       return {
         ...base,
         type: 'shape' as const,
-        borderRadius: layer.border_radius || 0,
+        borderRadius,
+        shapeType,
+        ...(viewBox && { viewBox }),
+        ...(pathData && { pathData }),
       };
     });
 
     console.log(`[generate-frame-overlay] Theme layer geometries:`, JSON.stringify(themeLayerGeometries, null, 2));
+
+    /**
+     * Extract SVG viewBox from HTML
+     * Returns the viewBox attribute value (e.g., "0 0 448 512")
+     */
+    const extractViewBox = (html: string | null | undefined): string => {
+      if (!html) return '0 0 24 24'; // Default viewBox
+      
+      const viewBoxMatch = html.match(/viewBox\s*=\s*["']([^"']+)["']/i);
+      return viewBoxMatch ? viewBoxMatch[1] : '0 0 24 24';
+    };
+
+    /**
+     * Extract SVG path 'd' attribute from HTML
+     * Returns the path data string
+     */
+    const extractPathData = (html: string | null | undefined): string => {
+      if (!html) return '';
+      
+      // Look for <path d="..." ...> pattern
+      const pathMatch = html.match(/<path[^>]*\sd\s*=\s*["']([^"']+)["']/i);
+      return pathMatch ? pathMatch[1] : '';
+    };
+
+    /**
+     * Extract fill color from SVG path or HTML
+     * Returns hex or rgb color string
+     */
+    const extractSvgFill = (html: string | null | undefined): string => {
+      if (!html) return '#FFFFFF'; // Default white
+      
+      // Look for fill="rgb(...)" or fill="#..."
+      const fillMatch = html.match(/fill\s*=\s*["']([^"']+)["']/i);
+      if (fillMatch) {
+        const fillValue = fillMatch[1];
+        // Convert rgb(r,g,b) to hex if needed
+        const rgbMatch = fillValue.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+        if (rgbMatch) {
+          const [, r, g, b] = rgbMatch;
+          return `#${parseInt(r).toString(16).padStart(2, '0')}${parseInt(g).toString(16).padStart(2, '0')}${parseInt(b).toString(16).padStart(2, '0')}`.toUpperCase();
+        }
+        return fillValue;
+      }
+      return '#FFFFFF';
+    };
+
+    // Extract vector layer geometries for client-side rendering with react-native-svg
+    const vectorLayerGeometries: VectorLayerGeometry[] = vectorLayers.map(layer => {
+      const viewBox = extractViewBox(layer.html);
+      const pathData = extractPathData(layer.html);
+      const fill = extractSvgFill(layer.html);
+      // zIndex is originalIndex + 1 (higher = in front)
+      const zIndex = (layer as LayerWithIndex)._originalIndex + 1;
+      
+      console.log(`[generate-frame-overlay] Vector layer found: ${layer.layer}`);
+      console.log(`  - position: (${layer.x}, ${layer.y}) size: ${layer.width}x${layer.height}`);
+      console.log(`  - rotation: ${layer.rotation ?? 0}°`);
+      console.log(`  - zIndex: ${zIndex}`);
+      console.log(`  - viewBox: ${viewBox}`);
+      console.log(`  - pathData length: ${pathData.length} chars`);
+      console.log(`  - fill: ${fill}`);
+      
+      return {
+        id: layer.layer,
+        x: layer.x || 0,
+        y: layer.y || 0,
+        width: layer.width || 0,
+        height: layer.height || 0,
+        zIndex,
+        rotation: layer.rotation || 0,
+        opacity: layer.opacity ?? 1.0,
+        viewBox,
+        pathData,
+        fill,
+        isThemed: false, // Vectors are not themed by default (white arrows stay white)
+      };
+    });
+
+    console.log(`[generate-frame-overlay] Vector layer geometries:`, JSON.stringify(vectorLayerGeometries, null, 2));
 
     // Build layers object - hide slot, theme, AND background layers
     const hiddenLayers: { [key: string]: { hide: boolean } } = {};
@@ -320,20 +642,32 @@ Deno.serve(async (req: Request) => {
       hiddenLayers[layer.layer] = { hide: true };
     });
     
+    // Hide vector layers (icons/arrows - rendered by app with react-native-svg)
+    vectorLayers.forEach((layer) => {
+      hiddenLayers[layer.layer] = { hide: true };
+    });
+    
     // Hide background layers (allows dynamic background color changes)
     bgLayers.forEach((layer) => {
       hiddenLayers[layer.layer] = { hide: true };
     });
     
-    // IMPORTANT: Always hide common background layer names, even if not in layers_json
+    // NOTE: Card background layers (before-card-background, after-card-background-main) are NOT hidden
+    // They ARE the visual frame around photos and should remain visible in the overlay
+    
+    // IMPORTANT: Always hide common MAIN background layer names, even if not in layers_json
     // This handles templates where the background layer wasn't explicitly synced
+    // Only include names that are clearly main canvas backgrounds (not content cards)
     const commonBgLayerNames = [
+      // Exact matches for common background names
       'background', 'Background', 'BACKGROUND',
       'bg', 'BG', 'Bg',
+      // Prefix-based background names
       'bg-background', 'bg-main', 'bg-color', 'bg-fill',
-      'background_rectangle', 'background_color', 'background_fill',
-      'Rectangle', 'rectangle', // Often used for backgrounds
-      'canvas_background', 'main_background',
+      'background-main', 'background-color', 'background-fill',
+      // Canvas backgrounds
+      'canvas_background', 'canvas-background',
+      'main_background', 'main-background',
     ];
     
     commonBgLayerNames.forEach((name) => {
@@ -436,13 +770,16 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Update template with frame_overlay_url and theme_layers
-    console.log(`[generate-frame-overlay] Updating template ${templateId} with frame_overlay_url and theme_layers`);
+    // Update template with frame_overlay_url, theme_layers, vector_layers, and fresh layers_json
+    // The layers_json is updated to ensure layer names are synced from Templated.io
+    console.log(`[generate-frame-overlay] Updating template ${templateId} with frame_overlay_url, theme_layers, vector_layers, and fresh layers_json`);
     const { error: updateError } = await adminClient
       .from('templates')
       .update({
         frame_overlay_url: finalOverlayUrl,
         theme_layers: themeLayerGeometries,
+        vector_layers: vectorLayerGeometries,
+        layers_json: layersJson, // Update with fresh layer data from Templated.io API
         updated_at: new Date().toISOString()
       })
       .eq('id', templateId);
@@ -457,6 +794,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[generate-frame-overlay] Success! Template ${templateId} updated with ${source} URL`);
     console.log(`[generate-frame-overlay] Theme layers saved: ${themeLayerGeometries.length}`);
+    console.log(`[generate-frame-overlay] Vector layers saved: ${vectorLayerGeometries.length}`);
 
     return new Response(
       JSON.stringify({ 
@@ -468,6 +806,8 @@ Deno.serve(async (req: Request) => {
         templatedId,
         themeLayers: themeLayerGeometries,
         themeLayerCount: themeLayerGeometries.length,
+        vectorLayers: vectorLayerGeometries,
+        vectorLayerCount: vectorLayerGeometries.length,
         slotLayerCount: slotLayers.length,
         otherLayerCount: otherLayers.length
       }),

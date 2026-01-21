@@ -2,29 +2,34 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 
 /**
- * AI Enhance Edge Function
+ * AI Enhance Edge Function - Direct Fal.AI Integration
  * 
- * Routes AI image enhancement requests to individual N8N workflows.
- * Each feature has its own webhook URL for better concurrency handling.
+ * Submits AI image enhancement requests directly to Fal.AI queue API.
+ * Returns immediately with request_id for client-side polling.
  * 
  * Endpoints:
- * POST /ai-enhance - Process an image with AI enhancement
+ * POST /ai-enhance - Submit enhancement request
  * 
  * Request body:
  * {
  *   feature_key: 'auto_quality' | 'background_remove' | 'background_replace',
- *   image_url: string,  // URL of image to process
- *   draft_id?: string,  // Optional draft reference
- *   slot_id?: string,   // Optional slot reference
- *   preset_id?: string, // For background_replace: preset ID
- *   custom_prompt?: string, // For background_replace: custom prompt
- *   params?: object     // Optional parameter overrides
+ *   image_url: string,
+ *   draft_id?: string,
+ *   slot_id?: string,
+ *   preset_id?: string,
+ *   custom_prompt?: string,
+ *   model_type?: 'General' | 'Portrait' | 'Product',
+ *   params?: object
  * }
  * 
- * Architecture:
- * - Each feature has its own N8N workflow (stored in ai_model_config.endpoint_url)
- * - This prevents concurrent execution bottlenecks
- * - Allows granular control per feature
+ * Response:
+ * {
+ *   success: true,
+ *   generation_id: string,
+ *   request_id: string,
+ *   fal_model: string,
+ *   poll_url: string
+ * }
  */
 
 const corsHeaders = {
@@ -32,27 +37,52 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Fal.AI model configurations
+const FAL_MODELS = {
+  auto_quality: {
+    model: 'fal-ai/creative-upscaler',
+    defaultParams: {
+      scale: 2,
+      creativity: 0,
+      detail: 5,
+      shape_preservation: 3,
+      prompt_suffix: 'high quality, highly detailed, high resolution, sharp',
+      negative_prompt: 'blurry, low resolution, bad, ugly, low quality, pixelated, interpolated, compression artifacts, noisey, grainy',
+      guidance_scale: 7.5,
+      num_inference_steps: 20,
+    },
+    estimatedCostUsd: 0.015,
+  },
+  background_remove: {
+    model: 'fal-ai/birefnet/v2',
+    defaultParams: {
+      model: 'General',
+      operating_resolution: '1024x1024',
+      output_format: 'png',
+    },
+    estimatedCostUsd: 0.005,
+  },
+  background_replace: {
+    model: 'fal-ai/image-editing/background-change',
+    defaultParams: {
+      prompt: 'professional studio background, clean, neutral, soft lighting',
+      negative_prompt: 'distracting elements, patterns, text, low quality, blurry',
+      output_format: 'png',
+    },
+    estimatedCostUsd: 0.02,
+  },
+} as const;
+
 interface EnhanceRequest {
-  feature_key: string;
+  feature_key: keyof typeof FAL_MODELS;
   image_url: string;
   draft_id?: string;
   slot_id?: string;
   preset_id?: string;
   preset_name?: string;
   custom_prompt?: string;
+  model_type?: 'General' | 'Portrait' | 'Product';
   params?: Record<string, unknown>;
-}
-
-interface N8NResponse {
-  success: boolean;
-  output_url?: string;
-  error?: string;
-  error_code?: string;
-  processing_time_ms?: number;
-  estimated_cost_usd?: number;
-  generation_id?: string;
-  feature?: string;
-  model_id?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -83,6 +113,15 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const falApiKey = Deno.env.get('FAL_API_KEY');
+
+    if (!falApiKey) {
+      console.error('[ai-enhance] FAL_API_KEY not configured');
+      return new Response(
+        JSON.stringify({ error: 'AI service not configured' }),
+        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // User client for auth verification
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -103,7 +142,7 @@ Deno.serve(async (req: Request) => {
 
     // Parse request body
     const body: EnhanceRequest = await req.json();
-    const { feature_key, image_url, draft_id, slot_id, preset_id, preset_name, custom_prompt, params } = body;
+    const { feature_key, image_url, draft_id, slot_id, preset_id, preset_name, custom_prompt, model_type, params } = body;
 
     // Validate required fields
     if (!feature_key || !image_url) {
@@ -113,60 +152,46 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Validate feature key
+    if (!(feature_key in FAL_MODELS)) {
+      return new Response(
+        JSON.stringify({ error: `Unknown feature: ${feature_key}` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log(`[ai-enhance] Processing ${feature_key} for user ${user.id}`);
 
-    // Step 1: Get feature config (includes the individual N8N webhook URL)
-    const { data: config, error: configError } = await adminClient
+    const modelConfig = FAL_MODELS[feature_key];
+
+    // Get feature config from database (for premium check and cost tracking)
+    const { data: config } = await adminClient
       .from('ai_model_config')
       .select('*')
       .eq('feature_key', feature_key)
       .eq('is_enabled', true)
       .single();
 
-    if (configError || !config) {
-      return new Response(
-        JSON.stringify({ error: `Feature '${feature_key}' not found or disabled` }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Premium check (if feature requires premium)
+    if (config?.is_premium_only) {
+      const { data: profile } = await adminClient
+        .from('profiles')
+        .select('is_premium')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile?.is_premium) {
+        return new Response(
+          JSON.stringify({ error: 'Premium subscription required', code: 'PREMIUM_REQUIRED' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // Get the webhook URL for this specific feature
-    const webhookUrl = config.endpoint_url;
-    if (!webhookUrl) {
-      console.error(`[ai-enhance] No endpoint_url configured for feature: ${feature_key}`);
-      return new Response(
-        JSON.stringify({ error: `AI service not configured for ${feature_key}` }),
-        { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Step 2: Check if user has enough credits
-    const { data: credits, error: creditsError } = await adminClient
-      .rpc('check_and_reset_ai_credits', { p_user_id: user.id });
-
-    if (creditsError) {
-      console.error('[ai-enhance] Credits check error:', creditsError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to check credits' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!credits || credits.credits_remaining < config.cost_credits) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Insufficient credits',
-          credits_remaining: credits?.credits_remaining || 0,
-          credits_required: config.cost_credits
-        }),
-        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Step 3: Get background preset if needed
+    // Get background preset prompt if needed
     let promptToUse = custom_prompt;
-    let negativePrompt = config.default_params?.negative_prompt || '';
-    
+    let negativePrompt = modelConfig.defaultParams.negative_prompt || '';
+
     if (feature_key === 'background_replace' && preset_id && !custom_prompt) {
       const { data: preset, error: presetError } = await adminClient
         .from('background_presets')
@@ -186,18 +211,49 @@ Deno.serve(async (req: Request) => {
       negativePrompt = preset.negative_prompt || negativePrompt;
     }
 
-    // Step 4: Deduct credits (will be refunded on failure)
-    const { data: deductSuccess } = await adminClient
-      .rpc('deduct_ai_credits', { p_user_id: user.id, p_amount: config.cost_credits });
+    // Build Fal.AI request body based on feature
+    let falRequestBody: Record<string, unknown> = { image_url };
 
-    if (!deductSuccess) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to deduct credits' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    switch (feature_key) {
+      case 'auto_quality':
+        falRequestBody = {
+          image_url,
+          scale: params?.scale ?? modelConfig.defaultParams.scale,
+          creativity: params?.creativity ?? modelConfig.defaultParams.creativity,
+          detail: params?.detail ?? modelConfig.defaultParams.detail,
+          shape_preservation: params?.shape_preservation ?? modelConfig.defaultParams.shape_preservation,
+          prompt_suffix: params?.prompt_suffix ?? modelConfig.defaultParams.prompt_suffix,
+          negative_prompt: params?.negative_prompt ?? modelConfig.defaultParams.negative_prompt,
+          guidance_scale: params?.guidance_scale ?? modelConfig.defaultParams.guidance_scale,
+          num_inference_steps: params?.num_inference_steps ?? modelConfig.defaultParams.num_inference_steps,
+        };
+        break;
+
+      case 'background_remove':
+        falRequestBody = {
+          image_url,
+          model: model_type ?? params?.model ?? modelConfig.defaultParams.model,
+          operating_resolution: params?.operating_resolution ?? modelConfig.defaultParams.operating_resolution,
+          output_format: params?.output_format ?? modelConfig.defaultParams.output_format,
+        };
+        break;
+
+      case 'background_replace':
+        falRequestBody = {
+          image_url,
+          prompt: promptToUse ?? modelConfig.defaultParams.prompt,
+          negative_prompt: negativePrompt,
+          output_format: params?.output_format ?? modelConfig.defaultParams.output_format,
+        };
+        break;
     }
 
-    // Step 5: Create generation record
+    // Track credits for internal purposes (deduct from user's allocation)
+    const costCredits = config?.cost_credits || 1;
+    await adminClient.rpc('check_and_reset_ai_credits', { p_user_id: user.id });
+    await adminClient.rpc('deduct_ai_credits', { p_user_id: user.id, p_amount: costCredits });
+
+    // Create generation record
     const { data: generation, error: genError } = await adminClient
       .from('ai_generations')
       .insert({
@@ -205,13 +261,13 @@ Deno.serve(async (req: Request) => {
         draft_id: draft_id || null,
         slot_id: slot_id || null,
         feature_key: feature_key,
-        model_id: config.model_id,
-        provider: config.provider,
+        model_id: modelConfig.model,
+        provider: 'fal-ai',
         input_image_url: image_url,
-        input_params: { ...config.default_params, ...params, prompt: promptToUse, negative_prompt: negativePrompt },
+        input_params: falRequestBody,
         background_preset_id: preset_id || null,
         custom_prompt: custom_prompt || null,
-        credits_charged: config.cost_credits,
+        credits_charged: costCredits,
         status: 'processing'
       })
       .select()
@@ -219,7 +275,7 @@ Deno.serve(async (req: Request) => {
 
     if (genError || !generation) {
       // Refund credits on failure
-      await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: config.cost_credits });
+      await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: costCredits });
       console.error('[ai-enhance] Generation creation error:', genError);
       return new Response(
         JSON.stringify({ error: 'Failed to create generation record' }),
@@ -227,123 +283,73 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Step 6: Call feature-specific N8N webhook
-    const startTime = Date.now();
-    
-    try {
-      // Build payload for the individual N8N workflow
-      const n8nPayload = {
-        generation_id: generation.id,
-        image_url: image_url,
-        user_id: user.id,
-        preset_id: preset_id || null,
-        preset_name: preset_name || null,
-        params: {
-          ...config.default_params,
-          ...params,
-          prompt: promptToUse,
-          negative_prompt: negativePrompt,
-        },
-      };
+    // Submit to Fal.AI queue
+    const falQueueUrl = `https://queue.fal.run/${modelConfig.model}`;
+    console.log(`[ai-enhance] Submitting to Fal.AI: ${falQueueUrl}`);
 
-      console.log(`[ai-enhance] Calling ${feature_key} webhook: ${webhookUrl}`);
-      console.log(`[ai-enhance] Generation ID: ${generation.id}`);
-      
-      const n8nResponse = await fetch(webhookUrl, {
+    try {
+      const falResponse = await fetch(falQueueUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Key ${falApiKey}`,
         },
-        body: JSON.stringify(n8nPayload),
+        body: JSON.stringify(falRequestBody),
       });
 
-      if (!n8nResponse.ok) {
-        throw new Error(`N8N returned status ${n8nResponse.status}`);
+      if (!falResponse.ok) {
+        const errorText = await falResponse.text();
+        throw new Error(`Fal.AI error: ${falResponse.status} - ${errorText}`);
       }
 
-      const n8nResult: N8NResponse = await n8nResponse.json();
-      const processingTime = Date.now() - startTime;
+      const falResult = await falResponse.json();
+      const requestId = falResult.request_id;
 
-      if (!n8nResult.success || !n8nResult.output_url) {
-        // Refund credits on N8N failure
-        await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: config.cost_credits });
-        
-        // Update generation as failed
-        await adminClient
-          .from('ai_generations')
-          .update({
-            status: 'failed',
-            error_message: n8nResult.error || 'AI processing failed',
-            processing_time_ms: processingTime,
-            completed_at: new Date().toISOString()
-          })
-          .eq('id', generation.id);
-
-        return new Response(
-          JSON.stringify({ 
-            error: 'AI processing failed',
-            details: n8nResult.error,
-            generation_id: generation.id
-          }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      if (!requestId) {
+        throw new Error('No request_id returned from Fal.AI');
       }
 
-      // Step 7: Update generation as completed
+      // Update generation with request_id
       await adminClient
         .from('ai_generations')
-        .update({
-          status: 'completed',
-          output_image_url: n8nResult.output_url,
-          processing_time_ms: n8nResult.processing_time_ms || processingTime,
-          estimated_cost_usd: n8nResult.estimated_cost_usd,
-          completed_at: new Date().toISOString()
-        })
+        .update({ fal_request_id: requestId })
         .eq('id', generation.id);
 
-      // Get updated credits
-      const { data: updatedCredits } = await adminClient
-        .from('ai_credits')
-        .select('credits_remaining')
-        .eq('user_id', user.id)
-        .single();
+      console.log(`[ai-enhance] Queued successfully: generation=${generation.id}, request_id=${requestId}`);
 
-      console.log(`[ai-enhance] Success: generation ${generation.id} completed in ${processingTime}ms`);
-
+      // Return immediately for client-side polling
       return new Response(
         JSON.stringify({
           success: true,
           generation_id: generation.id,
-          output_url: n8nResult.output_url,
-          credits_charged: config.cost_credits,
-          credits_remaining: updatedCredits?.credits_remaining || 0,
-          processing_time_ms: processingTime
+          request_id: requestId,
+          fal_model: modelConfig.model,
+          poll_url: `https://queue.fal.run/${modelConfig.model}/requests/${requestId}`,
+          estimated_time_seconds: feature_key === 'auto_quality' ? 30 : 15,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
 
-    } catch (n8nError) {
-      const processingTime = Date.now() - startTime;
-      
-      // Refund credits on N8N error
-      await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: config.cost_credits });
+    } catch (falError) {
+      // Refund credits on Fal.AI error
+      await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: costCredits });
       
       // Update generation as failed
       await adminClient
         .from('ai_generations')
         .update({
           status: 'failed',
-          error_message: n8nError.message || 'N8N webhook error',
-          error_code: 'N8N_ERROR',
-          processing_time_ms: processingTime,
+          error_message: falError.message || 'Fal.AI submission failed',
+          error_code: 'FAL_SUBMIT_ERROR',
           completed_at: new Date().toISOString()
         })
         .eq('id', generation.id);
 
-      console.error('[ai-enhance] N8N error:', n8nError);
+      console.error('[ai-enhance] Fal.AI submission error:', falError);
       return new Response(
         JSON.stringify({ 
           error: 'AI service temporarily unavailable',
+          details: falError.message,
           generation_id: generation.id
         }),
         { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

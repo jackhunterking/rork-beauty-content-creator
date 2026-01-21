@@ -19,11 +19,18 @@ const TEMP_BUCKET_NAME = 'temp-uploads';
 // Session ID for grouping related uploads (for cleanup)
 let currentSessionId: string | null = null;
 
+// Track uploaded URLs for cleanup when project is discarded without saving
+// Maps session ID to array of public URLs uploaded in that session
+const sessionUploadedUrls: Map<string, string[]> = new Map();
+
 /**
  * Generate a unique session ID for grouping uploads
  */
 export function generateSessionId(): string {
   currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  // Initialize tracking for this session
+  sessionUploadedUrls.set(currentSessionId, []);
+  console.log('[TempUpload] Generated new session:', currentSessionId);
   return currentSessionId;
 }
 
@@ -38,10 +45,39 @@ export function getSessionId(): string {
 }
 
 /**
+ * Get the current session ID without generating a new one
+ * Returns null if no session exists
+ */
+export function getCurrentSessionId(): string | null {
+  return currentSessionId;
+}
+
+/**
  * Reset session ID (call after cleanup)
  */
 export function resetSession(): void {
+  if (currentSessionId) {
+    sessionUploadedUrls.delete(currentSessionId);
+  }
   currentSessionId = null;
+}
+
+/**
+ * Track an uploaded URL for potential cleanup
+ */
+function trackUploadedUrl(sessionId: string, publicUrl: string): void {
+  const urls = sessionUploadedUrls.get(sessionId) || [];
+  urls.push(publicUrl);
+  sessionUploadedUrls.set(sessionId, urls);
+}
+
+/**
+ * Get all URLs uploaded in a session (for cleanup)
+ */
+export function getSessionUploadedUrls(sessionId?: string): string[] {
+  const session = sessionId || currentSessionId;
+  if (!session) return [];
+  return sessionUploadedUrls.get(session) || [];
 }
 
 /**
@@ -109,6 +145,86 @@ export async function uploadTempImage(
     .from(TEMP_BUCKET_NAME)
     .getPublicUrl(data.path);
 
+  // Track the uploaded URL for cleanup
+  trackUploadedUrl(session, urlData.publicUrl);
+
+  return urlData.publicUrl;
+}
+
+/**
+ * Upload a captured image to Supabase temp storage immediately after capture
+ * 
+ * This is the cloud-first approach: upload immediately after camera capture
+ * to get a durable Supabase URL. This eliminates "file not found" errors
+ * caused by iOS deleting temporary camera files.
+ * 
+ * @param localUri - Local file URI from camera/image picker (file://)
+ * @param slotId - Slot identifier for organizing the upload
+ * @returns Public Supabase URL of the uploaded image
+ * @throws Error if upload fails
+ */
+export async function uploadCapturedImage(
+  localUri: string,
+  slotId: string
+): Promise<string> {
+  // Validate URI before processing
+  if (!localUri || typeof localUri !== 'string') {
+    throw new Error(`Invalid URI for slot ${slotId}: URI is ${typeof localUri}`);
+  }
+  
+  // If URI is already a Supabase/remote URL, return it directly
+  // This handles re-captures where we might already have a cloud URL
+  if (localUri.startsWith('http://') || localUri.startsWith('https://')) {
+    console.log(`[TempUpload] Image already uploaded for ${slotId}, using existing URL`);
+    return localUri;
+  }
+  
+  const startTime = Date.now();
+  console.log(`[TempUpload] Uploading captured image for slot ${slotId}...`);
+  
+  // Ensure we have a session for this capture
+  const session = getSessionId();
+  
+  // Normalize URI - ensure it has file:// prefix for expo-file-system
+  const normalizedUri = localUri.startsWith('file://') 
+    ? localUri 
+    : `file://${localUri}`;
+  
+  // Read file as base64
+  const file = new File(normalizedUri);
+  const base64Data = await file.base64();
+
+  // Generate unique filename: session/capture_slotId_timestamp.jpg
+  const timestamp = Date.now();
+  const filename = `${session}/capture_${slotId}_${timestamp}.jpg`;
+  
+  // Convert base64 to ArrayBuffer
+  const arrayBuffer = decode(base64Data);
+
+  // Upload to Supabase Storage
+  const { data, error } = await supabase.storage
+    .from(TEMP_BUCKET_NAME)
+    .upload(filename, arrayBuffer, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+
+  if (error) {
+    console.error('[TempUpload] Upload error:', error);
+    throw new Error(`Failed to upload captured image: ${error.message}`);
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from(TEMP_BUCKET_NAME)
+    .getPublicUrl(data.path);
+
+  const uploadTime = Date.now() - startTime;
+  console.log(`[TempUpload] Upload complete for ${slotId} in ${uploadTime}ms:`, urlData.publicUrl.substring(0, 80) + '...');
+  
+  // Track the uploaded URL for cleanup if project is discarded
+  trackUploadedUrl(session, urlData.publicUrl);
+
   return urlData.publicUrl;
 }
 
@@ -144,16 +260,18 @@ export async function uploadMultipleTempImages(
 
 /**
  * Clean up all temp files for a session
- * Call this after successful render
+ * Call this after successful render or when discarding a project
  * 
  * @param sessionId - Session ID to clean up (uses current if not provided)
  */
 export async function cleanupSession(sessionId?: string): Promise<void> {
   const session = sessionId || currentSessionId;
   if (!session) {
-    console.log('No session to clean up');
+    console.log('[TempUpload] No session to clean up');
     return;
   }
+
+  console.log(`[TempUpload] Cleaning up session: ${session}`);
 
   try {
     // List all files in the session folder
@@ -162,11 +280,17 @@ export async function cleanupSession(sessionId?: string): Promise<void> {
       .list(session);
 
     if (listError) {
-      console.error('Error listing session files:', listError);
+      console.error('[TempUpload] Error listing session files:', listError);
       return;
     }
 
     if (!files || files.length === 0) {
+      console.log('[TempUpload] No files to clean up in session');
+      // Still clean up the session tracking
+      sessionUploadedUrls.delete(session);
+      if (session === currentSessionId) {
+        currentSessionId = null;
+      }
       return;
     }
 
@@ -177,16 +301,47 @@ export async function cleanupSession(sessionId?: string): Promise<void> {
       .remove(filePaths);
 
     if (deleteError) {
-      console.error('Error deleting session files:', deleteError);
+      console.error('[TempUpload] Error deleting session files:', deleteError);
+    } else {
+      console.log(`[TempUpload] Deleted ${filePaths.length} files from session`);
     }
 
+    // Clean up session tracking
+    sessionUploadedUrls.delete(session);
+    
     // Reset current session if it matches
     if (session === currentSessionId) {
-      resetSession();
+      currentSessionId = null;
     }
   } catch (error) {
-    console.error('Cleanup error:', error);
+    console.error('[TempUpload] Cleanup error:', error);
   }
+}
+
+/**
+ * Clean up captured images when a project is discarded without saving
+ * This should be called when resetProject() is invoked in AppContext
+ * 
+ * @param sessionId - Optional session ID to clean up (uses current if not provided)
+ */
+export async function cleanupCapturedImages(sessionId?: string): Promise<void> {
+  const session = sessionId || currentSessionId;
+  if (!session) {
+    console.log('[TempUpload] No captured images to clean up (no session)');
+    return;
+  }
+
+  const urls = sessionUploadedUrls.get(session);
+  if (!urls || urls.length === 0) {
+    console.log('[TempUpload] No captured images tracked for cleanup');
+    resetSession();
+    return;
+  }
+
+  console.log(`[TempUpload] Cleaning up ${urls.length} captured images from discarded project`);
+  
+  // Clean up the entire session (more efficient than individual file deletion)
+  await cleanupSession(session);
 }
 
 /**

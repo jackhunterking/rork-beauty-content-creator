@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Type,
   Maximize2,
+  RotateCw,
   Circle,
   Sparkles,
   Check,
@@ -46,11 +47,13 @@ import {
   CaseSensitive,
   Calendar,
   Square,
+  Wand2,
+  Scissors,
+  ImagePlus,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
 import { COLOR_PRESETS, BACKGROUND_COLOR_PRESETS, BACKGROUND_CONSTRAINTS, FONT_OPTIONS, FontFamily, DATE_FORMAT_OPTIONS, DateFormat } from '@/types/overlays';
-import { AIFeatureMenu } from './AIFeatureMenu';
 import type { AIFeatureKey } from '@/types';
 
 /**
@@ -125,15 +128,127 @@ interface ContextBarAction {
   onPress: () => void;
   isPrimary?: boolean;
   expandable?: ExpandedOption;
+  isAI?: boolean; // New: marks this as an AI feature
 }
 
 interface ContextBarButtonProps {
   action: ContextBarAction;
 }
 
+/**
+ * AIBadge Component
+ * 
+ * Creates a badge effect where the icon is surrounded by a border,
+ * but the top-right corner has a notch where "AI" text sits.
+ * The design gives the appearance of a cutoff border with the AI label.
+ */
+function AIBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={aiBadgeStyles.container}>
+      {/* Border with notch cutout - using 4 border segments */}
+      <View style={aiBadgeStyles.borderContainer}>
+        {/* Top border - shorter to make room for AI label */}
+        <View style={aiBadgeStyles.borderTop} />
+        {/* Right border - shorter to make room for AI label */}
+        <View style={aiBadgeStyles.borderRight} />
+        {/* Bottom border - full width */}
+        <View style={aiBadgeStyles.borderBottom} />
+        {/* Left border - full height */}
+        <View style={aiBadgeStyles.borderLeft} />
+      </View>
+      
+      {/* AI label positioned in the cutoff area */}
+      <View style={aiBadgeStyles.aiLabelContainer}>
+        <Text style={aiBadgeStyles.aiLabel}>AI</Text>
+      </View>
+      
+      {/* Icon content */}
+      <View style={aiBadgeStyles.content}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+const aiBadgeStyles = StyleSheet.create({
+  container: {
+    width: 32,
+    height: 32,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4, // Extra space between icon and label
+  },
+  borderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  borderTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 12, // Leave space for AI label
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 6,
+  },
+  borderRight: {
+    position: 'absolute',
+    top: 10, // Start below AI label
+    right: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomRightRadius: 6,
+  },
+  borderBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+  },
+  borderLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+  },
+  aiLabelContainer: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    zIndex: 1,
+  },
+  aiLabel: {
+    fontSize: 7,
+    fontWeight: '700',
+    color: Colors.light.ai.primary,
+    letterSpacing: 0.2,
+  },
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 function ContextBarButton({ action }: ContextBarButtonProps) {
   const iconColor = action.isPrimary
     ? Colors.light.accent
+    : action.isAI
+    ? Colors.light.ai.primary
     : Colors.light.text;
 
   return (
@@ -142,7 +257,13 @@ function ContextBarButton({ action }: ContextBarButtonProps) {
       onPress={action.onPress}
       activeOpacity={0.7}
     >
-      <View style={styles.actionIconWrapper}>{action.icon(iconColor)}</View>
+      <View style={styles.actionIconWrapper}>
+        {action.isAI ? (
+          <AIBadge>{action.icon(iconColor)}</AIBadge>
+        ) : (
+          action.icon(iconColor)
+        )}
+      </View>
       <Text
         style={[
           styles.actionLabel,
@@ -336,6 +457,11 @@ export function ElementContextBar({
     }
   }, [colorPickerMode, onTextColor, onTextBackground]);
 
+  // Handle AI feature selection directly (for inline AI buttons)
+  const handleDirectAIFeature = useCallback((featureKey: AIFeatureKey) => {
+    onAIFeatureSelect?.(featureKey);
+  }, [onAIFeatureSelect]);
+
   // Get actions based on element type
   const getActions = (): ContextBarAction[] => {
     switch (elementType) {
@@ -343,22 +469,36 @@ export function ElementContextBar({
         return [
           {
             id: 'replace',
-            icon: (color) => <RefreshCw size={22} color={color} strokeWidth={1.8} />,
+            icon: (color) => <RefreshCw size={20} color={color} strokeWidth={1.8} />,
             label: 'Replace',
             onPress: onPhotoReplace || (() => {}),
           },
           {
-            id: 'resize',
-            icon: (color) => <Maximize2 size={22} color={color} strokeWidth={1.8} />,
-            label: 'Resize',
+            id: 'rotate',
+            icon: (color) => <RotateCw size={20} color={color} strokeWidth={1.8} />,
+            label: 'Rotate',
             onPress: onPhotoResize || (() => {}),
           },
           {
-            id: 'ai-studio',
-            icon: (color) => <Sparkles size={22} color={color} strokeWidth={1.8} />,
-            label: 'AI Studio',
-            onPress: () => handleToggleExpand('ai'),
-            expandable: 'ai',
+            id: 'ai-auto-quality',
+            icon: (color) => <Wand2 size={16} color={color} strokeWidth={1.8} />,
+            label: 'Auto-Quality',
+            onPress: () => handleDirectAIFeature('auto_quality'),
+            isAI: true,
+          },
+          {
+            id: 'ai-remove-bg',
+            icon: (color) => <Scissors size={16} color={color} strokeWidth={1.8} />,
+            label: 'Remove BG',
+            onPress: () => handleDirectAIFeature('background_remove'),
+            isAI: true,
+          },
+          {
+            id: 'ai-replace-bg',
+            icon: (color) => <ImagePlus size={16} color={color} strokeWidth={1.8} />,
+            label: 'Replace BG',
+            onPress: () => handleDirectAIFeature('background_replace'),
+            isAI: true,
           },
         ];
 
@@ -1064,22 +1204,7 @@ export function ElementContextBar({
       {elementType === 'background' && renderCanvasBackgroundPicker()}
       {/* Theme color picker (for 'theme' element type - shown always) */}
       {elementType === 'theme' && renderThemeColorPicker()}
-      {expandedOption === 'ai' && (
-        <AIFeatureMenu
-          isPremium={isPremium}
-          isProcessing={isAIProcessing}
-          processingType={aiProcessingType}
-          onSelectFeature={(featureKey) => {
-            onAIFeatureSelect?.(featureKey);
-            // Don't close for background_replace - it needs the bottom sheet
-            if (featureKey !== 'background_replace') {
-              setExpandedOption(null);
-            }
-          }}
-          onRequestPremium={onRequestPremium || (() => {})}
-          onClose={() => setExpandedOption(null)}
-        />
-      )}
+      {/* AI features are now inline buttons - no expandable menu needed */}
 
       {/* Main context bar */}
       <View style={styles.actionsContainer}>

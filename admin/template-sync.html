@@ -171,6 +171,25 @@
     <!-- Status Message -->
     <div id="statusMessage" class="hidden mt-6"></div>
 
+    <!-- Batch Thumbnail Regeneration -->
+    <div class="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <p class="font-medium text-gray-700 dark:text-gray-300 mb-3">🖼️ Batch Thumbnail Regeneration</p>
+      <p class="text-xs text-gray-500 mb-3">Regenerate thumbnails for all templates with their default background and theme colors.</p>
+      <button 
+        type="button" 
+        onclick="regenerateAllThumbnails()"
+        id="batchBtn"
+        class="w-full py-3 px-4 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium transition-all flex items-center justify-center gap-2"
+      >
+        <span id="batchBtnText">Regenerate All Thumbnails</span>
+        <svg id="batchSpinner" class="hidden animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </button>
+      <div id="batchStatus" class="hidden mt-3 text-sm"></div>
+    </div>
+
     <!-- Layer Naming Quick Reference (Collapsed) -->
     <details class="mt-6 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
       <summary class="font-medium text-gray-700 dark:text-gray-300 cursor-pointer">📋 Layer Naming Quick Reference</summary>
@@ -189,6 +208,7 @@
     const SUPABASE_URL = 'https://tmgjsrxdjbazrwvbdoed.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtZ2pzcnhkamJhenJ3dmJkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3NDE3MDcsImV4cCI6MjA4MzMxNzcwN30.krSbo9fqvKkbQrjFDnQo2s7JiaXwo1wydhvaontxtFE';
     const FRAME_OVERLAY_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-frame-overlay`;
+    const THUMBNAIL_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/generate-thumbnail`;
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -344,12 +364,12 @@
     }
 
     // Loading state
-    function setLoading(isLoading) {
+    function setLoading(isLoading, stage = 'Processing...') {
       const btn = document.getElementById('submitBtn');
       const btnText = document.getElementById('btnText');
       const btnSpinner = document.getElementById('btnSpinner');
       btn.disabled = isLoading;
-      btnText.textContent = isLoading ? 'Processing...' : (currentMode === 'new' ? 'Sync & Generate' : 'Update & Regenerate');
+      btnText.textContent = isLoading ? stage : (currentMode === 'new' ? 'Sync & Generate' : 'Update & Regenerate');
       btnSpinner.classList.toggle('hidden', !isLoading);
     }
 
@@ -383,7 +403,7 @@
         return;
       }
       
-      setLoading(true);
+      setLoading(true, 'Syncing template...');
       
       try {
         let templateId = selectedTemplateId;
@@ -430,6 +450,7 @@
           }
         } else {
           // Existing template: update in database
+          setLoading(true, 'Updating database...');
           const { error: updateError } = await supabaseClient
             .from('templates')
             .update({
@@ -448,6 +469,7 @@
         
         // Generate frame overlay (extracts theme layers + opacity)
         if (templateId) {
+          setLoading(true, 'Generating frame overlay...');
           const overlayResponse = await fetch(FRAME_OVERLAY_FUNCTION_URL, {
             method: 'POST',
             headers: {
@@ -466,6 +488,26 @@
             return;
           }
           
+          // Generate thumbnail with default colors baked in
+          setLoading(true, 'Generating thumbnail...');
+          const thumbnailResponse = await fetch(THUMBNAIL_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({ template_id: templateId })
+          });
+          
+          const thumbnailResult = await thumbnailResponse.json();
+          
+          let thumbnailMsg = '';
+          if (!thumbnailResponse.ok || !thumbnailResult.success) {
+            thumbnailMsg = ` Thumbnail generation failed: ${thumbnailResult.error || 'Unknown error'}.`;
+          } else {
+            thumbnailMsg = ' Thumbnail generated with default colors.';
+          }
+          
           // Success message with details
           const themeCount = overlayResult.themeLayerCount || 0;
           let msg = `Template "${name}" saved successfully!`;
@@ -473,8 +515,9 @@
             msg += ` ${themeCount} theme layer(s) detected with opacity preserved.`;
           }
           msg += ` Default BG: ${defaultBgColor}${defaultThemeColor ? `, Theme: ${defaultThemeColor}` : ''}.`;
+          msg += thumbnailMsg;
           
-          showStatus(msg, true, overlayResult);
+          showStatus(msg, true, { overlay: overlayResult, thumbnail: thumbnailResult });
           
           // Clear form for new template mode
           if (currentMode === 'new') {
@@ -498,6 +541,60 @@
         setLoading(false);
       }
     });
+
+    // Batch thumbnail regeneration
+    async function regenerateAllThumbnails() {
+      const btn = document.getElementById('batchBtn');
+      const btnText = document.getElementById('batchBtnText');
+      const spinner = document.getElementById('batchSpinner');
+      const status = document.getElementById('batchStatus');
+      
+      btn.disabled = true;
+      btnText.textContent = 'Regenerating...';
+      spinner.classList.remove('hidden');
+      status.classList.add('hidden');
+      
+      try {
+        const response = await fetch(THUMBNAIL_FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          },
+          body: JSON.stringify({ generate_all: true })
+        });
+        
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Batch regeneration failed');
+        }
+        
+        // Show results
+        const successCount = result.successCount || 0;
+        const failCount = result.failCount || 0;
+        const total = result.totalProcessed || 0;
+        
+        status.className = 'mt-3 text-sm p-3 rounded-lg ' + (failCount === 0 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300');
+        status.innerHTML = `
+          <p class="font-medium">✅ Batch complete!</p>
+          <p>Processed: ${total} templates</p>
+          <p>Success: ${successCount} | Failed: ${failCount}</p>
+          ${result.results ? `<details class="mt-2"><summary class="cursor-pointer text-xs">View details</summary><pre class="mt-1 text-xs overflow-auto p-2 bg-black/10 rounded max-h-40">${JSON.stringify(result.results, null, 2)}</pre></details>` : ''}
+        `;
+        status.classList.remove('hidden');
+        
+      } catch (error) {
+        console.error('Batch regeneration error:', error);
+        status.className = 'mt-3 text-sm p-3 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+        status.innerHTML = `<p class="font-medium">❌ Error</p><p>${error.message}</p>`;
+        status.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Regenerate All Thumbnails';
+        spinner.classList.add('hidden');
+      }
+    }
 
     // Dark mode detection
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {

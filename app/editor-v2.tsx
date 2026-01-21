@@ -49,7 +49,8 @@ import {
   TextEditToolbar,
 } from '@/components/editor-v2';
 import { BackgroundPresetPicker } from '@/components/editor-v2/BackgroundPresetPicker';
-import { enhanceImage } from '@/services/aiService';
+import { enhanceImageWithPolling, AIProcessingProgress, AIProcessingStatus } from '@/services/aiService';
+import { AIProcessingOverlay, AISuccessOverlay, AIErrorView } from '@/components/ai';
 import type { AIFeatureKey, BackgroundPreset } from '@/types';
 import {
   SelectionState,
@@ -111,10 +112,8 @@ export default function EditorV2Screen() {
   const isPreviewImageLoadedRef = useRef(false);
   const [isPreviewImageLoaded, setIsPreviewImageLoaded] = useState(false);
 
-  // Preview rendering state (like old editor)
-  const [renderedPreviewUri, setRenderedPreviewUri] = useState<string | null>(null);
-  const [isRendering, setIsRendering] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  // NOTE: Preview rendering state removed - photos now rendered client-side via LayeredCanvas
+  // Templated.io API only called on-demand when user taps Download
 
   // Editor state
   const [selection, setSelection] = useState<SelectionState>(DEFAULT_SELECTION);
@@ -123,6 +122,10 @@ export default function EditorV2Screen() {
   const [editingOverlayId, setEditingOverlayId] = useState<string | null>(null);
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [aiProcessingType, setAIProcessingType] = useState<AIFeatureKey | null>(null);
+  const [aiProgress, setAIProgress] = useState<AIProcessingProgress | null>(null);
+  const [aiSuccessResult, setAISuccessResult] = useState<{ originalUri: string; enhancedUri: string } | null>(null);
+  const [aiError, setAIError] = useState<string | null>(null);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
   const [selectedBackgroundPresetId, setSelectedBackgroundPresetId] = useState<string | null>(null);
   
   // Background layer customization state - initialized from draft (LEGACY)
@@ -450,158 +453,9 @@ export default function EditorV2Screen() {
     return false;
   }, [capturedImages, capturedCount, overlays]);
 
-  // Trigger preview render when photos change (like old editor)
-  const triggerPreviewRender = useCallback(async () => {
-    if (!template?.templatedId) return;
-    
-    // Filter images that have URIs
-    const imagesToProcess = Object.entries(capturedImages).filter(
-      ([_, media]) => media?.uri
-    );
-    
-    if (imagesToProcess.length === 0) {
-      setRenderedPreviewUri(null);
-      setPreviewError(null);
-      return;
-    }
-    
-    setIsRendering(true);
-    setPreviewError(null);
-    
-    try {
-      // Apply adjustments to each image before uploading
-      const photosToRender: Record<string, string> = {};
-      
-      for (const [slotId, media] of imagesToProcess) {
-        if (!media) continue;
-        
-        const slot = getSlotById(slots, slotId);
-        if (!slot) {
-          photosToRender[slotId] = media.uri;
-          continue;
-        }
-        
-        // Check if image has adjustments that need to be applied
-        const adjustments = media.adjustments;
-        const hasNonDefaultAdjustments = adjustments && (
-          adjustments.translateX !== 0 ||
-          adjustments.translateY !== 0 ||
-          adjustments.scale !== 1.0 ||
-          (adjustments.rotation !== undefined && adjustments.rotation !== 0)
-        );
-        
-        if (hasNonDefaultAdjustments && adjustments) {
-          try {
-            const processed = await applyAdjustmentsAndCrop(
-              media.uri,
-              media.width,
-              media.height,
-              slot.width,
-              slot.height,
-              adjustments
-            );
-            photosToRender[slotId] = processed.uri;
-          } catch (adjustError) {
-            console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
-            photosToRender[slotId] = media.uri;
-          }
-        } else {
-          photosToRender[slotId] = media.uri;
-        }
-      }
-      
-      const result = await renderPreview({
-        templateId: template.templatedId,
-        slotImages: photosToRender,
-        backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : undefined,
-      });
-      
-      if (result.success && result.renderUrl) {
-        setRenderedPreviewUri(result.renderUrl);
-        setPreviewError(null);
-      } else {
-        console.warn('[EditorV2] Preview render failed:', result.error);
-        setPreviewError(result.error || 'Could not generate preview');
-      }
-    } catch (error) {
-      console.error('[EditorV2] Preview render error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Something went wrong';
-      setPreviewError(errorMessage);
-    } finally {
-      setIsRendering(false);
-    }
-  }, [template?.templatedId, capturedImages, slots, backgroundOverrides]);
+  // NOTE: triggerPreviewRender removed - photos now rendered client-side via LayeredCanvas
+  // Templated.io API is only called when user taps Download (see handleDownload)
 
-  // Helper to serialize adjustments for comparison
-  const serializeAdjustments = useCallback((adj: any) => {
-    if (!adj) return '';
-    return `${adj.translateX || 0}_${adj.translateY || 0}_${adj.scale || 1}_${adj.rotation || 0}`;
-  }, []);
-
-  // Reactive preview rendering when images or adjustments change
-  useEffect(() => {
-    if (!template?.templatedId) return;
-    
-    const prevImages = prevCapturedImagesRef.current;
-    const currentImages = capturedImages;
-    
-    let hasNewOrChangedImage = false;
-    let changeReason = '';
-    
-    for (const slotId of Object.keys(currentImages)) {
-      const current = currentImages[slotId];
-      const prev = prevImages[slotId];
-      const currentUri = current?.uri;
-      const prevUri = prev?.uri;
-      
-      // Check if URI changed (new image)
-      if (currentUri && currentUri !== prevUri) {
-        hasNewOrChangedImage = true;
-        changeReason = `URI changed for ${slotId}`;
-        break;
-      }
-      
-      // Check if adjustments changed (resize/rotate)
-      if (currentUri && current?.adjustments) {
-        const currentAdj = serializeAdjustments(current.adjustments);
-        const prevAdj = serializeAdjustments(prev?.adjustments);
-        if (currentAdj !== prevAdj) {
-          hasNewOrChangedImage = true;
-          changeReason = `Adjustments changed for ${slotId}: prev=${prevAdj} curr=${currentAdj}`;
-          break;
-        }
-      }
-    }
-    
-    // Update ref with both URI and adjustments
-    const newPrevImages: Record<string, { uri: string; adjustments?: any } | null> = {};
-    for (const [slotId, media] of Object.entries(currentImages)) {
-      newPrevImages[slotId] = media ? { uri: media.uri, adjustments: media.adjustments } : null;
-    }
-    prevCapturedImagesRef.current = newPrevImages;
-    
-    if (hasNewOrChangedImage) {
-      console.log('[EditorV2] Image or adjustment change detected, triggering preview render');
-      triggerPreviewRender();
-    }
-  }, [capturedImages, template?.templatedId, triggerPreviewRender, serializeAdjustments]);
-
-  // Handle preview error (trigger re-render)
-  const handlePreviewError = useCallback(() => {
-    console.log('[EditorV2] Preview failed to load, triggering re-render');
-    setRenderedPreviewUri(null);
-    setPreviewError('Preview expired');
-    triggerPreviewRender();
-  }, [triggerPreviewRender]);
-
-  // Reset preview loaded state when rendered preview URI changes
-  useEffect(() => {
-    if (renderedPreviewUri) {
-      // Reset loaded state when a new preview URL is set
-      isPreviewImageLoadedRef.current = false;
-      setIsPreviewImageLoaded(false);
-    }
-  }, [renderedPreviewUri]);
 
   // Handler for when preview image loads
   const handlePreviewImageLoad = useCallback(() => {
@@ -687,65 +541,110 @@ export default function EditorV2Screen() {
     // Close AI panel
     aiStudioRef.current?.close();
     
-    // Start processing
+    // Reset any previous state
+    setAIError(null);
+    setAISuccessResult(null);
+    
+    // Start processing with overlay
     setIsAIProcessing(true);
     setAIProcessingType(featureKey);
+    setAIProgress({
+      status: 'submitting',
+      message: 'Starting enhancement...',
+      progress: 0,
+    });
+
+    // Create abort controller for cancellation
+    aiAbortControllerRef.current = new AbortController();
 
     try {
-      // Get the image URL - need to upload to a public URL for the AI service
-      let imageUrl = image.uri;
-      
-      // If it's a local file, we need to upload it first
-      if (imageUrl.startsWith('file://')) {
-        // The image needs to be publicly accessible for Fal.AI
-        Alert.alert(
-          'Image Upload Required', 
-          'The image needs to be saved to cloud storage first. Please save your draft before using AI enhancements.',
-          [{ text: 'OK' }]
-        );
-        setIsAIProcessing(false);
-        setAIProcessingType(null);
-        return;
-      }
+      // Get the image URL - images are now uploaded to Supabase immediately during capture
+      // so they should already have public URLs accessible by AI services
+      const imageUrl = image.uri;
 
-      // Call the AI enhancement service with validated parameters
+      // Call the AI enhancement service with progress callbacks
       console.log('[Editor] Calling AI enhance with:', { featureKey, imageUrl: imageUrl.substring(0, 50), slotId, presetId });
       
-      const result = await enhanceImage({
-        featureKey,
-        imageUrl,
-        draftId: currentProject?.draftId || undefined,
-        slotId,
-        presetId,
-      });
+      const result = await enhanceImageWithPolling(
+        {
+          featureKey,
+          imageUrl,
+          draftId: currentProject?.draftId || undefined,
+          slotId,
+          presetId,
+        },
+        (progress) => {
+          // Update progress state for overlay
+          setAIProgress(progress);
+        },
+        aiAbortControllerRef.current.signal
+      );
 
       if (!result.success || !result.outputUrl) {
         throw new Error(result.error || 'Enhancement failed');
       }
 
+      // Show success overlay with before/after
+      setAISuccessResult({
+        originalUri: imageUrl,
+        enhancedUri: result.outputUrl,
+      });
+      
       // Update the captured image with the enhanced version
       setCapturedImage(slotId, {
         ...image,
         uri: result.outputUrl,
       });
 
-      // Show success feedback
-      Alert.alert(
-        'Enhancement Complete', 
-        'Your image has been enhanced!'
-      );
-
     } catch (error: any) {
       console.error('[Editor] AI enhancement error:', error);
-      Alert.alert(
-        'Enhancement Failed',
-        error.message || 'Something went wrong. Please try again.'
-      );
+      
+      if (error.message === 'Cancelled') {
+        // User cancelled - just close overlay
+        setIsAIProcessing(false);
+        setAIProcessingType(null);
+        setAIProgress(null);
+      } else {
+        // Show error state
+        setAIError(error.message || 'Something went wrong. Please try again.');
+      }
     } finally {
-      setIsAIProcessing(false);
-      setAIProcessingType(null);
+      aiAbortControllerRef.current = null;
     }
   }, [selection, capturedImages, currentProject?.draftId, setCapturedImage]);
+
+  // Handle AI cancel
+  const handleAICancel = useCallback(() => {
+    aiAbortControllerRef.current?.abort();
+    setIsAIProcessing(false);
+    setAIProcessingType(null);
+    setAIProgress(null);
+  }, []);
+
+  // Handle AI success dismiss
+  const handleAISuccessDismiss = useCallback(() => {
+    setAISuccessResult(null);
+    setIsAIProcessing(false);
+    setAIProcessingType(null);
+    setAIProgress(null);
+  }, []);
+
+  // Handle AI error retry
+  const handleAIRetry = useCallback(() => {
+    setAIError(null);
+    setIsAIProcessing(false);
+    setAIProcessingType(null);
+    setAIProgress(null);
+    // The user will need to tap the AI feature again
+  }, []);
+
+  // Handle AI error dismiss
+  const handleAIErrorDismiss = useCallback(() => {
+    setAIError(null);
+    setIsAIProcessing(false);
+    setAIProcessingType(null);
+    setAIProgress(null);
+  }, []);
 
   // Handle background preset selection
   const handleBackgroundPresetSelect = useCallback((preset: BackgroundPreset) => {
@@ -760,26 +659,19 @@ export default function EditorV2Screen() {
     backgroundPickerRef.current?.snapToIndex(0);
   }, []);
 
-  // Handle background layer color change
+  // Handle background layer color change - client-side only, no API needed
+  // LayeredCanvas re-renders automatically when backgroundOverrides state changes
   const handleBackgroundLayerColorChange = useCallback((layerId: string, color: string) => {
     setBackgroundOverrides(prev => ({
       ...prev,
       [layerId]: color,
     }));
-    // Trigger re-render with new background
-    setTimeout(() => {
-      triggerPreviewRender();
-    }, 100);
-  }, [triggerPreviewRender]);
+  }, []);
 
-  // Handle reset all background overrides
+  // Handle reset all background overrides - client-side only, no API needed
   const handleBackgroundOverridesReset = useCallback(() => {
     setBackgroundOverrides({});
-    // Trigger re-render without overrides
-    setTimeout(() => {
-      triggerPreviewRender();
-    }, 100);
-  }, [triggerPreviewRender]);
+  }, []);
 
 
   // ============================================
@@ -1402,10 +1294,8 @@ export default function EditorV2Screen() {
     setCropSlotId(null);
     setPendingCropAdjustments(null);
     setPendingRotation(0);
-    // NOTE: Don't call triggerPreviewRender() here!
-    // The useEffect watching capturedImages will automatically trigger it
-    // after React processes the state update. Calling it here would use
-    // stale closure values (the old adjustments before setCapturedImage).
+    // NOTE: No API call needed - LayeredCanvas re-renders automatically
+    // when capturedImages state updates
   }, [cropSlotId, pendingCropAdjustments, pendingRotation, capturedImages, setCapturedImage]);
 
   // Handle adjustment changes from CropOverlay
@@ -1532,7 +1422,8 @@ export default function EditorV2Screen() {
     }
   }, [selection, setCapturedImage]);
 
-  // Capture the canvas with overlays using ViewShot
+  // Capture the composed canvas using ViewShot
+  // This captures the full template composition: photos + frame + background + overlays
   // Returns the captured file path (in cache directory)
   const captureCanvasWithOverlays = useCallback(async (): Promise<string | null> => {
     if (!viewShotRef.current) {
@@ -1540,8 +1431,10 @@ export default function EditorV2Screen() {
       return null;
     }
     
-    if (!renderedPreviewUri) {
-      console.warn('[EditorV2] No rendered preview available to capture');
+    // LayeredCanvas renders photos client-side with template frame
+    // We need at least one photo to have something meaningful to capture
+    if (capturedCount === 0) {
+      console.warn('[EditorV2] No photos to capture');
       return null;
     }
     
@@ -1590,7 +1483,7 @@ export default function EditorV2Screen() {
       console.error('[EditorV2] Failed to capture canvas:', error);
       return null;
     }
-  }, [renderedPreviewUri, selectedOverlayId]);
+  }, [capturedCount, selectedOverlayId]);
 
   // Handle save draft action
   const handleSaveDraft = useCallback(async () => {
@@ -1656,10 +1549,12 @@ export default function EditorV2Screen() {
 
       console.log('[EditorV2] Saving draft with slots:', Object.keys(capturedImageUris), 'overlays:', overlays.length);
 
-      // STEP 1: Capture the canvas with overlays FIRST (before any state changes)
+      // STEP 1: Capture the canvas FIRST (before any state changes)
+      // LayeredCanvas renders photos client-side with template frame, so we capture the composed view
+      // This ensures the thumbnail shows the full template composition, not just a raw photo
       let capturedPreviewPath: string | null = null;
-      if (overlays.length > 0 && renderedPreviewUri) {
-        console.log('[EditorV2] Step 1: Capturing canvas with overlays BEFORE save...');
+      if (capturedCount > 0) {
+        console.log('[EditorV2] Step 1: Capturing canvas with composed view BEFORE save...');
         capturedPreviewPath = await captureCanvasWithOverlays();
         
         if (capturedPreviewPath) {
@@ -1669,16 +1564,34 @@ export default function EditorV2Screen() {
         }
       }
 
-      // STEP 2: Save the draft to get/confirm the draft ID
+      // STEP 2: Build adjustments map from capturedImages
+      // Store adjustments separately since we can't bake them into remote images
+      const capturedImageAdjustments: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> = {};
+      for (const [slotId, media] of Object.entries(capturedImages)) {
+        if (media?.adjustments) {
+          capturedImageAdjustments[slotId] = {
+            scale: media.adjustments.scale,
+            translateX: media.adjustments.translateX,
+            translateY: media.adjustments.translateY,
+            rotation: media.adjustments.rotation || 0,
+          };
+        }
+      }
+      
+      console.log('[EditorV2] Saving adjustments:', capturedImageAdjustments);
+
+      // STEP 3: Save the draft to get/confirm the draft ID
+      // NOTE: renderedPreviewUrl is null since we use client-side rendering now
       const savedDraft = await saveDraft({
         templateId: template.id,
         beforeImageUri: null,
         afterImageUri: null,
         existingDraftId: currentProject.draftId || undefined,
         capturedImageUris: Object.keys(capturedImageUris).length > 0 ? capturedImageUris : undefined,
-        renderedPreviewUrl: renderedPreviewUri,
+        renderedPreviewUrl: null, // No longer using API preview URL
         wasRenderedAsPremium: isPremium,
         backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : null,
+        capturedImageAdjustments: Object.keys(capturedImageAdjustments).length > 0 ? capturedImageAdjustments : null,
       });
 
       console.log('[EditorV2] Draft saved:', savedDraft?.id);
@@ -1689,7 +1602,7 @@ export default function EditorV2Screen() {
         return;
       }
 
-      // STEP 3: If we captured a preview with overlays, save it to the draft's local directory
+      // STEP 3: If we captured a preview, save it to the draft's local directory
       // NOTE: localPreviewPath is client-side only (not stored in DB), so we save locally
       // but don't need a second saveDraft() call - that was causing ~430ms unnecessary delay
       let finalPreviewPath: string | null = null;
@@ -1740,7 +1653,7 @@ export default function EditorV2Screen() {
       console.error('[EditorV2] Failed to save draft:', error);
       Alert.alert('Error', 'Failed to save draft. Please try again.');
     }
-  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, renderedPreviewUri, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts]);
+  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts, backgroundOverrides]);
 
   // Handle back/close with unsaved changes check
   // Navigation destination depends on context:
@@ -1748,8 +1661,13 @@ export default function EditorV2Screen() {
   // - If creating new from template (no draftId), go back to Create tab
   const handleClose = useCallback(() => {
     const isEditingExistingDraft = !!currentProject.draftId;
-    const navigateBack = () => {
-      resetProject();
+    
+    const navigateBack = (discardingNewProject: boolean = false) => {
+      // If discarding a NEW project (no draft ID yet), cleanup temp uploads
+      // For existing drafts, images are already saved so no cleanup needed
+      const wasSaved = isEditingExistingDraft || !discardingNewProject;
+      resetProject(wasSaved);
+      
       // Navigate to the appropriate tab based on context
       if (isEditingExistingDraft) {
         // Came from Projects tab (editing existing draft) - go back to Projects
@@ -1769,7 +1687,7 @@ export default function EditorV2Screen() {
           {
             text: 'Leave',
             style: 'destructive',
-            onPress: navigateBack,
+            onPress: () => navigateBack(!isEditingExistingDraft), // Discard new project
           },
           {
             text: 'Save',
@@ -1779,27 +1697,92 @@ export default function EditorV2Screen() {
         { cancelable: true }
       );
     } else {
-      // No changes, just leave
-      navigateBack();
+      // No changes, just leave (existing draft images stay, no new uploads to clean)
+      navigateBack(false);
     }
   }, [hasUnsavedChanges, resetProject, router, handleSaveDraft, currentProject.draftId]);
 
-  // Handle download to gallery
+  // Handle download to gallery - calls Templated.io API on-demand
   const handleDownload = useCallback(async () => {
-    if (!renderedPreviewUri) {
-      Alert.alert('Not Ready', 'Please wait for the preview to finish rendering.');
+    // Check if we have any photos to render
+    const hasPhotos = Object.values(capturedImages).some(img => img !== null);
+    if (!hasPhotos) {
+      Alert.alert('No Photos', 'Please add at least one photo before downloading.');
+      return;
+    }
+
+    if (!template?.templatedId) {
+      Alert.alert('Error', 'Template not loaded properly.');
       return;
     }
 
     setIsDownloading(true);
 
     try {
-      const result = await downloadAndSaveToGallery(renderedPreviewUri);
+      console.log('[EditorV2] Starting on-demand render for download...');
       
-      if (result.success) {
+      // Prepare photos with adjustments applied
+      const photosToRender: Record<string, string> = {};
+      
+      for (const [slotId, media] of Object.entries(capturedImages)) {
+        if (!media?.uri) continue;
+        
+        const slot = getSlotById(slots, slotId);
+        if (!slot) {
+          photosToRender[slotId] = media.uri;
+          continue;
+        }
+        
+        // Apply adjustments if any
+        const adjustments = media.adjustments;
+        const hasNonDefaultAdjustments = adjustments && (
+          adjustments.translateX !== 0 ||
+          adjustments.translateY !== 0 ||
+          adjustments.scale !== 1.0 ||
+          (adjustments.rotation !== undefined && adjustments.rotation !== 0)
+        );
+        
+        if (hasNonDefaultAdjustments && adjustments) {
+          try {
+            const processed = await applyAdjustmentsAndCrop(
+              media.uri,
+              media.width,
+              media.height,
+              slot.width,
+              slot.height,
+              adjustments
+            );
+            photosToRender[slotId] = processed.uri;
+          } catch (adjustError) {
+            console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
+            photosToRender[slotId] = media.uri;
+          }
+        } else {
+          photosToRender[slotId] = media.uri;
+        }
+      }
+      
+      // Call Templated.io API NOW (on-demand)
+      console.log('[EditorV2] Calling Templated.io API for final render...');
+      const renderResult = await renderPreview({
+        templateId: template.templatedId,
+        slotImages: photosToRender,
+        backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : undefined,
+      });
+      
+      if (!renderResult.success || !renderResult.renderUrl) {
+        throw new Error(renderResult.error || 'Render failed');
+      }
+      
+      console.log('[EditorV2] Render complete, downloading...');
+      
+      // Download the rendered image
+      const downloadResult = await downloadAndSaveToGallery(renderResult.renderUrl);
+      
+      if (downloadResult.success) {
         Alert.alert('Saved!', 'Image saved to your photo library.');
       } else {
-        throw new Error(result.error || 'Download failed');
+        throw new Error(downloadResult.error || 'Download failed');
       }
     } catch (error) {
       console.error('[EditorV2] Download failed:', error);
@@ -1810,7 +1793,7 @@ export default function EditorV2Screen() {
     } finally {
       setIsDownloading(false);
     }
-  }, [renderedPreviewUri]);
+  }, [capturedImages, template?.templatedId, slots, backgroundOverrides]);
 
   // Handle opening project actions bottom sheet
   const handleOpenProjectActions = useCallback(() => {
@@ -1871,7 +1854,8 @@ export default function EditorV2Screen() {
               }
             }
             // Navigate back to projects after delete
-            resetProject();
+            // Draft was deleted, cleanup any temp uploads (wasSaved: false)
+            resetProject(false);
             router.replace('/(tabs)/library');
           },
         },
@@ -1881,6 +1865,8 @@ export default function EditorV2Screen() {
 
   // Handle navigating to home/projects
   const handleGoHome = useCallback(() => {
+    const isEditingExistingDraft = !!currentProject.draftId;
+    
     if (hasUnsavedChanges) {
       Alert.alert(
         'Unsaved Changes',
@@ -1891,7 +1877,9 @@ export default function EditorV2Screen() {
             text: 'Leave',
             style: 'destructive',
             onPress: () => {
-              resetProject();
+              // If discarding a new project, cleanup temp uploads
+              // For existing drafts, images are already saved
+              resetProject(isEditingExistingDraft);
               router.replace('/(tabs)/library');
             },
           },
@@ -1903,10 +1891,11 @@ export default function EditorV2Screen() {
         { cancelable: true }
       );
     } else {
-      resetProject();
+      // No changes, just leave (no new uploads to clean)
+      resetProject(true);
       router.replace('/(tabs)/library');
     }
-  }, [hasUnsavedChanges, resetProject, router, handleSaveDraft]);
+  }, [hasUnsavedChanges, resetProject, router, handleSaveDraft, currentProject.draftId]);
 
   // Cleanup effect - runs when editor unmounts
   // Cleans up temp files and memory cache to prevent accumulation
@@ -1974,20 +1963,20 @@ export default function EditorV2Screen() {
               )}
             </TouchableOpacity>
 
-            {/* Download Button (icon only) */}
+            {/* Download Button (icon only) - triggers on-demand API render */}
             <TouchableOpacity
               style={[
                 styles.headerIconButton,
                 styles.headerDownloadButton,
-                (!renderedPreviewUri || isRendering || isDownloading) && styles.headerActionButtonDisabled,
+                (capturedCount === 0 || isDownloading) && styles.headerActionButtonDisabled,
               ]}
               onPress={handleDownload}
-              disabled={!renderedPreviewUri || isRendering || isDownloading}
+              disabled={capturedCount === 0 || isDownloading}
             >
               {isDownloading ? (
                 <ActivityIndicator size="small" color={Colors.light.surface} />
               ) : (
-                <Download size={20} color={renderedPreviewUri && !isRendering ? Colors.light.surface : Colors.light.textTertiary} />
+                <Download size={20} color={capturedCount > 0 ? Colors.light.surface : Colors.light.textTertiary} />
               )}
             </TouchableOpacity>
 
@@ -2023,9 +2012,8 @@ export default function EditorV2Screen() {
               <TemplateCanvas
                 template={template}
                 onSlotPress={isCropMode ? () => {} : handleSlotPress}
-                renderedPreviewUri={renderedPreviewUri}
-                isRendering={isRendering}
-                onPreviewError={handlePreviewError}
+                renderedPreviewUri={null}
+                isRendering={false}
                 onPreviewLoad={handlePreviewImageLoad}
                 selectedSlotId={isCropMode ? null : (selection.type === 'slot' ? selection.id : null)}
                 manipulationMode={manipulationSlotData && !isCropMode ? {
@@ -2082,18 +2070,6 @@ export default function EditorV2Screen() {
             </ViewShot>
           </View>
           
-          {/* Preview error indicator */}
-          {previewError && !isRendering && !isCropMode && (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>Preview failed to load</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={triggerPreviewRender}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </Pressable>
 
         {/* Bottom toolbar - changes based on mode */}
@@ -2294,6 +2270,46 @@ export default function EditorV2Screen() {
           </View>
         </BottomSheetView>
       </BottomSheet>
+
+      {/* AI Processing Overlay */}
+      {isAIProcessing && aiProgress && !aiSuccessResult && !aiError && (
+        <AIProcessingOverlay
+          progress={aiProgress.progress || 0}
+          message={aiProgress.message}
+          featureKey={aiProcessingType || 'auto_quality'}
+          onCancel={handleAICancel}
+        />
+      )}
+
+      {/* AI Success Overlay */}
+      {aiSuccessResult && (
+        <AISuccessOverlay
+          originalUri={aiSuccessResult.originalUri}
+          enhancedUri={aiSuccessResult.enhancedUri}
+          onKeepEnhanced={handleAISuccessDismiss}
+          onRevert={() => {
+            // Revert to original image
+            if (selection.id && capturedImages[selection.id]) {
+              setCapturedImage(selection.id, {
+                ...capturedImages[selection.id],
+                uri: aiSuccessResult.originalUri,
+              });
+            }
+            handleAISuccessDismiss();
+          }}
+        />
+      )}
+
+      {/* AI Error View */}
+      {aiError && (
+        <View style={styles.aiErrorOverlay}>
+          <AIErrorView
+            error={aiError}
+            onRetry={handleAIRetry}
+            onDismiss={handleAIErrorDismiss}
+          />
+        </View>
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -2446,5 +2462,14 @@ const styles = StyleSheet.create({
   },
   actionTextDestructive: {
     color: Colors.light.error,
+  },
+  // AI Error Overlay
+  aiErrorOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    zIndex: 1000,
   },
 });

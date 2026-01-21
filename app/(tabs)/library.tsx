@@ -239,10 +239,22 @@ export default function ProjectsScreen() {
     []
   );
 
+  // Thumbnail dimensions - width is fixed, height varies by aspect ratio
+  const thumbnailWidth = 72;
+  
+  // Calculate thumbnail height based on format aspect ratio
+  const getThumbnailHeight = useCallback((format: string): number => {
+    const formatConfig = getFormatById(format);
+    if (!formatConfig) return thumbnailWidth; // Default to square
+    // Height = Width / AspectRatio (since aspectRatio = width/height)
+    return Math.round(thumbnailWidth / formatConfig.aspectRatio);
+  }, []);
+
   // Get selected draft info for bottom sheet header
   const selectedPreviewUri = selectedDraft ? getDraftPreviewUri(selectedDraft) : null;
   const selectedTemplate = selectedDraft ? getTemplateForDraft(selectedDraft.templateId) : null;
   const selectedDisplayName = selectedDraft ? getProjectDisplayName(selectedDraft) : 'Project';
+  const selectedThumbnailHeight = selectedTemplate ? getThumbnailHeight(selectedTemplate.format) : 48;
 
   // Dynamic styles based on responsive configuration
   const dynamicStyles = useMemo(() => ({
@@ -259,9 +271,6 @@ export default function ProjectsScreen() {
       paddingHorizontal: responsive.gridPadding,
     },
   }), [responsive]);
-
-  // Thumbnail size for list items
-  const thumbnailSize = 72;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -342,6 +351,7 @@ export default function ProjectsScreen() {
             const previewUri = getDraftPreviewUri(draft);
             const format = template?.format || '1:1';
             const displayName = getProjectDisplayName(draft);
+            const thumbnailHeight = getThumbnailHeight(format);
             
             return (
               <Pressable
@@ -349,8 +359,8 @@ export default function ProjectsScreen() {
                 style={styles.projectRow}
                 onPress={() => handleResumeProject(draft)}
               >
-                {/* Thumbnail */}
-                <View style={[styles.thumbnailContainer, { width: thumbnailSize, height: thumbnailSize }]}>
+                {/* Thumbnail - dynamic aspect ratio based on template format */}
+                <View style={[styles.thumbnailContainer, { width: thumbnailWidth, height: thumbnailHeight }]}>
                   {previewUri ? (
                     <Image
                       key={`project-preview-${draft.id}-${draft.updatedAt}`}
@@ -412,9 +422,9 @@ export default function ProjectsScreen() {
         handleIndicatorStyle={styles.bottomSheetIndicator}
       >
         <BottomSheetView style={[styles.bottomSheetContent, { paddingBottom: insets.bottom + 12 }]}>
-          {/* Header with preview */}
+          {/* Header with preview - dynamic aspect ratio */}
           <View style={styles.sheetHeader}>
-            <View style={styles.sheetPreviewContainer}>
+            <View style={[styles.sheetPreviewContainer, { height: Math.min(selectedThumbnailHeight * 48 / thumbnailWidth, 80) }]}>
               {selectedPreviewUri ? (
                 <Image
                   source={{ uri: selectedPreviewUri }}

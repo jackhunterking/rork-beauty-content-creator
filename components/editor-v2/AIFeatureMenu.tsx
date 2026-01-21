@@ -33,7 +33,7 @@ import type { AIFeatureKey, AIModelConfig } from '@/types';
 /**
  * Get icon component for a feature - simple outlined style
  */
-function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 22) {
+function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 16) {
   const strokeWidth = 1.8;
   switch (featureKey) {
     case 'background_remove':
@@ -47,6 +47,125 @@ function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 
   }
 }
 
+/**
+ * Get short display label for a feature - matches ElementContextBar labels
+ */
+function getFeatureLabel(featureKey: AIFeatureKey): string {
+  switch (featureKey) {
+    case 'background_remove':
+      return 'Remove BG';
+    case 'background_replace':
+      return 'Replace BG';
+    case 'auto_quality':
+      return 'Auto-Quality';
+    default:
+      return 'AI';
+  }
+}
+
+/**
+ * AIBadge Component
+ * 
+ * Creates a badge effect where the icon is surrounded by a border,
+ * but the top-right corner has a notch where "AI" text sits.
+ */
+function AIBadge({ children }: { children: React.ReactNode }) {
+  return (
+    <View style={aiBadgeStyles.container}>
+      {/* Border with notch cutout */}
+      <View style={aiBadgeStyles.borderContainer}>
+        <View style={aiBadgeStyles.borderTop} />
+        <View style={aiBadgeStyles.borderRight} />
+        <View style={aiBadgeStyles.borderBottom} />
+        <View style={aiBadgeStyles.borderLeft} />
+      </View>
+      
+      {/* AI label positioned in the cutoff area */}
+      <View style={aiBadgeStyles.aiLabelContainer}>
+        <Text style={aiBadgeStyles.aiLabel}>AI</Text>
+      </View>
+      
+      {/* Icon content */}
+      <View style={aiBadgeStyles.content}>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+const aiBadgeStyles = StyleSheet.create({
+  container: {
+    width: 32,
+    height: 32,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  borderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  borderTop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 12,
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 6,
+  },
+  borderRight: {
+    position: 'absolute',
+    top: 10,
+    right: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomRightRadius: 6,
+  },
+  borderBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+  },
+  borderLeft: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 1.5,
+    backgroundColor: Colors.light.ai.primary,
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+  },
+  aiLabelContainer: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    zIndex: 1,
+  },
+  aiLabel: {
+    fontSize: 7,
+    fontWeight: '700',
+    color: Colors.light.ai.primary,
+    letterSpacing: 0.2,
+  },
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
 interface AIFeatureButtonProps {
   feature: AIModelConfig;
   isProcessing: boolean;
@@ -54,7 +173,7 @@ interface AIFeatureButtonProps {
 }
 
 function AIFeatureButton({ feature, isProcessing, onPress }: AIFeatureButtonProps) {
-  const iconColor = Colors.light.text;
+  const iconColor = Colors.light.ai.primary;
   
   return (
     <TouchableOpacity
@@ -63,18 +182,20 @@ function AIFeatureButton({ feature, isProcessing, onPress }: AIFeatureButtonProp
       activeOpacity={0.7}
       disabled={isProcessing}
     >
-      {/* Simple icon - matches other toolbar items */}
+      {/* Icon with AI badge */}
       <View style={styles.featureIconContainer}>
         {isProcessing ? (
           <ActivityIndicator size="small" color={Colors.light.ai.primary} />
         ) : (
-          getFeatureIcon(feature.featureKey, iconColor)
+          <AIBadge>
+            {getFeatureIcon(feature.featureKey, iconColor)}
+          </AIBadge>
         )}
       </View>
       
-      {/* Feature name - same style as other action labels */}
+      {/* Feature name - short labels matching ElementContextBar */}
       <Text style={styles.featureLabel} numberOfLines={1}>
-        {feature.displayName}
+        {getFeatureLabel(feature.featureKey)}
       </Text>
     </TouchableOpacity>
   );
@@ -229,14 +350,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 4,
     paddingHorizontal: 10,
-    minWidth: 60,
+    minWidth: 70,
   },
   featureIconContainer: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    marginBottom: 4, // Extra space between icon and label
   },
   featureLabel: {
     fontSize: 11,
@@ -244,7 +366,6 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     textAlign: 'center',
     letterSpacing: -0.2,
-    marginTop: 2,
   },
 });
 

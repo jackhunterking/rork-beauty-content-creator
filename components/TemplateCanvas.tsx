@@ -1177,6 +1177,7 @@ export function TemplateCanvas({
     return useClientSideCompositing && !!template.frameOverlayUrl;
   }, [useClientSideCompositing, template.frameOverlayUrl]);
 
+
   // Get slots for LayeredCanvas
   const slots = useMemo(() => extractSlots(template), [template]);
 

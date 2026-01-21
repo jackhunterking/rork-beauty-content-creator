@@ -4,6 +4,7 @@ import { uploadDraftImage, deleteDraftImages, copyDraftImages } from './storageS
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory, copyFile, getCachedRenderPath, createDraftDirectories } from './localStorageService';
 import { copyOverlays } from './overlayPersistenceService';
 import { getDuplicateProjectName } from '@/utils/projectName';
+import { cleanupTempFile, TEMP_UPLOADS_BUCKET } from './tempUploadService';
 
 /**
  * Helper to get the current authenticated user ID
@@ -60,6 +61,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     afterImageUrl: row.after_image_url,
     // New dynamic captured images field
     capturedImageUrls: row.captured_image_urls || undefined,
+    // Image adjustments (scale, translate, rotation) for each slot
+    capturedImageAdjustments: row.captured_image_adjustments || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // Cached preview URL from Templated.io
@@ -221,6 +224,7 @@ export async function updateDraft(
     beforeImageUrl?: string | null;
     afterImageUrl?: string | null;
     capturedImageUrls?: Record<string, string> | null;
+    capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
     renderedPreviewUrl?: string | null;
     wasRenderedAsPremium?: boolean | null;
     projectName?: string | null;
@@ -242,6 +246,9 @@ export async function updateDraft(
   }
   if (updates.capturedImageUrls !== undefined) {
     updateData.captured_image_urls = updates.capturedImageUrls;
+  }
+  if (updates.capturedImageAdjustments !== undefined) {
+    updateData.captured_image_adjustments = updates.capturedImageAdjustments;
   }
   if (updates.renderedPreviewUrl !== undefined) {
     updateData.rendered_preview_url = updates.renderedPreviewUrl;
@@ -295,7 +302,8 @@ export async function saveDraftWithImages(
   wasRenderedAsPremium?: boolean,
   localPreviewPath?: string | null,
   projectName?: string | null,
-  backgroundOverrides?: Record<string, string> | null
+  backgroundOverrides?: Record<string, string> | null,
+  capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -362,6 +370,7 @@ export async function saveDraftWithImages(
       beforeImageUrl,
       afterImageUrl,
       capturedImageUrls: Object.keys(capturedImageUrls).length > 0 ? capturedImageUrls : null,
+      capturedImageAdjustments: capturedImageAdjustments !== undefined ? capturedImageAdjustments : draft.capturedImageAdjustments,
       renderedPreviewUrl: renderedPreviewUrl ?? draft.renderedPreviewUrl,
       wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
       projectName: projectName !== undefined ? projectName : draft.projectName,
@@ -382,6 +391,7 @@ export async function saveDraftWithImages(
 
 /**
  * Delete a draft and its associated images (both remote and local)
+ * Also cleans up images from temp-uploads bucket if they were stored there
  * Note: RLS policies ensure only the user's own draft can be deleted
  */
 export async function deleteDraft(id: string): Promise<void> {
@@ -389,7 +399,38 @@ export async function deleteDraft(id: string): Promise<void> {
     // Ensure user is authenticated (RLS will handle authorization)
     await getCurrentUserId();
     
-    // Delete images from Supabase storage
+    // First, fetch the draft to get any image URLs that might be in temp-uploads
+    const draft = await fetchDraftById(id);
+    
+    // Collect all image URLs that need cleanup from temp-uploads bucket
+    const tempUploadUrls: string[] = [];
+    
+    if (draft) {
+      // Check captured image URLs for temp-uploads bucket URLs
+      if (draft.capturedImageUrls) {
+        for (const url of Object.values(draft.capturedImageUrls)) {
+          if (url && url.includes(TEMP_UPLOADS_BUCKET)) {
+            tempUploadUrls.push(url);
+          }
+        }
+      }
+      
+      // Check legacy before/after URLs
+      if (draft.beforeImageUrl && draft.beforeImageUrl.includes(TEMP_UPLOADS_BUCKET)) {
+        tempUploadUrls.push(draft.beforeImageUrl);
+      }
+      if (draft.afterImageUrl && draft.afterImageUrl.includes(TEMP_UPLOADS_BUCKET)) {
+        tempUploadUrls.push(draft.afterImageUrl);
+      }
+    }
+    
+    // Clean up temp-uploads bucket images
+    if (tempUploadUrls.length > 0) {
+      console.log(`[DraftService] Cleaning up ${tempUploadUrls.length} images from temp-uploads`);
+      await Promise.all(tempUploadUrls.map(url => cleanupTempFile(url)));
+    }
+    
+    // Delete images from draft-images bucket (permanent storage)
     await deleteDraftImages(id);
 
     // Delete local draft files (preview cache, slot images, etc.)

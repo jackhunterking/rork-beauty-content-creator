@@ -1,14 +1,12 @@
 /**
- * AI Service
+ * AI Service - Direct Fal.AI Integration
  * 
  * Client-side service for AI image enhancement features.
- * Communicates with Supabase Edge Functions for:
- * - Feature configuration
- * - Credit management
- * - Image enhancement processing
+ * Uses Supabase Edge Functions to submit jobs, then polls Fal.AI directly.
  */
 
 import { supabase, SUPABASE_URL } from '@/lib/supabase';
+import Constants from 'expo-constants';
 import type {
   AIFeatureKey,
   AIModelConfig,
@@ -22,12 +20,10 @@ import type {
   AIEnhanceRequest,
   AIEnhanceResponse,
   AIFeatureCheck,
-  AIConfigResponse,
-  AIPresetsResponse,
 } from '@/types';
 
 // ============================================
-// Edge Function URLs
+// Configuration
 // ============================================
 
 const EDGE_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
@@ -38,21 +34,68 @@ const ENDPOINTS = {
   config: `${EDGE_FUNCTION_BASE}/ai-config`,
 } as const;
 
+// Get Fal.AI API key for client-side polling
+const FAL_API_KEY = Constants.expoConfig?.extra?.falApiKey || '';
+
+// Polling configuration
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLL_TIME_MS = 120000; // 2 minutes max
+
+// ============================================
+// Types
+// ============================================
+
+export type AIProcessingStatus = 
+  | 'submitting'
+  | 'queued'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'timeout'
+  | 'cancelled';
+
+export interface AIProcessingProgress {
+  status: AIProcessingStatus;
+  message: string;
+  progress?: number; // 0-100
+  outputUrl?: string;
+  error?: string;
+}
+
+interface FalQueueResponse {
+  request_id: string;
+  status: 'IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+  response?: {
+    image?: { url: string };
+    output?: { url: string };
+    url?: string;
+    error?: string;
+  };
+  error?: {
+    message: string;
+    code?: string;
+  };
+}
+
+interface EnhanceSubmitResponse {
+  success: boolean;
+  generation_id: string;
+  request_id: string;
+  fal_model: string;
+  poll_url: string;
+  estimated_time_seconds?: number;
+  error?: string;
+}
+
 // ============================================
 // Helper Functions
 // ============================================
 
-/**
- * Get authorization header for edge function calls
- */
 async function getAuthHeader(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.access_token ? `Bearer ${session.access_token}` : null;
 }
 
-/**
- * Make authenticated request to edge function
- */
 async function callEdgeFunction<T>(
   url: string,
   options: RequestInit = {}
@@ -60,7 +103,6 @@ async function callEdgeFunction<T>(
   const authHeader = await getAuthHeader();
   
   if (!authHeader) {
-    // Return empty response instead of throwing - prevents error cascades
     throw new Error('AUTH_PENDING');
   }
 
@@ -76,7 +118,6 @@ async function callEdgeFunction<T>(
   const data = await response.json();
 
   if (!response.ok) {
-    // If 401, auth may be stale - indicate auth pending
     if (response.status === 401) {
       throw new Error('AUTH_PENDING');
     }
@@ -86,9 +127,6 @@ async function callEdgeFunction<T>(
   return data as T;
 }
 
-/**
- * Transform snake_case row to camelCase
- */
 function transformConfigRow(row: AIModelConfigRow): AIModelConfig {
   return {
     featureKey: row.feature_key as AIFeatureKey,
@@ -102,9 +140,6 @@ function transformConfigRow(row: AIModelConfigRow): AIModelConfig {
   };
 }
 
-/**
- * Transform preset row to camelCase
- */
 function transformPresetRow(row: BackgroundPresetRow): BackgroundPreset {
   return {
     id: row.id,
@@ -117,9 +152,6 @@ function transformPresetRow(row: BackgroundPresetRow): BackgroundPreset {
   };
 }
 
-/**
- * Transform generation row to camelCase
- */
 function transformGenerationRow(row: AIGenerationRow): AIGeneration {
   return {
     id: row.id,
@@ -139,18 +171,11 @@ function transformGenerationRow(row: AIGenerationRow): AIGeneration {
 // Configuration Functions
 // ============================================
 
-/**
- * Fetch all enabled AI features
- * Results are cached for 5 minutes by the edge function
- */
 export async function fetchAIConfig(): Promise<AIModelConfig[]> {
   try {
-    // The edge function returns snake_case data, so we need to cast to the row type
     const response = await callEdgeFunction<{ features: AIModelConfigRow[]; version: string }>(ENDPOINTS.config);
-    // Transform snake_case to camelCase
     return (response.features || []).map(transformConfigRow);
   } catch (error: any) {
-    // If auth is pending, return empty array instead of throwing
     if (error?.message === 'AUTH_PENDING') {
       return [];
     }
@@ -159,21 +184,16 @@ export async function fetchAIConfig(): Promise<AIModelConfig[]> {
   }
 }
 
-/**
- * Fetch background presets for background_replace feature
- */
 export async function fetchBackgroundPresets(): Promise<{
   presets: BackgroundPreset[];
   grouped: GroupedBackgroundPresets;
 }> {
   try {
-    // The edge function returns snake_case data
     const response = await callEdgeFunction<{
       presets: BackgroundPresetRow[];
       grouped: Record<string, BackgroundPresetRow[]>;
     }>(`${ENDPOINTS.config}/presets`);
     
-    // Transform snake_case to camelCase
     const transformedPresets = (response.presets || []).map(transformPresetRow);
     const transformedGrouped: GroupedBackgroundPresets = {
       studio: (response.grouped?.studio || []).map(transformPresetRow),
@@ -188,7 +208,6 @@ export async function fetchBackgroundPresets(): Promise<{
       grouped: transformedGrouped,
     };
   } catch (error: any) {
-    // If auth is pending, return empty presets instead of throwing
     if (error?.message === 'AUTH_PENDING') {
       return {
         presets: [],
@@ -200,9 +219,6 @@ export async function fetchBackgroundPresets(): Promise<{
   }
 }
 
-/**
- * Get a specific AI feature config
- */
 export async function getFeatureConfig(featureKey: AIFeatureKey): Promise<AIModelConfig | null> {
   const configs = await fetchAIConfig();
   return configs.find(c => c.featureKey === featureKey) || null;
@@ -212,9 +228,6 @@ export async function getFeatureConfig(featureKey: AIFeatureKey): Promise<AIMode
 // Credit Functions
 // ============================================
 
-/**
- * Get current AI credit balance
- */
 export async function getCredits(): Promise<AICredits | null> {
   try {
     const response = await callEdgeFunction<{
@@ -233,7 +246,6 @@ export async function getCredits(): Promise<AICredits | null> {
       daysUntilReset: response.days_until_reset,
     };
   } catch (error: any) {
-    // If auth is pending, return null instead of throwing
     if (error?.message === 'AUTH_PENDING') {
       return null;
     }
@@ -242,34 +254,16 @@ export async function getCredits(): Promise<AICredits | null> {
   }
 }
 
-/**
- * Check if user has enough credits for a feature
- */
 export async function checkCredits(featureKey: AIFeatureKey): Promise<AIFeatureCheck> {
-  try {
-    const response = await callEdgeFunction<{
-      has_credits: boolean;
-      credits_remaining: number;
-      credits_required: number;
-    }>(`${ENDPOINTS.credits}/check`, {
-      method: 'POST',
-      body: JSON.stringify({ feature_key: featureKey }),
-    });
-
-    return {
-      hasCredits: response.has_credits,
-      creditsRemaining: response.credits_remaining,
-      creditsRequired: response.credits_required,
-    };
-  } catch (error) {
-    console.error('[aiService] Error checking credits:', error);
-    throw error;
-  }
+  // Premium users have unlimited access - always return true
+  // Credits are tracked internally for analytics only
+  return {
+    hasCredits: true,
+    creditsRemaining: 999,
+    creditsRequired: 1,
+  };
 }
 
-/**
- * Get generation history
- */
 export async function getGenerationHistory(
   limit: number = 20,
   offset: number = 0
@@ -290,28 +284,144 @@ export async function getGenerationHistory(
 }
 
 // ============================================
+// Fal.AI Polling Functions
+// ============================================
+
+/**
+ * Poll Fal.AI for job status
+ */
+async function pollFalAIStatus(
+  pollUrl: string,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
+): Promise<{ success: boolean; outputUrl?: string; error?: string }> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < MAX_POLL_TIME_MS) {
+    // Check if cancelled
+    if (abortSignal?.aborted) {
+      return { success: false, error: 'Cancelled' };
+    }
+
+    try {
+      const response = await fetch(pollUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Key ${FAL_API_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[aiService] Poll error:', response.status, errorText);
+        
+        // Retry on 5xx errors
+        if (response.status >= 500) {
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+          continue;
+        }
+        
+        return { success: false, error: `Poll failed: ${response.status}` };
+      }
+
+      const result: FalQueueResponse = await response.json();
+      console.log('[aiService] Poll status:', result.status);
+
+      switch (result.status) {
+        case 'IN_QUEUE':
+          onProgress?.({
+            status: 'queued',
+            message: 'Waiting in queue...',
+            progress: 10,
+          });
+          break;
+
+        case 'IN_PROGRESS':
+          const elapsed = Date.now() - startTime;
+          const estimatedProgress = Math.min(30 + (elapsed / 1000) * 2, 90);
+          onProgress?.({
+            status: 'processing',
+            message: 'Enhancing your photo...',
+            progress: estimatedProgress,
+          });
+          break;
+
+        case 'COMPLETED':
+          // Extract output URL from various possible locations
+          const outputUrl = 
+            result.response?.image?.url ||
+            result.response?.output?.url ||
+            result.response?.url;
+
+          if (!outputUrl) {
+            console.error('[aiService] No output URL in response:', result);
+            return { success: false, error: 'No output URL in response' };
+          }
+
+          onProgress?.({
+            status: 'completed',
+            message: 'Enhancement complete!',
+            progress: 100,
+            outputUrl,
+          });
+
+          return { success: true, outputUrl };
+
+        case 'FAILED':
+          const errorMsg = result.error?.message || result.response?.error || 'Processing failed';
+          onProgress?.({
+            status: 'failed',
+            message: errorMsg,
+            error: errorMsg,
+          });
+          return { success: false, error: errorMsg };
+      }
+
+    } catch (error: any) {
+      console.error('[aiService] Poll error:', error);
+      // Continue polling on network errors
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+
+  // Timeout
+  onProgress?.({
+    status: 'timeout',
+    message: 'Processing took too long',
+    error: 'Timeout',
+  });
+  return { success: false, error: 'Processing timeout' };
+}
+
+// ============================================
 // Enhancement Functions
 // ============================================
 
 /**
- * Process an image with AI enhancement
+ * Enhance an image with AI - with progress tracking
  * 
- * @param request - Enhancement request with image URL and feature
- * @returns Enhanced image URL and updated credits
+ * This is the main function to use for AI enhancements.
+ * It submits to the edge function, then polls Fal.AI directly.
  */
-export async function enhanceImage(
-  request: AIEnhanceRequest
+export async function enhanceImageWithPolling(
+  request: AIEnhanceRequest,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
+  const startTime = Date.now();
+
   try {
-    const response = await callEdgeFunction<{
-      success: boolean;
-      generation_id: string;
-      output_url?: string;
-      credits_charged: number;
-      credits_remaining: number;
-      processing_time_ms?: number;
-      error?: string;
-    }>(ENDPOINTS.enhance, {
+    // Report submitting status
+    onProgress?.({
+      status: 'submitting',
+      message: 'Starting enhancement...',
+      progress: 0,
+    });
+
+    // Step 1: Submit to edge function
+    const submitResponse = await callEdgeFunction<EnhanceSubmitResponse>(ENDPOINTS.enhance, {
       method: 'POST',
       body: JSON.stringify({
         feature_key: request.featureKey,
@@ -320,23 +430,79 @@ export async function enhanceImage(
         slot_id: request.slotId,
         preset_id: request.presetId,
         custom_prompt: request.customPrompt,
+        model_type: request.modelType,
         params: request.params,
       }),
     });
 
+    if (!submitResponse.success || !submitResponse.request_id) {
+      throw new Error(submitResponse.error || 'Failed to submit enhancement request');
+    }
+
+    console.log('[aiService] Submitted:', submitResponse.generation_id, submitResponse.request_id);
+
+    // Report queued status
+    onProgress?.({
+      status: 'queued',
+      message: 'Request submitted...',
+      progress: 5,
+    });
+
+    // Check if cancelled before polling
+    if (abortSignal?.aborted) {
+      return {
+        success: false,
+        generationId: submitResponse.generation_id,
+        creditsCharged: 0,
+        creditsRemaining: 0,
+        error: 'Cancelled',
+      };
+    }
+
+    // Step 2: Poll Fal.AI directly
+    const pollResult = await pollFalAIStatus(
+      submitResponse.poll_url,
+      onProgress,
+      abortSignal
+    );
+
+    const processingTime = Date.now() - startTime;
+
+    if (!pollResult.success) {
+      // Update generation status via Supabase
+      await updateGenerationStatus(submitResponse.generation_id, 'failed', pollResult.error);
+      
+      return {
+        success: false,
+        generationId: submitResponse.generation_id,
+        creditsCharged: 0,
+        creditsRemaining: 0,
+        processingTimeMs: processingTime,
+        error: pollResult.error,
+      };
+    }
+
+    // Update generation with success
+    await updateGenerationStatus(submitResponse.generation_id, 'completed', undefined, pollResult.outputUrl, processingTime);
+
     return {
-      success: response.success,
-      generationId: response.generation_id,
-      outputUrl: response.output_url,
-      creditsCharged: response.credits_charged,
-      creditsRemaining: response.credits_remaining,
-      processingTimeMs: response.processing_time_ms,
-      error: response.error,
+      success: true,
+      generationId: submitResponse.generation_id,
+      outputUrl: pollResult.outputUrl,
+      creditsCharged: 1, // Internal tracking
+      creditsRemaining: 999, // Unlimited for premium
+      processingTimeMs: processingTime,
     };
+
   } catch (error: any) {
     console.error('[aiService] Enhancement error:', error);
     
-    // Return structured error response
+    onProgress?.({
+      status: 'failed',
+      message: error.message || 'Enhancement failed',
+      error: error.message,
+    });
+    
     return {
       success: false,
       generationId: '',
@@ -348,83 +514,103 @@ export async function enhanceImage(
 }
 
 /**
- * Convenience method: Enhance image quality
- * Uses creative-upscaler for quality improvement
+ * Update generation status in database
  */
+async function updateGenerationStatus(
+  generationId: string,
+  status: 'completed' | 'failed',
+  errorMessage?: string,
+  outputUrl?: string,
+  processingTimeMs?: number
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('ai_generations')
+      .update({
+        status,
+        error_message: errorMessage || null,
+        output_image_url: outputUrl || null,
+        processing_time_ms: processingTimeMs || null,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', generationId);
+
+    if (error) {
+      console.error('[aiService] Failed to update generation:', error);
+    }
+  } catch (e) {
+    console.error('[aiService] Update generation error:', e);
+  }
+}
+
+/**
+ * Legacy sync function - wraps the polling version
+ */
+export async function enhanceImage(
+  request: AIEnhanceRequest
+): Promise<AIEnhanceResponse> {
+  return enhanceImageWithPolling(request);
+}
+
+// ============================================
+// Convenience Methods
+// ============================================
+
 export async function enhanceQuality(
   imageUrl: string,
-  draftId?: string,
-  slotId?: string
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
-  return enhanceImage({
-    featureKey: 'auto_quality',
-    imageUrl,
-    draftId,
-    slotId,
-  });
+  return enhanceImageWithPolling(
+    { featureKey: 'auto_quality', imageUrl },
+    onProgress,
+    abortSignal
+  );
 }
 
-/**
- * Convenience method: Remove background
- * Uses birefnet/v2 for transparent background
- */
 export async function removeBackground(
   imageUrl: string,
-  draftId?: string,
-  slotId?: string
+  modelType: 'General' | 'Portrait' | 'Product' = 'General',
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
-  return enhanceImage({
-    featureKey: 'background_remove',
-    imageUrl,
-    draftId,
-    slotId,
-  });
+  return enhanceImageWithPolling(
+    { featureKey: 'background_remove', imageUrl, modelType },
+    onProgress,
+    abortSignal
+  );
 }
 
-/**
- * Convenience method: Replace background with preset
- */
 export async function replaceBackgroundWithPreset(
   imageUrl: string,
   presetId: string,
-  draftId?: string,
-  slotId?: string
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
-  return enhanceImage({
-    featureKey: 'background_replace',
-    imageUrl,
-    draftId,
-    slotId,
-    presetId,
-  });
+  return enhanceImageWithPolling(
+    { featureKey: 'background_replace', imageUrl, presetId },
+    onProgress,
+    abortSignal
+  );
 }
 
-/**
- * Convenience method: Replace background with custom prompt
- */
 export async function replaceBackgroundWithPrompt(
   imageUrl: string,
   customPrompt: string,
-  draftId?: string,
-  slotId?: string
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
-  return enhanceImage({
-    featureKey: 'background_replace',
-    imageUrl,
-    draftId,
-    slotId,
-    customPrompt,
-  });
+  return enhanceImageWithPolling(
+    { featureKey: 'background_replace', imageUrl, customPrompt },
+    onProgress,
+    abortSignal
+  );
 }
 
 // ============================================
 // Direct Database Access (Fallback)
 // ============================================
 
-/**
- * Fetch AI configs directly from database
- * Use this as fallback if edge function is unavailable
- */
 export async function fetchAIConfigDirect(): Promise<AIModelConfig[]> {
   const { data, error } = await supabase
     .from('ai_model_config')
@@ -440,9 +626,6 @@ export async function fetchAIConfigDirect(): Promise<AIModelConfig[]> {
   return (data as AIModelConfigRow[]).map(transformConfigRow);
 }
 
-/**
- * Fetch background presets directly from database
- */
 export async function fetchBackgroundPresetsDirect(): Promise<BackgroundPreset[]> {
   const { data, error } = await supabase
     .from('background_presets')
@@ -475,6 +658,7 @@ export default {
   
   // Enhancement
   enhanceImage,
+  enhanceImageWithPolling,
   enhanceQuality,
   removeBackground,
   replaceBackgroundWithPreset,

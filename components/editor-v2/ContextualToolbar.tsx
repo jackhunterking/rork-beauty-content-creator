@@ -22,6 +22,7 @@ import * as Haptics from 'expo-haptics';
 import {
   RefreshCw,
   Maximize2,
+  RotateCw,
   Sparkles,
   Trash2,
   Type,
@@ -227,7 +228,7 @@ export function ContextualToolbar({
     ai: Colors.light.accent,
   };
 
-  // Photo toolbar: Replace, Resize (includes crop + rotate), AI Edit, Delete
+  // Photo toolbar: Replace, Rotate, AI Edit, Delete
   const renderPhotoToolbar = () => (
     <>
       <ToolbarButton
@@ -236,8 +237,8 @@ export function ContextualToolbar({
         onPress={onPhotoReplace || (() => {})}
       />
       <ToolbarButton
-        icon={<Maximize2 size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
-        label="Resize"
+        icon={<RotateCw size={22} color={TOOLBAR_COLORS.secondary} strokeWidth={2} />}
+        label="Rotate"
         onPress={onPhotoResize || (() => {})}
       />
       <ToolbarButton

@@ -38,6 +38,7 @@ export function mapRowToTemplate(row: TemplateRow): Template {
   const templatedPreviewUrl = addCacheBuster(row.templated_preview_url, cacheBuster);
   const backgroundUrl = addCacheBuster(row.background_url, cacheBuster);
   const framePreviewUrl = addCacheBuster(row.frame_preview_url, cacheBuster);
+  const frameOverlayUrl = addCacheBuster(row.frame_overlay_url, cacheBuster);
   
   return {
     id: row.id,
@@ -82,10 +83,12 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // List of layer IDs that users can customize the background color of
     customizableBackgroundLayers: row.customizable_background_layers || undefined,
     // PNG URL with transparent slots and background - for client-side compositing
-    frameOverlayUrl: row.frame_overlay_url || undefined,
+    frameOverlayUrl: frameOverlayUrl || undefined,
     // Theme layer geometries for client-side rendering
     // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
     themeLayers: row.theme_layers || undefined,
+    // Vector layer geometries for client-side rendering with react-native-svg
+    vectorLayers: row.vector_layers || undefined,
     // Default colors for template design (used to initialize editor)
     defaultBackgroundColor: row.default_background_color || '#FFFFFF',
     defaultThemeColor: row.default_theme_color || undefined,

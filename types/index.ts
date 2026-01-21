@@ -345,6 +345,8 @@ export interface Slot {
   height: number;
   placeholderUrl?: string;
   captureOrder: number;   // Order in capture flow (1, 2, 3...)
+  zIndex?: number;        // Layer z-order (higher = in front)
+  rotation?: number;      // Rotation in degrees (if any)
 }
 
 // Captured images keyed by layer ID
@@ -408,6 +410,10 @@ export interface Template {
   // Layers with 'theme-' prefix are hidden in frame overlay and rendered as colored shapes
   themeLayers?: ThemeLayer[];
   
+  // Vector layer data for rendering icons/shapes with react-native-svg
+  // Extracted from Templated.io 'vector' type layers
+  vectorLayers?: VectorLayer[];
+  
   // Default colors for template design (used to initialize editor)
   /** Original background color of template design (hex) */
   defaultBackgroundColor?: string;
@@ -454,17 +460,44 @@ interface ThemeLayerBase {
   width: number;
   /** Height in template pixels */
   height: number;
+  /** Z-index based on original layer position (higher = in front) */
+  zIndex: number;
   /** Rotation in degrees */
   rotation?: number;
   /** Opacity from 0.0 (transparent) to 1.0 (opaque), defaults to 1.0 */
   opacity?: number;
+  /**
+   * Original fill color from Templated.io
+   * Can be hex (#303030), rgb(r,g,b), or rgba(r,g,b,a)
+   * When present, used as the base color (before theme override)
+   */
+  fill?: string;
+  /**
+   * Stroke/border color from Templated.io
+   * Used for rendering borders around shapes
+   */
+  stroke?: string;
+  /**
+   * Stroke width for borders
+   */
+  strokeWidth?: number;
 }
 
 /** Shape theme layer - renders as colored rectangle/background */
 export interface ShapeThemeLayer extends ThemeLayerBase {
   type: 'shape';
-  /** Border radius in pixels */
+  /** Border radius in pixels (can be uniform or per-corner) */
   borderRadius?: number;
+  /**
+   * Shape variant - helps determine rendering approach
+   * 'rectangle' | 'ellipse' | 'circle' | 'custom'
+   * Extracted from SVG HTML when present
+   */
+  shapeType?: 'rectangle' | 'ellipse' | 'circle' | 'custom';
+  /** SVG viewBox for custom shapes (e.g., "0 0 65 56" for heart) */
+  viewBox?: string;
+  /** SVG path data for custom shapes (e.g., heart path) */
+  pathData?: string;
 }
 
 /** Text theme layer - renders as styled, colorable text */
@@ -497,6 +530,41 @@ export function isTextThemeLayer(layer: ThemeLayer): layer is TextThemeLayer {
 /** Type guard to check if layer is shape type */
 export function isShapeThemeLayer(layer: ThemeLayer): layer is ShapeThemeLayer {
   return layer.type === 'shape' || !('type' in layer);
+}
+
+// ============================================================================
+// Vector Layer Types (for rendering icons/vectors from Templated.io)
+// ============================================================================
+
+/**
+ * Vector layer extracted from Templated.io
+ * Contains SVG path data for rendering icons/shapes with react-native-svg
+ */
+export interface VectorLayer {
+  /** Layer ID from Templated.io (e.g., 'vector-2', 'heart-icon') */
+  id: string;
+  /** X position in template pixels */
+  x: number;
+  /** Y position in template pixels */
+  y: number;
+  /** Width in template pixels */
+  width: number;
+  /** Height in template pixels */
+  height: number;
+  /** Z-index based on original layer position (higher = in front) */
+  zIndex: number;
+  /** Rotation in degrees (0, 90, 180, 270, or any angle) */
+  rotation?: number;
+  /** Opacity from 0.0 to 1.0 */
+  opacity?: number;
+  /** SVG viewBox (e.g., "0 0 448 512") */
+  viewBox: string;
+  /** SVG path 'd' attribute */
+  pathData: string;
+  /** Fill color (hex or rgb format) */
+  fill: string;
+  /** Whether this vector should change with theme color */
+  isThemed?: boolean;
 }
 
 // Database row type (snake_case from Supabase)
@@ -541,6 +609,8 @@ export interface TemplateRow {
   frame_overlay_url: string | null;
   // Theme layer geometries for client-side rendering
   theme_layers: ThemeLayer[] | null;
+  // Vector layer data for rendering icons/shapes
+  vector_layers: VectorLayer[] | null;
   // Default colors for template design (used to initialize editor)
   default_background_color: string | null;
   default_theme_color: string | null;
@@ -567,6 +637,9 @@ export interface Draft {
   // Dynamic captured images keyed by slot layer ID
   // e.g., { "slot-before": "url", "slot-after": "url" }
   capturedImageUrls?: Record<string, string>;
+  // Image adjustments (scale, translate, rotation) for each slot
+  // e.g., { "slot-before": { scale: 1.5, translateX: 0.1, translateY: -0.2, rotation: 0 } }
+  capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }>;
   createdAt: string;
   updatedAt: string;
   // Cached preview URL from Templated.io (avoids re-rendering on draft load)
@@ -594,6 +667,8 @@ export interface DraftRow {
   after_image_url: string | null;
   // Dynamic captured images as JSONB
   captured_image_urls: Record<string, string> | null;
+  // Image adjustments (scale, translate, rotation) for each slot as JSONB
+  captured_image_adjustments: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
   created_at: string;
   updated_at: string;
   // Cached preview URL from Templated.io
@@ -1030,6 +1105,7 @@ export interface AIEnhanceRequest {
   slotId?: string;
   presetId?: string;  // For background_replace
   customPrompt?: string;  // For background_replace with custom prompt
+  modelType?: 'General' | 'Portrait' | 'Product';  // For background_remove
   params?: Record<string, unknown>;
 }
 

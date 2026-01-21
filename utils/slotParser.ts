@@ -91,9 +91,12 @@ export function extractSlots(template: Template): Slot[] {
     return [];
   }
 
+  // Map slots with their ORIGINAL index in layers array (indicates z-order)
+  // In Templated.io: lower index = higher in layer panel = rendered IN FRONT (higher z-index)
   return layers
-    .filter(isSlotLayer)
-    .map((layer, index) => ({
+    .map((layer, originalIndex) => ({ layer, originalIndex }))
+    .filter(({ layer }) => isSlotLayer(layer))
+    .map(({ layer, originalIndex }) => ({
       layerId: layer.layer,
       label: deriveSlotLabel(layer.layer),
       x: layer.x,
@@ -101,7 +104,11 @@ export function extractSlots(template: Template): Slot[] {
       width: layer.width,
       height: layer.height,
       placeholderUrl: layer.image_url,
-      captureOrder: index + 1,
+      captureOrder: originalIndex + 1,
+      // Z-index: In Templated.io API, layer order is BACK to FRONT
+      // Index 0 = BACK (lowest z), Index N = FRONT (highest z)
+      // So higher originalIndex = higher z-index = rendered in front
+      zIndex: originalIndex + 1,
     }));
 }
 

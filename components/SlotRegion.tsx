@@ -68,16 +68,18 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     backgroundColor: 'transparent',
+    // Ensure slot regions appear above frame overlay in LayeredCanvas
+    zIndex: 20,
   },
   emptyContainer: {
     // Subtle background tint to make slot area visible
-    backgroundColor: 'rgba(122, 139, 125, 0.08)',
+    backgroundColor: 'rgba(122, 139, 125, 0.12)',
     // Border to show slot boundaries
-    borderWidth: 1.5,
-    borderColor: 'rgba(122, 139, 125, 0.25)',
+    borderWidth: 2,
+    borderColor: 'rgba(122, 139, 125, 0.35)',
     borderStyle: 'dashed',
     // Slight rounding for aesthetics
-    borderRadius: 4,
+    borderRadius: 8,
   },
   iconWrapper: {
     flex: 1,

@@ -1,7 +1,7 @@
 /**
- * ResizeToolbar Component
+ * RotateToolbar Component
  * 
- * Bottom toolbar for resize mode with Cancel/Done buttons and rotation slider.
+ * Bottom toolbar for rotate mode with Cancel/Done buttons and rotation slider.
  * Pinch to zoom and drag to position are done via gestures on the canvas.
  */
 
@@ -39,7 +39,7 @@ export function CropToolbar({ onCancel, onDone, rotation, onRotationChange }: Cr
           <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Resize</Text>
+        <Text style={styles.title}>Rotate</Text>
 
         <TouchableOpacity
           style={styles.doneButton}
