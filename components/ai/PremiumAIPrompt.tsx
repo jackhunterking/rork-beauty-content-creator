@@ -15,7 +15,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import Colors from '@/constants/Colors';
+import Colors from '@/constants/colors';
 
 interface PremiumAIPromptProps {
   onUpgrade: () => void;

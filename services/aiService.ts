@@ -257,11 +257,11 @@ export async function getCredits(): Promise<AICredits | null> {
 export async function checkCredits(featureKey: AIFeatureKey): Promise<AIFeatureCheck> {
   // Premium users have unlimited access - always return true
   // Credits are tracked internally for analytics only
-  return {
+    return {
     hasCredits: true,
     creditsRemaining: 999,
     creditsRequired: 1,
-  };
+    };
 }
 
 export async function getGenerationHistory(
@@ -430,6 +430,7 @@ export async function enhanceImageWithPolling(
         slot_id: request.slotId,
         preset_id: request.presetId,
         custom_prompt: request.customPrompt,
+        solid_color: request.solidColor,
         model_type: request.modelType,
         params: request.params,
       }),
@@ -570,12 +571,11 @@ export async function enhanceQuality(
 
 export async function removeBackground(
   imageUrl: string,
-  modelType: 'General' | 'Portrait' | 'Product' = 'General',
   onProgress?: (progress: AIProcessingProgress) => void,
   abortSignal?: AbortSignal
 ): Promise<AIEnhanceResponse> {
   return enhanceImageWithPolling(
-    { featureKey: 'background_remove', imageUrl, modelType },
+    { featureKey: 'background_remove', imageUrl },
     onProgress,
     abortSignal
   );
@@ -602,6 +602,19 @@ export async function replaceBackgroundWithPrompt(
 ): Promise<AIEnhanceResponse> {
   return enhanceImageWithPolling(
     { featureKey: 'background_replace', imageUrl, customPrompt },
+    onProgress,
+    abortSignal
+  );
+}
+
+export async function replaceBackgroundWithColor(
+  imageUrl: string,
+  solidColor: string,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
+): Promise<AIEnhanceResponse> {
+  return enhanceImageWithPolling(
+    { featureKey: 'background_replace', imageUrl, solidColor },
     onProgress,
     abortSignal
   );
@@ -663,6 +676,7 @@ export default {
   removeBackground,
   replaceBackgroundWithPreset,
   replaceBackgroundWithPrompt,
+  replaceBackgroundWithColor,
   
   // Direct DB access
   fetchAIConfigDirect,

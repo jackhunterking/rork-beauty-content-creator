@@ -40,7 +40,6 @@ import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCaptur
 import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
 import {
-  AIStudioPanel,
   CropToolbar,
   EditorMainToolbar,
   ElementContextBar,
@@ -50,7 +49,8 @@ import {
 } from '@/components/editor-v2';
 import { BackgroundPresetPicker } from '@/components/editor-v2/BackgroundPresetPicker';
 import { enhanceImageWithPolling, AIProcessingProgress, AIProcessingStatus } from '@/services/aiService';
-import { AIProcessingOverlay, AISuccessOverlay, AIErrorView } from '@/components/ai';
+import { AIStudioSheet, AIProcessingOverlay, AISuccessOverlay, AIErrorView } from '@/components/ai';
+import { BottomSheetModal, BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import type { AIFeatureKey, BackgroundPreset } from '@/types';
 import {
   SelectionState,
@@ -98,9 +98,13 @@ export default function EditorV2Screen() {
   const capturedImages = currentProject.capturedImages;
 
   // Bottom sheet refs
-  const aiStudioRef = useRef<BottomSheet>(null);
+  const aiStudioRef = useRef<BottomSheetModal>(null);
   const backgroundPickerRef = useRef<BottomSheet>(null);
   const projectActionsRef = useRef<BottomSheet>(null);
+  
+  // Ref for AI transformed image - updated synchronously to avoid state timing issues
+  // Ref for synchronous access to transformed images (avoids React state timing issues)
+  const aiTransformedImagesRef = useRef<Record<string, string>>({});
   
   // Canva-style panel refs
   const textStylePanelRef = useRef<TextStylePanelRef>(null);
@@ -127,6 +131,15 @@ export default function EditorV2Screen() {
   const [aiError, setAIError] = useState<string | null>(null);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const [selectedBackgroundPresetId, setSelectedBackgroundPresetId] = useState<string | null>(null);
+  
+  // AI Studio sheet initial view - tracks which feature to open directly
+  const [aiSheetInitialView, setAiSheetInitialView] = useState<AIFeatureKey | 'home'>('home');
+  // Navigation trigger - increments each time a feature is clicked to force navigation
+  const [aiNavTrigger, setAiNavTrigger] = useState(0);
+  
+  // Transformed images for AI - maps slot ID to processed image URI
+  // This captures current view state (zoom/pan/rotate) for ALL slots with adjustments
+  const [aiTransformedImages, setAiTransformedImages] = useState<Record<string, string>>({});
   
   // Background layer customization state - initialized from draft (LEGACY)
   const [backgroundOverrides, setBackgroundOverrides] = useState<Record<string, string>>(
@@ -605,8 +618,9 @@ export default function EditorV2Screen() {
         setAIProcessingType(null);
         setAIProgress(null);
       } else {
-        // Show error state
-        setAIError(error.message || 'Something went wrong. Please try again.');
+        // Show error state - ensure we have a string message
+        const errorMsg = error?.message || (typeof error === 'string' ? error : 'Something went wrong. Please try again.');
+        setAIError(errorMsg);
       }
     } finally {
       aiAbortControllerRef.current = null;
@@ -728,8 +742,10 @@ export default function EditorV2Screen() {
       // Open logo picker panel
       logoPanelRef.current?.openPicker();
     } else if (tool === 'ai') {
-      // Open AI Studio panel (unified AI experience)
-      aiStudioRef.current?.snapToIndex(0);
+      // Open AI Studio sheet - shows image carousel to select image
+      // The sheet handles the "no images" case with the carousel's empty state
+      setAiSheetInitialView('home');
+      aiStudioRef.current?.present();
     }
   }, [activeMainTool, slots, capturedImages, router]);
 
@@ -1350,20 +1366,88 @@ export default function EditorV2Screen() {
     setPendingRotation(rotation);
   }, []);
 
+  // Helper to process a single slot's image with adjustments
+  const processSlotImage = useCallback(async (
+    slotId: string,
+    image: MediaAsset,
+    adjustments: MediaAsset['adjustments'],
+    slot: Slot
+  ): Promise<string> => {
+    const hasNonDefaultAdjustments = adjustments && (
+      adjustments.translateX !== 0 ||
+      adjustments.translateY !== 0 ||
+      adjustments.scale !== 1.0 ||
+      (adjustments.rotation !== undefined && adjustments.rotation !== 0)
+    );
+    
+    if (!hasNonDefaultAdjustments || !adjustments) {
+      return image.uri;
+    }
+    
+    try {
+      // Check if the image is a remote URL (Supabase storage)
+      let localImageUri = image.uri;
+      const isRemoteUrl = image.uri.startsWith('http://') || image.uri.startsWith('https://');
+      
+      if (isRemoteUrl) {
+        const localPath = `${FileSystem.cacheDirectory}ai_temp_${slotId}_${Date.now()}.jpg`;
+        const downloadResult = await FileSystem.downloadAsync(image.uri, localPath);
+        localImageUri = downloadResult.uri;
+        trackTempFile(localImageUri);
+      }
+      
+      const processed = await applyAdjustmentsAndCrop(
+        localImageUri,
+        image.width,
+        image.height,
+        slot.width,
+        slot.height,
+        adjustments
+      );
+      return processed.uri;
+    } catch (error) {
+      console.warn(`[EditorV2] Failed to process slot ${slotId}:`, error);
+      return image.uri;
+    }
+  }, []);
+
   // Handle AI feature selection from inline menu (context bar - photo already selected)
-  const handleAIFeatureSelect = useCallback((featureKey: AIFeatureKey) => {
-    // For background_replace, open the preset picker
-    if (featureKey === 'background_replace') {
-      backgroundPickerRef.current?.snapToIndex(0);
+  const handleAIFeatureSelect = useCallback(async (featureKey: AIFeatureKey) => {
+    if (selection.type !== 'slot' || !selection.id) {
       return;
     }
     
-    // For other features, apply directly
-    handleAIEnhancement(featureKey);
-  }, [handleAIEnhancement]);
+    // Process ALL slots with images (not just the selected one)
+    // This ensures the carousel shows the correct cropped/zoomed state for all images
+    const transformedImages: Record<string, string> = {};
+    
+    for (const slot of slots) {
+      const image = capturedImages[slot.layerId];
+      if (!image?.uri) continue;
+      
+      // For the currently selected slot, use pending adjustments if available
+      const adjustments = slot.layerId === selection.id 
+        ? (pendingManipulationAdjustments || image.adjustments)
+        : image.adjustments;
+      
+      const processedUri = await processSlotImage(slot.layerId, image, adjustments, slot);
+      transformedImages[slot.layerId] = processedUri;
+    }
+    
+    // Update ref SYNCHRONOUSLY - this is read by AIStudioSheet immediately
+    aiTransformedImagesRef.current = transformedImages;
+    
+    // Also update state for React re-renders
+    setAiTransformedImages(transformedImages);
+    setAiSheetInitialView(featureKey);
+    setAiNavTrigger(prev => prev + 1);
+    
+    // Present the sheet
+    aiStudioRef.current?.present();
+  }, [selection, capturedImages, pendingManipulationAdjustments, slots, processSlotImage]);
 
   // Handle AI feature selection from main toolbar (may not have photo selected)
-  const handleMainToolbarAISelect = useCallback((featureKey: AIFeatureKey) => {
+  const handleMainToolbarAISelect = useCallback(async (featureKey: AIFeatureKey) => {
     // Check if a photo slot is selected
     if (selection.type !== 'slot' || !selection.id) {
       // Need to select a photo first - find first slot with an image
@@ -1375,13 +1459,22 @@ export default function EditorV2Screen() {
           id: firstFilledSlot.layerId,
           isTransforming: false,
         });
-        // Then handle the AI feature
+        
+        // Process ALL slots with images
+        const transformedImages: Record<string, string> = {};
+        for (const slot of slots) {
+          const image = capturedImages[slot.layerId];
+          if (!image?.uri) continue;
+          const processedUri = await processSlotImage(slot.layerId, image, image.adjustments, slot);
+          transformedImages[slot.layerId] = processedUri;
+        }
+        
+        aiTransformedImagesRef.current = transformedImages;
+        setAiTransformedImages(transformedImages);
+        setAiSheetInitialView(featureKey);
+        setAiNavTrigger(prev => prev + 1);
         setTimeout(() => {
-          if (featureKey === 'background_replace') {
-            backgroundPickerRef.current?.snapToIndex(0);
-          } else {
-            handleAIEnhancement(featureKey);
-          }
+          aiStudioRef.current?.present();
         }, 100);
       } else {
         // No photos yet - prompt to add one
@@ -1394,13 +1487,33 @@ export default function EditorV2Screen() {
       return;
     }
     
-    // Photo already selected - proceed normally
-    if (featureKey === 'background_replace') {
-      backgroundPickerRef.current?.snapToIndex(0);
-    } else {
-      handleAIEnhancement(featureKey);
+    // Photo already selected - process ALL slots and open AI Studio
+    const transformedImages: Record<string, string> = {};
+    
+    for (const slot of slots) {
+      const image = capturedImages[slot.layerId];
+      if (!image?.uri) continue;
+      
+      // For the currently selected slot, use pending adjustments if available
+      const adjustments = slot.layerId === selection.id 
+        ? (pendingManipulationAdjustments || image.adjustments)
+        : image.adjustments;
+      
+      const processedUri = await processSlotImage(slot.layerId, image, adjustments, slot);
+      transformedImages[slot.layerId] = processedUri;
     }
-  }, [selection, slots, capturedImages, handleAIEnhancement]);
+    
+    // Update ref SYNCHRONOUSLY
+    aiTransformedImagesRef.current = transformedImages;
+    
+    // Also update state for React re-renders
+    setAiTransformedImages(transformedImages);
+    setAiSheetInitialView(featureKey);
+    setAiNavTrigger(prev => prev + 1);
+    
+    // Present the sheet
+    aiStudioRef.current?.present();
+  }, [selection, slots, capturedImages, pendingManipulationAdjustments, processSlotImage]);
 
   const handlePhotoDelete = useCallback(() => {
     if (selection.id) {
@@ -1924,6 +2037,7 @@ export default function EditorV2Screen() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
+      <BottomSheetModalProvider>
       <Stack.Screen
         options={{
           headerShown: false,
@@ -2153,23 +2267,50 @@ export default function EditorV2Screen() {
         visible={!!editingOverlayId}
       />
 
-      {/* AI Studio Panel */}
-      <AIStudioPanel
+      {/* AI Studio Sheet - New dedicated feature views with image carousel */}
+      <AIStudioSheet
         bottomSheetRef={aiStudioRef}
-        isPremium={isPremium}
+        slots={slots}
+        capturedImages={capturedImages}
         selectedSlotId={selection.type === 'slot' ? selection.id : null}
-        isProcessing={isAIProcessing}
-        processingType={aiProcessingType}
-        onApplyEnhancement={handleAIEnhancement}
-        onRequestPremium={(feature) => requestPremiumAccess(feature)}
-        onClose={() => aiStudioRef.current?.close()}
-        onSelectPhoto={() => {
-          // Navigate to first empty slot to capture a photo
-          const firstEmptySlot = slots.find(slot => !hasValidCapturedImage(slot.layerId, capturedImages));
+        isPremium={isPremium}
+        initialView={aiSheetInitialView}
+        navTrigger={aiNavTrigger}
+        transformedImages={Object.keys(aiTransformedImagesRef.current).length > 0 ? aiTransformedImagesRef.current : aiTransformedImages}
+        onApply={(slotId, enhancedUri) => {
+          // Update the captured image with the enhanced version
+          // Also clear any pending adjustments since AI creates a new processed image
+          const existingImage = capturedImages[slotId];
+          if (existingImage) {
+            setCapturedImage(slotId, {
+              ...existingImage,
+              uri: enhancedUri,
+              adjustments: { scale: 1, translateX: 0, translateY: 0, rotation: 0 },
+            });
+          }
+          // Clear pending manipulation if we modified the currently selected slot
+          if (selection.id === slotId) {
+            setPendingManipulationAdjustments(null);
+          }
+          // Reset AI sheet state - clear both ref and state
+          aiTransformedImagesRef.current = {};
+          setAiTransformedImages({});
+          setAiSheetInitialView('home');
+          aiStudioRef.current?.dismiss();
+        }}
+        onSkip={() => {
+          // Reset AI sheet state - clear both ref and state
+          aiTransformedImagesRef.current = {};
+          setAiTransformedImages({});
+          setAiSheetInitialView('home');
+          aiStudioRef.current?.dismiss();
+        }}
+        onAddImage={() => {
+          // Close the sheet and navigate to capture for the first empty slot
+          aiStudioRef.current?.dismiss();
+          const firstEmptySlot = slots.find(slot => !capturedImages[slot.layerId]?.uri);
           if (firstEmptySlot) {
             router.push(`/capture/${firstEmptySlot.layerId}`);
-          } else if (slots.length > 0) {
-            router.push(`/capture/${slots[0].layerId}`);
           }
         }}
       />
@@ -2310,6 +2451,7 @@ export default function EditorV2Screen() {
           />
         </View>
       )}
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

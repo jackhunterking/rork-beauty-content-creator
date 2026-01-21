@@ -14,12 +14,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import Colors from '@/constants/Colors';
+import Colors from '@/constants/colors';
 
 interface AIErrorViewProps {
-  errorMessage: string;
+  error: string;
   onRetry: () => void;
-  onCancel: () => void;
+  onDismiss: () => void;
 }
 
 // Map error messages to user-friendly versions
@@ -75,11 +75,13 @@ function getUserFriendlyMessage(error: string): { title: string; message: string
 }
 
 export default function AIErrorView({
-  errorMessage,
+  error,
   onRetry,
-  onCancel,
+  onDismiss,
 }: AIErrorViewProps) {
-  const { title, message, icon } = getUserFriendlyMessage(errorMessage);
+  // Safety check for undefined error
+  const safeError = error || 'An unexpected error occurred';
+  const { title, message, icon } = getUserFriendlyMessage(safeError);
   
   return (
     <View style={styles.container}>
@@ -93,8 +95,8 @@ export default function AIErrorView({
       <Text style={styles.message}>{message}</Text>
       
       {/* Debug info (only shown in dev) */}
-      {__DEV__ && errorMessage && (
-        <Text style={styles.debugText}>{errorMessage}</Text>
+      {__DEV__ && error && (
+        <Text style={styles.debugText}>{error}</Text>
       )}
       
       {/* Action Buttons */}
@@ -110,10 +112,10 @@ export default function AIErrorView({
         
         <TouchableOpacity
           style={styles.cancelButton}
-          onPress={onCancel}
+          onPress={onDismiss}
           activeOpacity={0.7}
         >
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelText}>Dismiss</Text>
         </TouchableOpacity>
       </View>
     </View>

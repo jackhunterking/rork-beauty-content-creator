@@ -23,7 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import Colors from '@/constants/Colors';
+import Colors from '@/constants/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COMPARISON_WIDTH = SCREEN_WIDTH - 48;
@@ -32,15 +32,15 @@ const COMPARISON_HEIGHT = COMPARISON_WIDTH * 1.25;
 interface AISuccessOverlayProps {
   originalUri: string;
   enhancedUri: string;
-  onApply: () => void;
-  onTryAnother: () => void;
+  onKeepEnhanced: () => void;
+  onRevert: () => void;
 }
 
 export default function AISuccessOverlay({
   originalUri,
   enhancedUri,
-  onApply,
-  onTryAnother,
+  onKeepEnhanced,
+  onRevert,
 }: AISuccessOverlayProps) {
   // Slider position (0-1, 0.5 = middle)
   const sliderPosition = useSharedValue(0.5);
@@ -128,7 +128,7 @@ export default function AISuccessOverlay({
       <View style={styles.buttonContainer}>
         <TouchableOpacity
           style={styles.tryAnotherButton}
-          onPress={onTryAnother}
+          onPress={onRevert}
           activeOpacity={0.7}
         >
           <Ionicons name="refresh-outline" size={18} color={Colors.light.accent} />
@@ -137,7 +137,7 @@ export default function AISuccessOverlay({
         
         <TouchableOpacity
           style={styles.applyButton}
-          onPress={onApply}
+          onPress={onKeepEnhanced}
           activeOpacity={0.8}
         >
           <Ionicons name="checkmark" size={20} color="#FFFFFF" />

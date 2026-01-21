@@ -14,6 +14,10 @@ export { default as AutoQualityView } from './AutoQualityView';
 export { default as RemoveBackgroundView } from './RemoveBackgroundView';
 export { default as ReplaceBackgroundView } from './ReplaceBackgroundView';
 
+// Image carousel for slot selection
+export { default as ImageSlotCarousel } from './ImageSlotCarousel';
+export type { ImageSlotCarouselProps } from './ImageSlotCarousel';
+
 // Processing states
 export { default as AIProcessingOverlay } from './AIProcessingOverlay';
 export { default as AISuccessOverlay } from './AISuccessOverlay';

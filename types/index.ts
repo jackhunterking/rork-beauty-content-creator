@@ -1103,8 +1103,9 @@ export interface AIEnhanceRequest {
   imageUrl: string;
   draftId?: string;
   slotId?: string;
-  presetId?: string;  // For background_replace
+  presetId?: string;  // For background_replace with preset
   customPrompt?: string;  // For background_replace with custom prompt
+  solidColor?: string;  // For background_replace with solid color (hex code e.g., "#FF5733")
   modelType?: 'General' | 'Portrait' | 'Product';  // For background_remove
   params?: Record<string, unknown>;
 }

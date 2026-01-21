@@ -548,6 +548,30 @@ export async function applyAdjustmentsAndCrop(
 ): Promise<{ uri: string; width: number; height: number }> {
   const { translateX, translateY, scale, rotation = 0 } = adjustments;
   
+  // CRITICAL: Verify the actual image dimensions match the metadata
+  // The metadata might be stale if the image was processed differently
+  const imageInfo = await ImageManipulator.manipulateAsync(uri, [], { format: ImageManipulator.SaveFormat.JPEG });
+  const actualWidth = imageInfo.width;
+  const actualHeight = imageInfo.height;
+  
+  // If the image is ALREADY at slot dimensions and matches metadata,
+  // it means the image was already cropped - DON'T apply adjustments again
+  const isImageAlreadyAtSlotSize = (
+    Math.abs(actualWidth - targetWidth) < 5 && 
+    Math.abs(actualHeight - targetHeight) < 5
+  );
+  
+  if (isImageAlreadyAtSlotSize) {
+    // The image was already processed to slot dimensions with adjustments baked in
+    // Just return the resized version to ensure exact dimensions
+    const resized = await resizeToSlot(uri, targetWidth, targetHeight);
+    return resized;
+  }
+  
+  // Use actual dimensions for calculations, not metadata (which might be wrong)
+  const correctedImageWidth = actualWidth;
+  const correctedImageHeight = actualHeight;
+  
   // Track intermediate files for cleanup
   let rotatedUri: string | null = null;
   let croppedUri: string | null = null;
@@ -556,9 +580,9 @@ export async function applyAdjustmentsAndCrop(
   // They were normalized using the ORIGINAL image's baseImageSize in the UI
   // We must use the SAME base calculations here
   
-  // Calculate baseImageSize the SAME way as the UI does (using ORIGINAL image dimensions)
+  // Calculate baseImageSize the SAME way as the UI does (using CORRECTED image dimensions)
   // This is the "cover fit" size for the unrotated image
-  const originalAspect = imageWidth / imageHeight;
+  const originalAspect = correctedImageWidth / correctedImageHeight;
   const slotAspect = targetWidth / targetHeight;
   
   let baseW: number, baseH: number;
@@ -601,8 +625,8 @@ export async function applyAdjustmentsAndCrop(
   
   // Now apply rotation to the source image
   let currentUri = uri;
-  let currentWidth = imageWidth;
-  let currentHeight = imageHeight;
+  let currentWidth = correctedImageWidth;
+  let currentHeight = correctedImageHeight;
   
   if (rotation !== 0) {
     const rotated = await ImageManipulator.manipulateAsync(

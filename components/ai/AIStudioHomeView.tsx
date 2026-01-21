@@ -1,217 +1,217 @@
 /**
- * AI Studio Home View
+ * AI Studio Home View - iOS Native Design
  * 
- * Feature selection screen with 3 AI enhancement options.
- * Minimal design with image preview and feature cards.
+ * Clean, minimal design following iOS principles:
+ * - Large hero image
+ * - Icon-forward action buttons
+ * - Short labels, no descriptions
+ * - High contrast, native feel
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-import Colors from '@/constants/Colors';
-import type { AIFeatureKey } from '@/types';
+import Colors from '@/constants/colors';
+import type { AIFeatureKey, Slot, MediaAsset } from '@/types';
+import ImageSlotCarousel from './ImageSlotCarousel';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface AIStudioHomeViewProps {
-  imageUri: string;
-  imageSize: { width: number; height: number };
+  /** All available slots from the template */
+  slots: Slot[];
+  /** Captured images keyed by slot ID */
+  capturedImages: Record<string, MediaAsset | null>;
+  /** Currently selected slot ID */
+  selectedSlotId: string | null;
+  /** Pre-processed/transformed images for ALL slots (with adjustments applied) - maps slotId to URI */
+  transformedImages?: Record<string, string>;
+  /** Callback when user selects a slot in the carousel */
+  onSelectSlot: (slotId: string) => void;
+  /** Callback when user selects an AI feature */
   onSelectFeature: (featureKey: AIFeatureKey) => void;
+  /** Callback to skip AI and continue */
   onSkip: () => void;
+  /** Callback when user wants to add an image */
+  onAddImage?: () => void;
 }
 
-interface FeatureCardProps {
+interface ActionButtonProps {
   icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  description: string;
+  label: string;
   onPress: () => void;
 }
 
-function FeatureCard({ icon, title, description, onPress }: FeatureCardProps) {
+function ActionButton({ icon, label, onPress }: ActionButtonProps) {
   return (
     <TouchableOpacity
-      style={styles.featureCard}
+      style={styles.actionButton}
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.8}
     >
-      <View style={styles.featureIconContainer}>
-        <Ionicons name={icon} size={24} color={Colors.light.accent} />
+      <View style={styles.actionIconContainer}>
+        <Ionicons name={icon} size={26} color="#FFFFFF" />
       </View>
-      <Text style={styles.featureTitle}>{title}</Text>
-      <Text style={styles.featureDescription} numberOfLines={2}>
-        {description}
-      </Text>
+      <Text style={styles.actionLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 export default function AIStudioHomeView({
-  imageUri,
-  imageSize,
+  slots,
+  capturedImages,
+  selectedSlotId,
+  transformedImages = {},
+  onSelectSlot,
   onSelectFeature,
   onSkip,
+  onAddImage,
 }: AIStudioHomeViewProps) {
-  // Calculate preview dimensions
-  const maxPreviewHeight = 280;
-  const aspectRatio = imageSize.width / imageSize.height;
-  const previewWidth = Math.min(SCREEN_WIDTH - 48, maxPreviewHeight * aspectRatio);
-  const previewHeight = previewWidth / aspectRatio;
+  // Create a modified capturedImages that uses transformed images for ALL slots
+  // This ensures the carousel shows the current cropped/zoomed state for each image
+  const displayCapturedImages = useMemo(() => {
+    const hasTransformedImages = Object.keys(transformedImages).length > 0;
+    if (!hasTransformedImages) {
+      return capturedImages;
+    }
+    
+    // Create a new object with transformed URIs for all slots that have them
+    const result = { ...capturedImages };
+    for (const [slotId, transformedUri] of Object.entries(transformedImages)) {
+      const existingImage = capturedImages[slotId];
+      if (existingImage && transformedUri) {
+        result[slotId] = {
+          ...existingImage,
+          uri: transformedUri,
+        };
+      }
+    }
+    return result;
+  }, [capturedImages, transformedImages]);
+  
+  // Check if any images are available
+  const hasAnyImages = useMemo(() => {
+    return Object.values(capturedImages).some(img => !!img?.uri);
+  }, [capturedImages]);
+  
+  // Check if the selected slot has an image
+  const selectedHasImage = selectedSlotId && capturedImages[selectedSlotId]?.uri;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header - Simple and clean */}
       <View style={styles.header}>
         <Text style={styles.title}>AI Studio</Text>
-        <Text style={styles.subtitle}>Enhance your photo with AI</Text>
       </View>
 
-      {/* Image Preview */}
-      <View style={styles.previewContainer}>
-        <Image
-          source={{ uri: imageUri }}
-          style={[
-            styles.preview,
-            { width: previewWidth, height: previewHeight },
-          ]}
-          resizeMode="cover"
+      {/* Large Image Carousel */}
+      <View style={styles.carouselContainer}>
+        <ImageSlotCarousel
+          slots={slots}
+          capturedImages={displayCapturedImages}
+          selectedSlotId={selectedSlotId}
+          onSelectSlot={onSelectSlot}
+          onAddImage={onAddImage}
         />
       </View>
 
-      {/* Feature Cards */}
-      <View style={styles.featuresContainer}>
-        <Text style={styles.sectionLabel}>Choose an enhancement</Text>
-        
-        <View style={styles.featuresRow}>
-          <FeatureCard
+      {/* Action Buttons - iOS style */}
+      {hasAnyImages && selectedHasImage && (
+        <View style={styles.actionsContainer}>
+          <ActionButton
             icon="sparkles"
-            title="Ultra Quality"
-            description="Sharpen and enhance image quality"
+            label="Auto Quality"
             onPress={() => onSelectFeature('auto_quality')}
           />
           
-          <FeatureCard
+          <ActionButton
             icon="cut-outline"
-            title="Remove BG"
-            description="Remove the background"
+            label="Remove BG"
             onPress={() => onSelectFeature('background_remove')}
           />
           
-          <FeatureCard
+          <ActionButton
             icon="image-outline"
-            title="Replace BG"
-            description="Change to a new background"
+            label="Replace BG"
             onPress={() => onSelectFeature('background_replace')}
           />
         </View>
-      </View>
-
-      {/* Skip Button */}
-      <TouchableOpacity
-        style={styles.skipButton}
-        onPress={onSkip}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.skipText}>Continue without AI</Text>
-      </TouchableOpacity>
+      )}
     </View>
   );
 }
 
-const CARD_WIDTH = (SCREEN_WIDTH - 48 - 24) / 3; // 48px padding, 24px gaps
+const BUTTON_WIDTH = (SCREEN_WIDTH - 48 - 24) / 3; // 48px side padding, 24px total gaps
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingBottom: 24,
   },
+  
+  // Header
   header: {
     alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
-  previewContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  preview: {
-    borderRadius: 14,
-    backgroundColor: Colors.light.surfaceSecondary,
-  },
-  featuresContainer: {
-    flex: 1,
-  },
-  sectionLabel: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
-    color: Colors.light.textSecondary,
-    marginBottom: 12,
+    color: Colors.light.text,
+    letterSpacing: -0.3,
   },
-  featuresRow: {
+  
+  // Carousel - Takes up most space
+  carouselContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  
+  // Action buttons - More button-like
+  actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'stretch',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    gap: 12,
   },
-  featureCard: {
-    width: CARD_WIDTH,
-    backgroundColor: Colors.light.surface,
-    borderRadius: 14,
-    padding: 12,
+  actionButton: {
+    flex: 1,
     alignItems: 'center',
+    backgroundColor: Colors.light.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     borderWidth: 1,
     borderColor: Colors.light.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
   },
-  featureIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.ai.lightBg,
+  actionIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: Colors.light.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  featureTitle: {
+  actionLabel: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.light.text,
     textAlign: 'center',
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontSize: 11,
-    color: Colors.light.textTertiary,
-    textAlign: 'center',
-    lineHeight: 14,
-  },
-  skipButton: {
-    alignItems: 'center',
-    paddingVertical: 16,
-    marginBottom: 8,
-  },
-  skipText: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    fontWeight: '500',
   },
 });

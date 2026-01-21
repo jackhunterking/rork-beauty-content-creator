@@ -13,18 +13,20 @@ import {
   Dimensions,
   Platform,
 } from 'react-native';
-import BottomSheet, {
+import {
+  BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import Colors from '@/constants/Colors';
-import type { AIFeatureKey, BackgroundPreset } from '@/types';
+import Colors from '@/constants/colors';
+import type { AIFeatureKey, BackgroundPreset, Slot, MediaAsset } from '@/types';
 import { AIProcessingProgress } from '@/services/aiService';
 
 import AIStudioHomeView from './AIStudioHomeView';
+import ImageSlotCarousel from './ImageSlotCarousel';
 import AutoQualityView from './AutoQualityView';
 import RemoveBackgroundView from './RemoveBackgroundView';
 import ReplaceBackgroundView from './ReplaceBackgroundView';
@@ -46,29 +48,93 @@ export type AIStudioView =
   | 'error';
 
 export interface AIStudioSheetProps {
-  bottomSheetRef: React.RefObject<BottomSheet>;
-  imageUri: string;
-  imageSize: { width: number; height: number };
+  bottomSheetRef: React.RefObject<BottomSheetModal>;
+  /** All available slots from the template */
+  slots: Slot[];
+  /** Captured images keyed by slot ID */
+  capturedImages: Record<string, MediaAsset | null>;
+  /** Currently selected slot ID (if any) */
+  selectedSlotId: string | null;
   isPremium: boolean;
-  onApply: (enhancedUri: string) => void;
+  /** Called when AI enhancement is applied - includes slotId and enhanced URI */
+  onApply: (slotId: string, enhancedUri: string) => void;
   onSkip: () => void;
   onUpgrade?: () => void;
+  /** Callback when user wants to add an image (navigates to capture) */
+  onAddImage?: () => void;
+  /** Initial view to navigate to when sheet opens (defaults to 'home') */
+  initialView?: AIFeatureKey | 'home';
+  /** Navigation trigger - when this changes, force navigate to initialView */
+  navTrigger?: number;
+  /** Pre-processed/transformed images for ALL slots (with adjustments applied) - maps slotId to URI */
+  transformedImages?: Record<string, string>;
 }
 
 export default function AIStudioSheet({
   bottomSheetRef,
-  imageUri,
-  imageSize,
+  slots,
+  capturedImages,
+  selectedSlotId: externalSelectedSlotId,
   isPremium,
   onApply,
   onSkip,
   onUpgrade,
+  onAddImage,
+  initialView = 'home',
+  navTrigger = 0,
+  transformedImages = {},
 }: AIStudioSheetProps) {
   const insets = useSafeAreaInsets();
   
-  // Navigation state
-  const [currentView, setCurrentView] = useState<AIStudioView>('home');
-  const [selectedFeature, setSelectedFeature] = useState<AIFeatureKey | null>(null);
+  // Internal selected slot state (initialized from external, can change within sheet)
+  const [internalSelectedSlotId, setInternalSelectedSlotId] = useState<string | null>(externalSelectedSlotId);
+  
+  // Get the currently selected slot's image
+  const selectedImage = internalSelectedSlotId ? capturedImages[internalSelectedSlotId] : null;
+  // Use transformed image for the current slot if available, otherwise use original
+  const transformedUri = internalSelectedSlotId ? transformedImages[internalSelectedSlotId] : null;
+  const imageUri = transformedUri || selectedImage?.uri || '';
+  const imageSize = {
+    width: selectedImage?.width || 1080,
+    height: selectedImage?.height || 1080,
+  };
+  
+  // Navigation state - initialize based on initialView prop
+  const [currentView, setCurrentView] = useState<AIStudioView>(
+    initialView === 'home' ? 'home' : initialView
+  );
+  const [selectedFeature, setSelectedFeature] = useState<AIFeatureKey | null>(
+    initialView !== 'home' ? initialView : null
+  );
+  
+  // Navigate when navTrigger changes (indicating a new navigation intent)
+  // This ensures clicking a feature button ALWAYS navigates there, even if initialView is the same
+  const prevNavTriggerRef = useRef(navTrigger);
+  React.useEffect(() => {
+    if (navTrigger !== prevNavTriggerRef.current) {
+      prevNavTriggerRef.current = navTrigger;
+      // Always navigate to the specified view when trigger changes
+      if (initialView === 'home') {
+        setCurrentView('home');
+        setSelectedFeature(null);
+      } else {
+        setCurrentView(initialView);
+        setSelectedFeature(initialView);
+      }
+    }
+  }, [navTrigger, initialView]);
+  
+  // Sync internal selected slot with external when sheet opens
+  React.useEffect(() => {
+    if (externalSelectedSlotId) {
+      setInternalSelectedSlotId(externalSelectedSlotId);
+    }
+  }, [externalSelectedSlotId]);
+  
+  // Handle slot selection from carousel
+  const handleSelectSlot = useCallback((slotId: string) => {
+    setInternalSelectedSlotId(slotId);
+  }, []);
   
   // Processing state
   const [progress, setProgress] = useState<AIProcessingProgress | null>(null);
@@ -78,8 +144,9 @@ export default function AIStudioSheet({
   // For cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
   
-  // Snap points - large detent (90%)
-  const snapPoints = React.useMemo(() => [SCREEN_HEIGHT * 0.9], []);
+  // Snap points - large detent (95% of screen height)
+  // Using 95% ensures the sheet opens nearly full screen
+  const snapPoints = React.useMemo(() => ['95%'], []);
   
   // Navigate to feature view
   const handleSelectFeature = useCallback((featureKey: AIFeatureKey) => {
@@ -128,11 +195,11 @@ export default function AIStudioSheet({
   
   // Apply enhanced image
   const handleApplyEnhanced = useCallback(() => {
-    if (enhancedImageUri) {
-      onApply(enhancedImageUri);
-      bottomSheetRef.current?.close();
+    if (enhancedImageUri && internalSelectedSlotId) {
+      onApply(internalSelectedSlotId, enhancedImageUri);
+      bottomSheetRef.current?.dismiss();
     }
-  }, [enhancedImageUri, onApply, bottomSheetRef]);
+  }, [enhancedImageUri, internalSelectedSlotId, onApply, bottomSheetRef]);
   
   // Try another enhancement
   const handleTryAnother = useCallback(() => {
@@ -154,7 +221,7 @@ export default function AIStudioSheet({
   
   // Skip AI and continue
   const handleSkip = useCallback(() => {
-    bottomSheetRef.current?.close();
+    bottomSheetRef.current?.dismiss();
     onSkip();
   }, [bottomSheetRef, onSkip]);
   
@@ -178,24 +245,29 @@ export default function AIStudioSheet({
   
   // Render current view
   const renderContent = () => {
-    // Show premium prompt for non-premium users
-    if (!isPremium) {
-      return (
-        <PremiumAIPrompt
-          onUpgrade={onUpgrade || (() => {})}
-          onClose={handleSkip}
-        />
-      );
-    }
+    // TODO: Re-enable premium check when Superwall is integrated
+    // For development, bypass premium check
+    // if (!isPremium) {
+    //   return (
+    //     <PremiumAIPrompt
+    //       onUpgrade={onUpgrade || (() => {})}
+    //       onClose={handleSkip}
+    //     />
+    //   );
+    // }
     
     switch (currentView) {
       case 'home':
         return (
           <AIStudioHomeView
-            imageUri={imageUri}
-            imageSize={imageSize}
+            slots={slots}
+            capturedImages={capturedImages}
+            selectedSlotId={internalSelectedSlotId}
+            transformedImages={transformedImages}
+            onSelectSlot={handleSelectSlot}
             onSelectFeature={handleSelectFeature}
             onSkip={handleSkip}
+            onAddImage={onAddImage}
           />
         );
         
@@ -239,7 +311,9 @@ export default function AIStudioSheet({
       case 'processing':
         return (
           <AIProcessingOverlay
-            progress={progress}
+            progress={progress?.progress || 0}
+            message={progress?.message || 'Processing...'}
+            featureKey={selectedFeature || 'auto_quality'}
             onCancel={handleCancelProcessing}
           />
         );
@@ -249,17 +323,17 @@ export default function AIStudioSheet({
           <AISuccessOverlay
             originalUri={imageUri}
             enhancedUri={enhancedImageUri!}
-            onApply={handleApplyEnhanced}
-            onTryAnother={handleTryAnother}
+            onKeepEnhanced={handleApplyEnhanced}
+            onRevert={handleTryAnother}
           />
         );
         
       case 'error':
         return (
           <AIErrorView
-            errorMessage={errorMessage || 'Something went wrong'}
+            error={errorMessage || 'Something went wrong'}
             onRetry={handleRetry}
-            onCancel={handleSkip}
+            onDismiss={handleSkip}
           />
         );
         
@@ -267,22 +341,23 @@ export default function AIStudioSheet({
         return null;
     }
   };
-  
+
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={bottomSheetRef}
-      index={-1}
       snapPoints={snapPoints}
+      index={0}
       enablePanDownToClose
+      enableDynamicSizing={false}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={styles.indicator}
       backgroundStyle={styles.sheetBackground}
       style={styles.sheet}
     >
-      <BottomSheetView style={[styles.content, { paddingBottom: insets.bottom }]}>
+      <BottomSheetView style={[styles.content, { height: SCREEN_HEIGHT * 0.95 - 40 }]}>
         {renderContent()}
       </BottomSheetView>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
 

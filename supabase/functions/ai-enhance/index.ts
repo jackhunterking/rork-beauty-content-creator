@@ -56,9 +56,10 @@ const FAL_MODELS = {
   background_remove: {
     model: 'fal-ai/birefnet/v2',
     defaultParams: {
-      model: 'General',
+      model: 'General Use (Heavy)',
       operating_resolution: '1024x1024',
       output_format: 'png',
+      refine_foreground: true,
     },
     estimatedCostUsd: 0.005,
   },
@@ -68,8 +69,10 @@ const FAL_MODELS = {
       prompt: 'professional studio background, clean, neutral, soft lighting',
       negative_prompt: 'distracting elements, patterns, text, low quality, blurry',
       output_format: 'png',
+      num_inference_steps: 30,
+      guidance_scale: 3.5,
     },
-    estimatedCostUsd: 0.02,
+    estimatedCostUsd: 0.04,
   },
 } as const;
 
@@ -81,8 +84,102 @@ interface EnhanceRequest {
   preset_id?: string;
   preset_name?: string;
   custom_prompt?: string;
+  solid_color?: string; // Hex color code for solid background (e.g., "#FF5733")
   model_type?: 'General' | 'Portrait' | 'Product';
   params?: Record<string, unknown>;
+}
+
+/**
+ * Convert hex color to a descriptive background prompt
+ */
+function hexColorToPrompt(hexColor: string): { prompt: string; negative_prompt: string } {
+  // Normalize hex color
+  const hex = hexColor.replace('#', '').toUpperCase();
+  
+  // Common color names mapping
+  const colorNames: Record<string, string> = {
+    'FFFFFF': 'pure white',
+    'FAFAFA': 'off-white',
+    'F5F5F5': 'light gray',
+    'E5E5E5': 'soft gray',
+    'CCCCCC': 'medium gray',
+    '808080': 'gray',
+    '333333': 'dark gray',
+    '000000': 'pure black',
+    'FDF5E6': 'cream',
+    'FFE4E1': 'blush pink',
+    'FFE4C4': 'bisque',
+    'FFDAB9': 'peach',
+    'FFB6C1': 'light pink',
+    'FFC0CB': 'pink',
+    'FF69B4': 'hot pink',
+    'FF1493': 'deep pink',
+    'DC143C': 'crimson',
+    'FF0000': 'red',
+    'FF4500': 'orange red',
+    'FF6347': 'tomato',
+    'FF7F50': 'coral',
+    'FFA500': 'orange',
+    'FFD700': 'gold',
+    'FFFF00': 'yellow',
+    '9ACD32': 'yellow green',
+    '00FF00': 'lime green',
+    '32CD32': 'lime',
+    '228B22': 'forest green',
+    '008000': 'green',
+    '006400': 'dark green',
+    '9DC183': 'sage green',
+    '20B2AA': 'light sea green',
+    '008B8B': 'dark cyan',
+    '00FFFF': 'cyan',
+    '00CED1': 'dark turquoise',
+    '40E0D0': 'turquoise',
+    '87CEEB': 'sky blue',
+    '87CEFA': 'light sky blue',
+    'ADD8E6': 'light blue',
+    '00BFFF': 'deep sky blue',
+    '1E90FF': 'dodger blue',
+    '0000FF': 'blue',
+    '0000CD': 'medium blue',
+    '00008B': 'dark blue',
+    '191970': 'midnight blue',
+    '4B0082': 'indigo',
+    '8B008B': 'dark magenta',
+    '9400D3': 'dark violet',
+    '8A2BE2': 'blue violet',
+    '9932CC': 'dark orchid',
+    'BA55D3': 'medium orchid',
+    'DA70D6': 'orchid',
+    'EE82EE': 'violet',
+    'FF00FF': 'magenta',
+    'DDA0DD': 'plum',
+    'D8BFD8': 'thistle',
+    'E6E6FA': 'lavender',
+  };
+  
+  // Get color name or use hex description
+  const colorName = colorNames[hex] || `#${hex} color`;
+  
+  // Special handling for white/black
+  if (hex === 'FFFFFF' || hex === 'FAFAFA' || hex === 'F5F5F5') {
+    return {
+      prompt: `clean ${colorName} background, solid ${colorName}, studio lighting, uniform color, professional, seamless`,
+      negative_prompt: 'patterns, textures, gradients, shadows, objects, distracting elements, text, watermarks'
+    };
+  }
+  
+  if (hex === '000000' || hex === '333333' || hex === '1A1A1A') {
+    return {
+      prompt: `solid ${colorName} background, pure ${colorName}, dark studio, uniform color, professional, seamless`,
+      negative_prompt: 'patterns, textures, gradients, reflections, objects, distracting elements, text, watermarks'
+    };
+  }
+  
+  // Default for any color
+  return {
+    prompt: `solid ${colorName} background, uniform ${colorName} color, clean, professional studio lighting, seamless, flat color`,
+    negative_prompt: 'patterns, textures, gradients, shadows, objects, distracting elements, text, watermarks, noise'
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -142,7 +239,7 @@ Deno.serve(async (req: Request) => {
 
     // Parse request body
     const body: EnhanceRequest = await req.json();
-    const { feature_key, image_url, draft_id, slot_id, preset_id, preset_name, custom_prompt, model_type, params } = body;
+    const { feature_key, image_url, draft_id, slot_id, preset_id, preset_name, custom_prompt, solid_color, model_type, params } = body;
 
     // Validate required fields
     if (!feature_key || !image_url) {
@@ -192,23 +289,36 @@ Deno.serve(async (req: Request) => {
     let promptToUse = custom_prompt;
     let negativePrompt = modelConfig.defaultParams.negative_prompt || '';
 
-    if (feature_key === 'background_replace' && preset_id && !custom_prompt) {
-      const { data: preset, error: presetError } = await adminClient
-        .from('background_presets')
-        .select('*')
-        .eq('id', preset_id)
-        .eq('is_active', true)
-        .single();
+    if (feature_key === 'background_replace') {
+      // Priority: solid_color > custom_prompt > preset_id > default
+      if (solid_color) {
+        // Convert hex color to descriptive prompt
+        const colorPrompts = hexColorToPrompt(solid_color);
+        promptToUse = colorPrompts.prompt;
+        negativePrompt = colorPrompts.negative_prompt;
+        console.log(`[ai-enhance] Using solid color: ${solid_color} -> "${promptToUse}"`);
+      } else if (custom_prompt) {
+        // Custom prompt already set
+        promptToUse = custom_prompt;
+      } else if (preset_id) {
+        // Fetch preset from database
+        const { data: preset, error: presetError } = await adminClient
+          .from('background_presets')
+          .select('*')
+          .eq('id', preset_id)
+          .eq('is_active', true)
+          .single();
 
-      if (presetError || !preset) {
-        return new Response(
-          JSON.stringify({ error: 'Background preset not found' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        if (presetError || !preset) {
+          return new Response(
+            JSON.stringify({ error: 'Background preset not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        promptToUse = preset.prompt;
+        negativePrompt = preset.negative_prompt || negativePrompt;
       }
-
-      promptToUse = preset.prompt;
-      negativePrompt = preset.negative_prompt || negativePrompt;
     }
 
     // Build Fal.AI request body based on feature
@@ -232,9 +342,10 @@ Deno.serve(async (req: Request) => {
       case 'background_remove':
         falRequestBody = {
           image_url,
-          model: model_type ?? params?.model ?? modelConfig.defaultParams.model,
+          model: modelConfig.defaultParams.model,
           operating_resolution: params?.operating_resolution ?? modelConfig.defaultParams.operating_resolution,
           output_format: params?.output_format ?? modelConfig.defaultParams.output_format,
+          refine_foreground: modelConfig.defaultParams.refine_foreground,
         };
         break;
 
@@ -243,7 +354,9 @@ Deno.serve(async (req: Request) => {
           image_url,
           prompt: promptToUse ?? modelConfig.defaultParams.prompt,
           negative_prompt: negativePrompt,
-          output_format: params?.output_format ?? modelConfig.defaultParams.output_format,
+          output_format: 'png',
+          num_inference_steps: modelConfig.defaultParams.num_inference_steps,
+          guidance_scale: modelConfig.defaultParams.guidance_scale,
         };
         break;
     }
@@ -266,7 +379,7 @@ Deno.serve(async (req: Request) => {
         input_image_url: image_url,
         input_params: falRequestBody,
         background_preset_id: preset_id || null,
-        custom_prompt: custom_prompt || null,
+        custom_prompt: solid_color ? `solid_color:${solid_color}` : (custom_prompt || null),
         credits_charged: costCredits,
         status: 'processing'
       })

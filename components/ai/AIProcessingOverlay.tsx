@@ -24,13 +24,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 
-import Colors from '@/constants/Colors';
-import { AIProcessingProgress } from '@/services/aiService';
+import Colors from '@/constants/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface AIProcessingOverlayProps {
-  progress: AIProcessingProgress | null;
+  progress: number;
+  message: string;
+  featureKey: string;
   onCancel: () => void;
 }
 
@@ -72,7 +73,7 @@ function AnimatedSparkle({ delay, x, y }: { delay: number; x: number; y: number 
         animatedStyle,
       ]}
     >
-      <Ionicons name="sparkle" size={16} color={Colors.light.accent} />
+      <Ionicons name="star" size={16} color={Colors.light.accent} />
     </Animated.View>
   );
 }
@@ -103,21 +104,25 @@ function ProgressRing({ progress }: { progress: number }) {
 
 export default function AIProcessingOverlay({
   progress,
+  message,
+  featureKey,
   onCancel,
 }: AIProcessingOverlayProps) {
-  const currentProgress = progress?.progress || 0;
+  const currentProgress = progress || 0;
   
-  // Get status message
+  // Get status message based on feature
   const getStatusMessage = () => {
-    switch (progress?.status) {
-      case 'submitting':
-        return 'Starting enhancement...';
-      case 'queued':
-        return 'Preparing your image...';
-      case 'processing':
-        return 'Enhancing with AI...';
+    if (message) return message;
+    
+    switch (featureKey) {
+      case 'auto_quality':
+        return 'Enhancing quality...';
+      case 'background_remove':
+        return 'Removing background...';
+      case 'background_replace':
+        return 'Replacing background...';
       default:
-        return progress?.message || 'Processing...';
+        return 'Processing...';
     }
   };
   
