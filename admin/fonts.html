@@ -125,9 +125,9 @@
 
       <!-- Upload Modal -->
       <div id="uploadModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Upload Font File</h3>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Upload Font Files</h3>
             <button onclick="closeUploadModal()" class="text-gray-400 hover:text-gray-600">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -139,17 +139,76 @@
             Uploading font: <strong id="uploadFontName" class="text-gray-900 dark:text-white"></strong>
           </p>
           
-          <div 
-            id="dropzone" 
-            class="dropzone rounded-lg p-8 text-center cursor-pointer"
-            onclick="document.getElementById('fileInput').click()"
-          >
-            <input type="file" id="fileInput" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event)">
-            <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-            </svg>
-            <p class="text-gray-600 dark:text-gray-400">Drop TTF, OTF, WOFF, or WOFF2 file here</p>
-            <p class="text-xs text-gray-400 mt-1">or click to browse</p>
+          <!-- Font Variants -->
+          <div class="space-y-4">
+            
+            <!-- Regular (Required) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Regular (400) <span class="text-red-500">*</span></p>
+                <span id="regularStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
+              </div>
+              <div 
+                id="dropzoneRegular" 
+                class="dropzone rounded-lg p-4 text-center cursor-pointer"
+                onclick="document.getElementById('fileInputRegular').click()"
+                data-variant="regular"
+              >
+                <input type="file" id="fileInputRegular" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'regular')">
+                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
+              </div>
+            </div>
+            
+            <!-- Bold (Optional) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Bold (700) <span class="text-xs text-gray-400">(optional)</span></p>
+                <span id="boldStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
+              </div>
+              <div 
+                id="dropzoneBold" 
+                class="dropzone rounded-lg p-4 text-center cursor-pointer"
+                onclick="document.getElementById('fileInputBold').click()"
+                data-variant="bold"
+              >
+                <input type="file" id="fileInputBold" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'bold')">
+                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
+              </div>
+            </div>
+            
+            <!-- Italic (Optional) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Italic <span class="text-xs text-gray-400">(optional)</span></p>
+                <span id="italicStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
+              </div>
+              <div 
+                id="dropzoneItalic" 
+                class="dropzone rounded-lg p-4 text-center cursor-pointer"
+                onclick="document.getElementById('fileInputItalic').click()"
+                data-variant="italic"
+              >
+                <input type="file" id="fileInputItalic" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'italic')">
+                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
+              </div>
+            </div>
+            
+            <!-- Bold Italic (Optional) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Bold Italic <span class="text-xs text-gray-400">(optional)</span></p>
+                <span id="boldItalicStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
+              </div>
+              <div 
+                id="dropzoneBoldItalic" 
+                class="dropzone rounded-lg p-4 text-center cursor-pointer"
+                onclick="document.getElementById('fileInputBoldItalic').click()"
+                data-variant="boldItalic"
+              >
+                <input type="file" id="fileInputBoldItalic" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'boldItalic')">
+                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
+              </div>
+            </div>
           </div>
           
           <div id="uploadProgress" class="hidden mt-4">
@@ -158,11 +217,29 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span class="text-sm text-gray-600 dark:text-gray-400">Uploading...</span>
+              <span id="uploadProgressText" class="text-sm text-gray-600 dark:text-gray-400">Uploading...</span>
             </div>
           </div>
           
           <div id="uploadResult" class="hidden mt-4 p-3 rounded-lg"></div>
+          
+          <!-- Save Button -->
+          <div class="mt-6 flex gap-3">
+            <button 
+              onclick="closeUploadModal()" 
+              class="flex-1 py-3 px-4 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+            >
+              Cancel
+            </button>
+            <button 
+              onclick="saveFont()" 
+              id="saveFontBtn"
+              class="flex-1 py-3 px-4 rounded-lg bg-primary hover:bg-pink-600 text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled
+            >
+              Save Font
+            </button>
+          </div>
         </div>
       </div>
 
@@ -178,6 +255,12 @@
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
     let currentUploadFont = null;
+    let pendingUploads = {
+      regular: null,
+      bold: null,
+      italic: null,
+      boldItalic: null
+    };
 
     // ============================================
     // Authentication
@@ -273,7 +356,7 @@
                 <p class="text-xs text-red-600 dark:text-red-400 mt-1">⚠️ Font file not uploaded - text will not render correctly</p>
               </div>
               <button 
-                onclick="openUploadModal('${escapeHtml(font.font_family)}', '${font.id}')"
+                onclick="openUploadModal('${escapeHtml(font.font_family)}', '${font.id}', ${JSON.stringify(font).replace(/"/g, '&quot;')})"
                 class="px-4 py-2 rounded-lg bg-primary hover:bg-pink-600 text-white text-sm font-medium transition"
               >
                 Upload Font
@@ -305,6 +388,14 @@
           ? '<span class="text-green-600">✅ Active</span>' 
           : '<span class="text-red-600">⚠️ Needs Upload</span>';
         
+        // Count uploaded variants
+        const variants = [];
+        if (font.file_url) variants.push('Regular');
+        if (font.file_url_bold) variants.push('Bold');
+        if (font.file_url_italic) variants.push('Italic');
+        if (font.file_url_bold_italic) variants.push('Bold Italic');
+        const variantsText = variants.length > 0 ? variants.join(', ') : 'None';
+        
         return `
           <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
             <div class="flex items-center justify-between">
@@ -317,25 +408,16 @@
                 </div>
                 <div class="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                   <span>Status: ${statusLabel}</span>
-                  ${font.weights ? `<span>Weights: ${font.weights.join(', ')}</span>` : ''}
+                  ${!isGoogle ? `<span>Variants: ${variantsText}</span>` : ''}
                 </div>
-                ${font.file_url ? `<p class="text-xs text-gray-400 mt-1 truncate max-w-md">${font.file_url}</p>` : ''}
               </div>
               <div class="flex items-center gap-2">
-                ${!isGoogle && !isActive ? `
+                ${!isGoogle ? `
                   <button 
-                    onclick="openUploadModal('${escapeHtml(font.font_family)}', '${font.id}')"
-                    class="px-3 py-1.5 rounded-lg bg-primary hover:bg-pink-600 text-white text-sm transition"
+                    onclick="openUploadModal('${escapeHtml(font.font_family)}', '${font.id}', ${JSON.stringify(font).replace(/"/g, '&quot;')})"
+                    class="px-3 py-1.5 rounded-lg ${isActive ? 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600' : 'bg-primary hover:bg-pink-600 text-white'} text-sm transition"
                   >
-                    Upload
-                  </button>
-                ` : ''}
-                ${!isGoogle && isActive ? `
-                  <button 
-                    onclick="openUploadModal('${escapeHtml(font.font_family)}', '${font.id}')"
-                    class="px-3 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-                  >
-                    Replace
+                    ${isActive ? 'Manage' : 'Upload'}
                   </button>
                 ` : ''}
               </div>
@@ -349,52 +431,81 @@
     // Upload Modal
     // ============================================
 
-    function openUploadModal(fontFamily, fontId) {
-      currentUploadFont = { fontFamily, fontId };
+    function openUploadModal(fontFamily, fontId, fontData) {
+      currentUploadFont = { fontFamily, fontId, fontData };
+      pendingUploads = { regular: null, bold: null, italic: null, boldItalic: null };
+      
       document.getElementById('uploadFontName').textContent = fontFamily;
       document.getElementById('uploadModal').classList.remove('hidden');
       document.getElementById('uploadProgress').classList.add('hidden');
       document.getElementById('uploadResult').classList.add('hidden');
-      document.getElementById('fileInput').value = '';
+      document.getElementById('saveFontBtn').disabled = true;
+      
+      // Reset file inputs
+      ['Regular', 'Bold', 'Italic', 'BoldItalic'].forEach(variant => {
+        document.getElementById('fileInput' + variant).value = '';
+      });
+      
+      // Show existing uploads
+      updateVariantStatus('regular', fontData?.file_url);
+      updateVariantStatus('bold', fontData?.file_url_bold);
+      updateVariantStatus('italic', fontData?.file_url_italic);
+      updateVariantStatus('boldItalic', fontData?.file_url_bold_italic);
+      
+      // Enable save if regular already uploaded
+      updateSaveButton();
+    }
+
+    function updateVariantStatus(variant, url) {
+      const statusEl = document.getElementById(variant + 'Status');
+      if (url) {
+        statusEl.textContent = '✅ Uploaded';
+        statusEl.className = 'text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+      } else {
+        statusEl.textContent = 'Not uploaded';
+        statusEl.className = 'text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500';
+      }
     }
 
     function closeUploadModal() {
       document.getElementById('uploadModal').classList.add('hidden');
       currentUploadFont = null;
+      pendingUploads = { regular: null, bold: null, italic: null, boldItalic: null };
     }
 
-    // Drag and drop
-    const dropzone = document.getElementById('dropzone');
-    
-    ['dragenter', 'dragover'].forEach(eventName => {
-      dropzone.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        dropzone.classList.add('dragover');
+    // Drag and drop for all dropzones
+    document.querySelectorAll('.dropzone').forEach(dropzone => {
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropzone.classList.add('dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          dropzone.classList.remove('dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', (e) => {
+        const files = e.dataTransfer.files;
+        const variant = dropzone.dataset.variant;
+        if (files.length > 0 && variant) {
+          handleFile(files[0], variant);
+        }
       });
     });
 
-    ['dragleave', 'drop'].forEach(eventName => {
-      dropzone.addEventListener(eventName, (e) => {
-        e.preventDefault();
-        dropzone.classList.remove('dragover');
-      });
-    });
-
-    dropzone.addEventListener('drop', (e) => {
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        handleFile(files[0]);
-      }
-    });
-
-    function handleFileSelect(event) {
+    function handleFileSelect(event, variant) {
       const file = event.target.files[0];
       if (file) {
-        handleFile(file);
+        handleFile(file, variant);
       }
     }
 
-    async function handleFile(file) {
+    async function handleFile(file, variant) {
       if (!currentUploadFont) return;
       
       // Validate file type
@@ -402,51 +513,104 @@
       const extension = '.' + file.name.split('.').pop().toLowerCase();
       
       if (!validTypes.includes(extension)) {
-        showUploadResult(false, 'Invalid file type. Please upload TTF, OTF, WOFF, or WOFF2 file.');
+        alert('Invalid file type. Please upload TTF, OTF, WOFF, or WOFF2 file.');
         return;
       }
       
-      // Show progress
-      document.getElementById('uploadProgress').classList.remove('hidden');
-      document.getElementById('uploadResult').classList.add('hidden');
+      // Store the file for later upload
+      pendingUploads[variant] = { file, extension };
+      
+      // Update status
+      const statusEl = document.getElementById(variant + 'Status');
+      statusEl.textContent = `📎 ${file.name}`;
+      statusEl.className = 'text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300';
+      
+      // Enable save button if regular is selected
+      updateSaveButton();
+    }
+
+    function updateSaveButton() {
+      const hasRegular = pendingUploads.regular || currentUploadFont?.fontData?.file_url;
+      document.getElementById('saveFontBtn').disabled = !hasRegular;
+    }
+
+    async function saveFont() {
+      if (!currentUploadFont) return;
+      
+      const progressEl = document.getElementById('uploadProgress');
+      const progressText = document.getElementById('uploadProgressText');
+      const resultEl = document.getElementById('uploadResult');
+      const saveBtn = document.getElementById('saveFontBtn');
+      
+      progressEl.classList.remove('hidden');
+      resultEl.classList.add('hidden');
+      saveBtn.disabled = true;
       
       try {
-        // Generate filename (use font family name + extension)
-        const filename = `${currentUploadFont.fontFamily}${extension}`.replace(/\s+/g, '-');
+        const updates = {};
+        const variantMap = {
+          regular: 'file_url',
+          bold: 'file_url_bold',
+          italic: 'file_url_italic',
+          boldItalic: 'file_url_bold_italic'
+        };
         
-        // Upload to Supabase Storage
-        const { data: uploadData, error: uploadError } = await supabaseClient.storage
-          .from('fonts')
-          .upload(filename, file, {
-            contentType: file.type || 'application/octet-stream',
-            upsert: true,
-          });
+        // Upload each pending file
+        for (const [variant, data] of Object.entries(pendingUploads)) {
+          if (data) {
+            progressText.textContent = `Uploading ${variant}...`;
+            
+            const filename = `${currentUploadFont.fontFamily}-${variant}${data.extension}`.replace(/\s+/g, '-');
+            
+            const { error: uploadError } = await supabaseClient.storage
+              .from('fonts')
+              .upload(filename, data.file, {
+                contentType: data.file.type || 'application/octet-stream',
+                upsert: true,
+              });
+            
+            if (uploadError) throw new Error(`Failed to upload ${variant}: ${uploadError.message}`);
+            
+            // Get public URL
+            const { data: urlData } = supabaseClient.storage
+              .from('fonts')
+              .getPublicUrl(filename);
+            
+            updates[variantMap[variant]] = urlData.publicUrl;
+          }
+        }
         
-        if (uploadError) throw uploadError;
+        // Update database
+        if (Object.keys(updates).length > 0) {
+          progressText.textContent = 'Saving to database...';
+          
+          // Set is_active to true if we have a regular font
+          if (updates.file_url || currentUploadFont.fontData?.file_url) {
+            updates.is_active = true;
+          }
+          
+          // Set file format if we have regular
+          if (pendingUploads.regular) {
+            updates.file_format = pendingUploads.regular.extension.substring(1);
+          }
+          
+          updates.updated_at = new Date().toISOString();
+          
+          const { error: updateError } = await supabaseClient
+            .from('custom_fonts')
+            .update(updates)
+            .eq('id', currentUploadFont.fontId);
+          
+          if (updateError) throw updateError;
+        }
         
-        // Get public URL
-        const { data: urlData } = supabaseClient.storage
-          .from('fonts')
-          .getPublicUrl(filename);
+        // Success
+        progressEl.classList.add('hidden');
+        resultEl.classList.remove('hidden');
+        resultEl.className = 'mt-4 p-3 rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300';
+        resultEl.innerHTML = `<p class="text-sm">✅ Font "${currentUploadFont.fontFamily}" saved successfully!</p>`;
         
-        const publicUrl = urlData.publicUrl;
-        
-        // Update custom_fonts table
-        const { error: updateError } = await supabaseClient
-          .from('custom_fonts')
-          .update({
-            file_url: publicUrl,
-            file_format: extension.substring(1),
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', currentUploadFont.fontId);
-        
-        if (updateError) throw updateError;
-        
-        showUploadResult(true, `Font "${currentUploadFont.fontFamily}" uploaded successfully! It's now active.`);
-        
-        // Reload fonts after short delay
+        // Reload and close after delay
         setTimeout(() => {
           closeUploadModal();
           loadFonts();
@@ -454,17 +618,12 @@
         
       } catch (err) {
         console.error('Upload error:', err);
-        showUploadResult(false, `Upload failed: ${err.message}`);
-      } finally {
-        document.getElementById('uploadProgress').classList.add('hidden');
+        progressEl.classList.add('hidden');
+        resultEl.classList.remove('hidden');
+        resultEl.className = 'mt-4 p-3 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300';
+        resultEl.innerHTML = `<p class="text-sm">❌ ${escapeHtml(err.message)}</p>`;
+        saveBtn.disabled = false;
       }
-    }
-
-    function showUploadResult(success, message) {
-      const resultEl = document.getElementById('uploadResult');
-      resultEl.classList.remove('hidden');
-      resultEl.className = `mt-4 p-3 rounded-lg ${success ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`;
-      resultEl.innerHTML = `<p class="text-sm">${success ? '✅' : '❌'} ${escapeHtml(message)}</p>`;
     }
 
     // ============================================
