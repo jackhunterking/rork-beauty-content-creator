@@ -1,133 +1,244 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useState, useEffect, useCallback } from 'react';
 import { useUser, usePlacement, useSuperwall } from 'expo-superwall';
 import { supabase } from '@/lib/supabase';
-import type { SubscriptionStatus, Entitlement, EntitlementsInfo } from 'expo-superwall';
+import type { Entitlement, EntitlementsInfo } from 'expo-superwall';
 import { 
   trackSubscribe, 
-  trackStartTrial, 
   trackInitiatedCheckout 
 } from '@/services/metaAnalyticsService';
+import type { SubscriptionTier, SubscriptionTierSource } from '@/types';
 
 /**
- * Premium Status Hook
+ * Tiered Subscription Hook
  * 
- * Manages premium/subscription status for the app using Superwall + Supabase.
+ * Manages subscription tiers for the app using Superwall + Supabase.
  * 
- * Premium status is determined by:
- * 1. Superwall subscription status (paid subscription via app store)
- * 2. OR Complimentary pro flag in Supabase (admin-granted access)
+ * Tiers:
+ * - free: Full app access, create unlimited content, preview everything
+ * - pro: Download to Photos + Share to social media
+ * - studio: Pro features + All AI generation capabilities
  * 
- * Superwall handles:
- * - Paywall presentation
- * - Subscription status tracking
- * - A/B testing for paywalls
+ * Tier Sources:
+ * - superwall: Paid subscription via in-app purchase
+ * - complimentary: Admin-assigned for influencers, partners, testers
  * 
- * Supabase handles:
- * - Complimentary pro access (admin-granted)
- * 
- * Premium features:
- * - Remove watermark from rendered images
- * - (Future) Additional templates
- * - (Future) Advanced features
+ * The hook resolves the HIGHEST tier from all sources.
  */
 
-const PREMIUM_STORAGE_KEY = '@resulta_app_premium_status';
+// ============================================
+// Type Definitions
+// ============================================
 
-export interface PremiumStatus {
-  isPremium: boolean;
+/**
+ * Tiered subscription state returned by the hook
+ */
+export interface TieredSubscription {
+  /** Current subscription tier */
+  tier: SubscriptionTier;
+  /** Loading state */
   isLoading: boolean;
-  expiresAt?: Date;
-  plan?: 'monthly' | 'yearly' | 'lifetime';
+  
+  // Convenience booleans for feature gating
+  /** True if user can download (Pro or Studio) */
+  canDownload: boolean;
+  /** True if user can share (Pro or Studio) */
+  canShare: boolean;
+  /** True if user can use AI Studio features (Studio only) */
+  canUseAIStudio: boolean;
+  
+  /** Source of the tier (superwall, complimentary, or none) */
+  source: SubscriptionTierSource | 'none';
+  
+  /** Superwall user ID for debugging/dashboard lookup */
+  superwallUserId?: string;
+  
+  /** Current billing plan if from Superwall */
+  currentPlan?: 'pro_weekly' | 'pro_monthly' | 'pro_yearly' | 'studio_weekly' | 'studio_monthly' | 'studio_yearly' | 'unknown';
+  
+  /** Active entitlements from Superwall */
+  entitlements: Entitlement[];
+  
+  /** Detailed entitlements info from Superwall */
+  entitlementsInfo: EntitlementsInfo | null;
+  
+  /** Request Pro tier access (shows paywall if not Pro/Studio) */
+  requestProAccess: (onGranted?: () => void, featureRequested?: string) => Promise<void>;
+  
+  /** Request Studio tier access (shows paywall if not Studio) */
+  requestStudioAccess: (onGranted?: () => void, featureRequested?: string) => Promise<void>;
 }
 
 /**
- * Subscription details exposed by the enhanced hook
+ * Placement parameters for paywall customization
  */
-export interface SubscriptionDetails {
-  /** Current status: ACTIVE, INACTIVE, or UNKNOWN */
-  status: 'ACTIVE' | 'INACTIVE' | 'UNKNOWN';
-  /** List of active entitlements (when ACTIVE) */
-  entitlements: Entitlement[];
-  /** Whether subscription is from Superwall (app store) or complimentary */
-  source: 'superwall' | 'complimentary' | 'none';
-  /** Superwall user ID for debugging/dashboard lookup */
-  superwallUserId?: string;
-  /** Current billing plan (detected from entitlements: weekly or monthly) */
-  currentPlan?: 'weekly' | 'monthly' | 'unknown';
+export interface PlacementParams {
+  /** Feature that triggered the paywall */
+  feature_requested?: string;
+  /** User's current tier */
+  current_tier?: SubscriptionTier;
+  /** Any additional custom parameters */
+  [key: string]: string | number | boolean | undefined;
+}
+
+// ============================================
+// Tier Resolution Logic
+// ============================================
+
+const TIER_RANK: Record<SubscriptionTier, number> = {
+  free: 0,
+  pro: 1,
+  studio: 2,
+};
+
+/**
+ * Resolve tier from Superwall entitlements
+ * Maps entitlement IDs to subscription tiers
+ */
+function getTierFromEntitlements(entitlements: Entitlement[]): SubscriptionTier {
+  const entitlementIds = entitlements.map(e => e.id.toLowerCase());
+  
+  // Check for studio entitlement (includes pro features)
+  if (entitlementIds.includes('studio')) {
+    return 'studio';
+  }
+  
+  // Check for pro entitlement
+  if (entitlementIds.includes('pro')) {
+    return 'pro';
+  }
+  
+  // Fallback: check for common patterns
+  if (entitlementIds.some(id => id.includes('studio'))) {
+    return 'studio';
+  }
+  if (entitlementIds.some(id => id.includes('pro') || id.includes('premium'))) {
+    return 'pro';
+  }
+  
+  return 'free';
 }
 
 /**
  * Detect current plan from entitlements
- * Maps entitlement IDs to plan types
  */
-function detectCurrentPlan(entitlements: Entitlement[]): 'weekly' | 'monthly' | 'unknown' {
+function detectCurrentPlan(entitlements: Entitlement[]): TieredSubscription['currentPlan'] {
   const entitlementIds = entitlements.map(e => e.id.toLowerCase());
   
-  // Check for exact matches first (from Superwall dashboard config)
-  if (entitlementIds.includes('weekly')) return 'weekly';
-  if (entitlementIds.includes('monthly')) return 'monthly';
+  // Studio plans
+  if (entitlementIds.some(id => id.includes('studio') && id.includes('week'))) return 'studio_weekly';
+  if (entitlementIds.some(id => id.includes('studio') && id.includes('month'))) return 'studio_monthly';
+  if (entitlementIds.some(id => id.includes('studio') && id.includes('year'))) return 'studio_yearly';
   
-  // Fallback: check for common patterns in entitlement IDs
-  if (entitlementIds.some(id => id.includes('week'))) return 'weekly';
-  if (entitlementIds.some(id => id.includes('month'))) return 'monthly';
+  // Pro plans
+  if (entitlementIds.some(id => id.includes('pro') && id.includes('week'))) return 'pro_weekly';
+  if (entitlementIds.some(id => id.includes('pro') && id.includes('month'))) return 'pro_monthly';
+  if (entitlementIds.some(id => id.includes('pro') && id.includes('year'))) return 'pro_yearly';
+  
+  // Legacy patterns (weekly/monthly without tier prefix)
+  if (entitlementIds.includes('weekly') || entitlementIds.some(id => id.includes('week'))) return 'pro_weekly';
+  if (entitlementIds.includes('monthly') || entitlementIds.some(id => id.includes('month'))) return 'pro_monthly';
   
   return 'unknown';
 }
 
 /**
- * Main premium status hook using Superwall + Supabase complimentary pro check
- * Use this throughout the app to check subscription status
- * 
- * subscriptionStatus.status can be:
- * - "ACTIVE" - User has an active subscription
- * - "INACTIVE" - User does not have a subscription
- * - "UNKNOWN" - Subscription status is being determined
- * 
- * Additionally checks is_complimentary_pro flag in Supabase profiles table
+ * Resolve the final tier from all sources (Superwall + Supabase)
+ * Takes the HIGHEST tier available
  */
-export function usePremiumStatus() {
+function resolveTier(
+  superwallEntitlements: Entitlement[],
+  supabaseTier: SubscriptionTier | undefined
+): { tier: SubscriptionTier; source: SubscriptionTierSource | 'none' } {
+  // Get tier from Superwall entitlements
+  const superwallTier = getTierFromEntitlements(superwallEntitlements);
+  
+  // Get tier from Supabase (complimentary)
+  const complimentaryTier = supabaseTier || 'free';
+  
+  // Take the HIGHER tier
+  if (TIER_RANK[superwallTier] >= TIER_RANK[complimentaryTier]) {
+    return {
+      tier: superwallTier,
+      source: superwallTier === 'free' ? 'none' : 'superwall',
+    };
+  } else {
+    return {
+      tier: complimentaryTier,
+      source: 'complimentary',
+    };
+  }
+}
+
+// ============================================
+// Main Hook
+// ============================================
+
+/**
+ * Main tiered subscription hook
+ * Use this throughout the app to check subscription tier and gate features
+ */
+export function useTieredSubscription(): TieredSubscription {
   const { subscriptionStatus, user: superwallUser } = useUser();
   const { getEntitlements } = useSuperwall();
-  const [isComplimentaryPro, setIsComplimentaryPro] = useState(false);
-  const [isCheckingComplimentary, setIsCheckingComplimentary] = useState(true);
+  
+  // Supabase tier state
+  const [supabaseTier, setSupabaseTier] = useState<SubscriptionTier | undefined>(undefined);
+  const [isCheckingSupabase, setIsCheckingSupabase] = useState(true);
+  
+  // Entitlements state
   const [entitlementsInfo, setEntitlementsInfo] = useState<EntitlementsInfo | null>(null);
   
-  // Check for complimentary pro status from Supabase
+  // Paywall placement hook
+  const { registerPlacement } = usePlacement({
+    onPresent: (info) => {
+      console.log('[Subscription] Paywall presented:', info.name);
+      trackInitiatedCheckout(info.name);
+    },
+    onDismiss: (info, result) => {
+      console.log('[Subscription] Paywall dismissed:', result);
+      if (result.type === 'purchased') {
+        trackSubscribe(info.name || 'subscription', 0, 'USD');
+      }
+    },
+    onSkip: (reason) => console.log('[Subscription] Paywall skipped:', reason),
+    onError: (error) => console.error('[Subscription] Paywall error:', error),
+  });
+
+  // Check Supabase for complimentary tier
   useEffect(() => {
-    const checkComplimentaryProStatus = async () => {
+    const checkSupabaseTier = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         
         if (user) {
           const { data: profile, error } = await supabase
             .from('profiles')
-            .select('is_complimentary_pro')
+            .select('subscription_tier')
             .eq('id', user.id)
             .single();
           
-          if (!error && profile?.is_complimentary_pro) {
-            setIsComplimentaryPro(true);
+          if (!error && profile?.subscription_tier) {
+            setSupabaseTier(profile.subscription_tier as SubscriptionTier);
           } else {
-            setIsComplimentaryPro(false);
+            setSupabaseTier('free');
           }
         } else {
-          setIsComplimentaryPro(false);
+          setSupabaseTier('free');
         }
       } catch (error) {
-        console.error('[Premium] Failed to check complimentary pro status:', error);
-        setIsComplimentaryPro(false);
+        console.error('[Subscription] Failed to check Supabase tier:', error);
+        setSupabaseTier('free');
       } finally {
-        setIsCheckingComplimentary(false);
+        setIsCheckingSupabase(false);
       }
     };
 
-    checkComplimentaryProStatus();
+    checkSupabaseTier();
 
-    // Subscribe to auth changes to re-check when user signs in/out
+    // Re-check on auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      setIsCheckingComplimentary(true);
-      checkComplimentaryProStatus();
+      setIsCheckingSupabase(true);
+      checkSupabaseTier();
     });
 
     return () => {
@@ -135,16 +246,16 @@ export function usePremiumStatus() {
     };
   }, []);
 
-  // Fetch detailed entitlements info when subscription status is ACTIVE
+  // Fetch entitlements when subscription is active
   useEffect(() => {
     const fetchEntitlements = async () => {
       if (subscriptionStatus?.status === 'ACTIVE') {
         try {
           const info = await getEntitlements();
           setEntitlementsInfo(info);
-          console.log('[Premium] Fetched entitlements:', info);
+          console.log('[Subscription] Fetched entitlements:', info);
         } catch (error) {
-          console.error('[Premium] Failed to fetch entitlements:', error);
+          console.error('[Subscription] Failed to fetch entitlements:', error);
         }
       } else {
         setEntitlementsInfo(null);
@@ -153,140 +264,143 @@ export function usePremiumStatus() {
 
     fetchEntitlements();
   }, [subscriptionStatus?.status, getEntitlements]);
-  
-  // User is premium if they have active Superwall subscription OR complimentary pro access
-  const isPremiumFromSuperwall = subscriptionStatus?.status === "ACTIVE";
-  const isPremium = isPremiumFromSuperwall || isComplimentaryPro;
-  
-  // Still loading if either Superwall or complimentary check is pending
-  const superwallLoading = subscriptionStatus?.status === "UNKNOWN" || subscriptionStatus === undefined;
-  const isLoading = superwallLoading && isCheckingComplimentary;
 
-  // Build subscription details for UI display
-  const activeEntitlements = subscriptionStatus?.status === 'ACTIVE' 
+  // Get active entitlements from Superwall
+  const activeEntitlements = subscriptionStatus?.status === 'ACTIVE'
     ? (subscriptionStatus as { status: 'ACTIVE'; entitlements: Entitlement[] }).entitlements || []
     : [];
 
-  const subscriptionDetails: SubscriptionDetails = {
-    status: subscriptionStatus?.status ?? 'UNKNOWN',
-    entitlements: activeEntitlements,
-    source: isPremiumFromSuperwall ? 'superwall' : (isComplimentaryPro ? 'complimentary' : 'none'),
-    superwallUserId: superwallUser?.appUserId,
-    currentPlan: subscriptionStatus?.status === 'ACTIVE' 
-      ? detectCurrentPlan(activeEntitlements)
-      : undefined,
-  };
+  // Resolve final tier
+  const { tier, source } = resolveTier(activeEntitlements, supabaseTier);
+
+  // Calculate loading state
+  const superwallLoading = subscriptionStatus?.status === 'UNKNOWN' || subscriptionStatus === undefined;
+  const isLoading = superwallLoading && isCheckingSupabase;
+
+  // Request Pro access helper
+  const requestProAccess = useCallback(async (
+    onGranted?: () => void,
+    featureRequested?: string
+  ) => {
+    await registerPlacement({
+      placement: 'pro_download',
+      feature: onGranted,
+      params: {
+        feature_requested: featureRequested || 'download',
+        current_tier: tier,
+      } as PlacementParams,
+    });
+  }, [registerPlacement, tier]);
+
+  // Request Studio access helper
+  const requestStudioAccess = useCallback(async (
+    onGranted?: () => void,
+    featureRequested?: string
+  ) => {
+    await registerPlacement({
+      placement: 'studio_ai_generate',
+      feature: onGranted,
+      params: {
+        feature_requested: featureRequested || 'ai_studio',
+        current_tier: tier,
+      } as PlacementParams,
+    });
+  }, [registerPlacement, tier]);
 
   return {
-    isPremium,
+    tier,
     isLoading,
-    subscriptionStatus,
-    subscriptionDetails,
+    
+    // Convenience booleans
+    canDownload: tier !== 'free',
+    canShare: tier !== 'free',
+    canUseAIStudio: tier === 'studio',
+    
+    source,
+    superwallUserId: superwallUser?.appUserId,
+    currentPlan: subscriptionStatus?.status === 'ACTIVE' ? detectCurrentPlan(activeEntitlements) : undefined,
+    entitlements: activeEntitlements,
     entitlementsInfo,
-    isComplimentaryPro, // Expose for debugging/admin purposes
-    superwallUserId: superwallUser?.appUserId, // Useful for looking up user in Superwall dashboard
+    
+    // Paywall helpers
+    requestProAccess,
+    requestStudioAccess,
   };
 }
 
+// ============================================
+// Legacy Compatibility
+// ============================================
+
 /**
- * Placement parameters that can be passed to the paywall
- * These become available as {{ params.paramName }} in Superwall's paywall editor
+ * @deprecated Use useTieredSubscription instead
+ * This is kept for backwards compatibility during migration
  */
-export interface PlacementParams {
-  /** Current subscription plan: 'weekly', 'monthly', or 'free' */
-  currentPlan?: 'weekly' | 'monthly' | 'free' | 'unknown';
-  /** Any additional custom parameters */
-  [key: string]: string | number | boolean | undefined;
+export function usePremiumStatus() {
+  const tiered = useTieredSubscription();
+  
+  return {
+    // Legacy interface
+    isPremium: tiered.tier !== 'free',
+    isLoading: tiered.isLoading,
+    subscriptionStatus: { status: tiered.tier === 'free' ? 'INACTIVE' : 'ACTIVE' },
+    subscriptionDetails: {
+      status: tiered.tier === 'free' ? 'INACTIVE' : 'ACTIVE',
+      entitlements: tiered.entitlements,
+      source: tiered.source,
+      superwallUserId: tiered.superwallUserId,
+      currentPlan: tiered.currentPlan,
+    },
+    entitlementsInfo: tiered.entitlementsInfo,
+    isComplimentaryPro: tiered.source === 'complimentary' && tiered.tier !== 'free',
+    superwallUserId: tiered.superwallUserId,
+    
+    // New tiered interface (for gradual migration)
+    ...tiered,
+  };
 }
 
 /**
  * Hook to trigger a paywall for premium features
- * Use this when you want to gate a feature behind a paywall
- * 
- * Integrates with Facebook SDK for proper attribution:
- * - fb_mobile_initiated_checkout when paywall is presented
- * - fb_mobile_subscribe when user successfully subscribes
- * - fb_mobile_start_trial when user starts a trial
+ * @deprecated Use useTieredSubscription().requestProAccess or requestStudioAccess instead
  */
 export function usePremiumFeature() {
-  const { registerPlacement, state: paywallState } = usePlacement({
-    onPresent: (info) => {
-      console.log('Paywall presented:', info.name);
-      // Track checkout initiation for Facebook attribution
-      trackInitiatedCheckout(info.name);
-    },
-    onDismiss: (info, result) => {
-      console.log('Paywall dismissed:', result);
-      
-      // Track successful subscription/purchase events for Facebook
-      if (result.type === 'purchased') {
-        console.log('[Premium] Purchase completed - tracking fb_mobile_subscribe');
-        // Note: Price/currency would come from Superwall product info if available
-        // For now, we track without specific price - Superwall may also send this event
-        trackSubscribe(info.name || 'pro_subscription', 0, 'USD');
-      } else if (result.type === 'restored') {
-        console.log('[Premium] Purchase restored');
-        // Restore doesn't need to be tracked as a new subscription
-      }
-    },
-    onSkip: (reason) => console.log('Paywall skipped:', reason),
-    onError: (error) => console.error('Paywall error:', error),
-  });
-
-  /**
-   * Request access to a premium feature
-   * If user is subscribed, the feature callback runs immediately
-   * If not subscribed, a paywall is shown
-   * 
-   * IMPORTANT: Ensure Feature Gating is set to "Gated" in the Superwall Dashboard
-   * for proper behavior. If set to "Non-Gated", the feature will run on dismiss
-   * regardless of purchase status.
-   * 
-   * @param placement - The placement name configured in Superwall dashboard
-   * @param onFeatureAccess - Callback when user gets access (subscribed or passes paywall)
-   * @param params - Optional placement parameters (available as {{ params.paramName }} in paywall)
-   */
+  const { requestProAccess, requestStudioAccess, tier } = useTieredSubscription();
+  
   const requestPremiumAccess = useCallback(async (
     placement: string,
     onFeatureAccess?: () => void,
     params?: PlacementParams
   ) => {
-    await registerPlacement({
-      placement,
-      feature: onFeatureAccess,
-      params,
-    });
-  }, [registerPlacement]);
+    // Route to appropriate tier based on placement
+    if (placement.includes('studio') || placement.includes('ai')) {
+      await requestStudioAccess(onFeatureAccess, params?.feature_requested as string);
+    } else {
+      await requestProAccess(onFeatureAccess, params?.feature_requested as string);
+    }
+  }, [requestProAccess, requestStudioAccess]);
 
   return {
     requestPremiumAccess,
-    paywallState,
+    paywallState: undefined, // No longer tracked at this level
   };
 }
 
 /**
- * Hook to restore purchases directly without showing a paywall
- * Use this for the "Restore Purchases" button in Settings
- * 
- * This is critical for sandbox/TestFlight testing where reinstalls
- * reset the user identity. Calling restore will sync the Apple receipt
- * and update subscription status.
+ * Hook to restore purchases
  */
 export function useRestorePurchases() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState(false);
   
-  // Use the placement hook with a restore-specific placement
-  // This will attempt to restore without necessarily showing a paywall
   const { registerPlacement } = usePlacement({
     onSkip: (reason) => {
-      console.log('[Restore] Paywall skipped (user may already be subscribed):', reason);
-      // If skipped with userIsSubscribed reason, restoration worked
+      console.log('[Restore] Skipped (user may already be subscribed):', reason);
       setRestoreSuccess(true);
     },
     onDismiss: (info, result) => {
-      console.log('[Restore] Dismissed with result:', result);
+      console.log('[Restore] Dismissed:', result);
       if (result.type === 'restored' || result.type === 'purchased') {
         setRestoreSuccess(true);
       }
@@ -297,43 +411,31 @@ export function useRestorePurchases() {
     },
   });
 
-  /**
-   * Attempt to restore purchases
-   * This triggers Superwall to check for existing subscriptions
-   * and update the subscription status accordingly
-   */
   const restorePurchases = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     setIsRestoring(true);
     setRestoreError(null);
     setRestoreSuccess(false);
 
     try {
-      // Use a dedicated restore placement
-      // Configure this in Superwall dashboard to show restore UI or check status
       await registerPlacement({
         placement: 'restore_purchases',
         feature: () => {
-          // Feature runs if user has active subscription
-          console.log('[Restore] Subscription verified - user is subscribed');
+          console.log('[Restore] Subscription verified');
           setRestoreSuccess(true);
         },
       });
 
-      // Wait a moment for status to update
       await new Promise(resolve => setTimeout(resolve, 500));
-      
       return { success: true };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to restore purchases';
       setRestoreError(errorMessage);
-      console.error('[Restore] Failed:', error);
       return { success: false, error: errorMessage };
     } finally {
       setIsRestoring(false);
     }
   }, [registerPlacement]);
 
-  // Reset success state after 3 seconds
   useEffect(() => {
     if (restoreSuccess) {
       const timeout = setTimeout(() => setRestoreSuccess(false), 3000);
@@ -349,134 +451,7 @@ export function useRestorePurchases() {
   };
 }
 
-/**
- * Legacy hook for development/testing without Superwall
- * Useful for testing premium features locally
- */
-export function usePremiumStatusLegacy() {
-  const [isPremium, setIsPremium] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [plan, setPlan] = useState<'monthly' | 'yearly' | 'lifetime' | undefined>();
-  const [expiresAt, setExpiresAt] = useState<Date | undefined>();
-
-  // Load premium status from storage
-  useEffect(() => {
-    loadPremiumStatus();
-  }, []);
-
-  const loadPremiumStatus = async () => {
-    try {
-      const storedData = await AsyncStorage.getItem(PREMIUM_STORAGE_KEY);
-      
-      if (storedData) {
-        const data = JSON.parse(storedData);
-        
-        // Check if subscription is still valid
-        if (data.expiresAt) {
-          const expiry = new Date(data.expiresAt);
-          if (expiry > new Date()) {
-            setIsPremium(true);
-            setPlan(data.plan);
-            setExpiresAt(expiry);
-          } else {
-            // Subscription expired
-            setIsPremium(false);
-            await AsyncStorage.removeItem(PREMIUM_STORAGE_KEY);
-          }
-        } else if (data.plan === 'lifetime') {
-          // Lifetime never expires
-          setIsPremium(true);
-          setPlan('lifetime');
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load premium status:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Set premium status (called after successful purchase)
-  const setPremiumActive = useCallback(async (
-    newPlan: 'monthly' | 'yearly' | 'lifetime',
-    expiry?: Date
-  ) => {
-    try {
-      const data = {
-        isPremium: true,
-        plan: newPlan,
-        expiresAt: newPlan === 'lifetime' ? undefined : expiry?.toISOString(),
-        activatedAt: new Date().toISOString(),
-      };
-      
-      await AsyncStorage.setItem(PREMIUM_STORAGE_KEY, JSON.stringify(data));
-      
-      setIsPremium(true);
-      setPlan(newPlan);
-      setExpiresAt(expiry);
-    } catch (error) {
-      console.error('Failed to save premium status:', error);
-      throw error;
-    }
-  }, []);
-
-  // Clear premium status (for testing or cancellation)
-  const clearPremium = useCallback(async () => {
-    try {
-      await AsyncStorage.removeItem(PREMIUM_STORAGE_KEY);
-      setIsPremium(false);
-      setPlan(undefined);
-      setExpiresAt(undefined);
-    } catch (error) {
-      console.error('Failed to clear premium status:', error);
-    }
-  }, []);
-
-  // Refresh status (call when app comes to foreground)
-  const refreshStatus = useCallback(async () => {
-    setIsLoading(true);
-    await loadPremiumStatus();
-  }, []);
-
-  return {
-    isPremium,
-    isLoading,
-    plan,
-    expiresAt,
-    setPremiumActive,
-    clearPremium,
-    refreshStatus,
-  };
-}
-
-/**
- * Check premium status from local storage (legacy fallback)
- * Note: This is a convenience function that returns the last known status
- * For accurate status, use the usePremiumStatus hook
- */
-export async function checkPremiumStatusLegacy(): Promise<boolean> {
-  try {
-    const storedData = await AsyncStorage.getItem(PREMIUM_STORAGE_KEY);
-    
-    if (!storedData) {
-      return false;
-    }
-    
-    const data = JSON.parse(storedData);
-    
-    if (data.plan === 'lifetime') {
-      return true;
-    }
-    
-    if (data.expiresAt) {
-      return new Date(data.expiresAt) > new Date();
-    }
-    
-    return false;
-  } catch {
-    return false;
-  }
-}
+// Re-export types for convenience
+export type { SubscriptionTier, SubscriptionTierSource };
 
 export default usePremiumStatus;
-

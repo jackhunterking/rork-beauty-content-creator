@@ -29,7 +29,10 @@ function transformProfile(row: ProfileRow): UserProfile {
     industry: row.industry ?? undefined,
     goal: row.goal ?? undefined,
     onboardingCompletedAt: row.onboarding_completed_at ?? undefined,
-    // Complimentary pro access (admin-granted)
+    // Subscription tier (new tiered system)
+    subscriptionTier: row.subscription_tier ?? undefined,
+    subscriptionTierSource: row.subscription_tier_source ?? undefined,
+    // @deprecated Use subscriptionTier instead - kept for backwards compatibility
     isComplimentaryPro: row.is_complimentary_pro ?? undefined,
     complimentaryProGrantedAt: row.complimentary_pro_granted_at ?? undefined,
     complimentaryProNotes: row.complimentary_pro_notes ?? undefined,

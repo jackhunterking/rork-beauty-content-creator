@@ -20,6 +20,7 @@ import {
   parseSuperWallSurveyData,
 } from "@/services/onboardingService";
 import { initializeFacebookSDK } from "@/services/metaAnalyticsService";
+import { requestATTPermission } from "@/services/attService";
 import { 
   forwardSuperwallEvent,
   captureEvent,
@@ -525,10 +526,35 @@ export default function RootLayout() {
     // PostHogProvider handles initialization automatically with session replay support
     setPosthogReady(true);
     
-    // Initialize Facebook SDK for Meta Ads attribution (iOS only)
-    if (Platform.OS === 'ios') {
-      initializeFacebookSDK().catch(console.error);
-    }
+    // Initialize tracking SDKs with proper ATT flow
+    // IMPORTANT: Must request ATT permission BEFORE initializing Facebook SDK
+    // This ensures we comply with Apple's App Tracking Transparency requirements
+    const initializeTracking = async () => {
+      try {
+        if (Platform.OS === 'ios') {
+          // Step 1: Request ATT permission first (shows native iOS dialog)
+          // This will show the ATT prompt if status is 'not-determined'
+          // If already determined, it returns the cached status without showing dialog
+          console.log('[ATT] Requesting App Tracking Transparency permission...');
+          const { canTrack, status } = await requestATTPermission();
+          
+          console.log('[ATT] Permission result:', { status, canTrack });
+          
+          // Step 2: Initialize Facebook SDK with ATT result
+          // The SDK will enable/disable IDFA collection based on user's choice
+          await initializeFacebookSDK(canTrack);
+        } else {
+          // Android doesn't have ATT, initialize with tracking enabled
+          await initializeFacebookSDK(true);
+        }
+      } catch (error) {
+        console.error('[Tracking] Failed to initialize:', error);
+        // On error, initialize Facebook SDK without tracking (privacy-first)
+        initializeFacebookSDK(false).catch(console.error);
+      }
+    };
+    
+    initializeTracking();
     
     // Prewarm the Google Fonts catalog for faster font loading later
     // This fetches the font metadata without loading any fonts

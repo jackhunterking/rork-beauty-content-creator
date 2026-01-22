@@ -24,6 +24,8 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import Colors from '@/constants/colors';
 import { removeBackground, AIProcessingProgress } from '@/services/aiService';
 import { uploadTempImage } from '@/services/tempUploadService';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
+import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -105,6 +107,9 @@ export default function RemoveBackgroundView({
 }: RemoveBackgroundViewProps) {
   const [isPreparing, setIsPreparing] = useState(false);
   
+  // Tiered subscription for Studio-only AI features
+  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  
   const maxPreviewWidth = SCREEN_WIDTH - 48;
   const maxPreviewHeight = SCREEN_HEIGHT * 0.45;
   const aspectRatio = imageSize.width / imageSize.height;
@@ -117,9 +122,8 @@ export default function RemoveBackgroundView({
     previewWidth = previewHeight * aspectRatio;
   }
 
-  const handleRemove = useCallback(async () => {
-    if (isAlreadyEnhanced || isPreparing) return;
-    
+  // Actual removal logic (called after tier check passes)
+  const performRemoval = useCallback(async () => {
     try {
       setIsPreparing(true);
       const cloudUrl = await prepareImageForAI(imageUri, imageSize, onProgress);
@@ -136,7 +140,31 @@ export default function RemoveBackgroundView({
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [imageUri, imageSize, isAlreadyEnhanced, isPreparing, onStartProcessing, onProgress, getAbortSignal]);
+  }, [imageUri, imageSize, onStartProcessing, onProgress, getAbortSignal]);
+
+  // Handle remove button - checks Studio tier first
+  const handleRemove = useCallback(async () => {
+    if (isAlreadyEnhanced || isPreparing) return;
+    
+    // Track the AI generation attempt
+    captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_STARTED, {
+      feature: 'remove_background',
+      current_tier: tier,
+    });
+
+    // Check if user has Studio access
+    if (!canUseAIStudio) {
+      console.log(`[RemoveBackgroundView] User is ${tier} tier, showing Studio paywall`);
+      await requestStudioAccess(
+        () => performRemoval(),
+        'remove_background'
+      );
+      return;
+    }
+
+    // User has Studio access, proceed with removal
+    await performRemoval();
+  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestStudioAccess, performRemoval]);
 
   return (
     <View style={styles.container}>

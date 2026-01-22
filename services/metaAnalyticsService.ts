@@ -54,25 +54,37 @@ const FB_PARAMS = {
 } as const;
 
 /**
- * Initialize Facebook SDK
- * Call this early in app lifecycle (e.g., in _layout.tsx)
+ * Initialize Facebook SDK with ATT-aware configuration
+ * 
+ * IMPORTANT: This must be called AFTER requesting ATT permission to ensure
+ * the SDK is properly configured based on user's tracking choice.
+ * 
+ * Call this early in app lifecycle (e.g., in _layout.tsx) but AFTER ATT prompt.
+ * 
+ * @param isTrackingAuthorized - Whether user authorized tracking via ATT (iOS 14.5+)
  */
-export async function initializeFacebookSDK(): Promise<void> {
+export async function initializeFacebookSDK(isTrackingAuthorized: boolean = false): Promise<void> {
   try {
     // Initialize the SDK - this must be called first
     await Settings.initializeSDK();
     
     // Enable automatic logging of app events (includes app open/install)
+    // This is allowed regardless of ATT status - it's for aggregate analytics
     await Settings.setAutoLogAppEventsEnabled(true);
     
-    // Enable advertiser ID collection for attribution
-    await Settings.setAdvertiserIDCollectionEnabled(true);
+    // Configure advertiser tracking based on ATT authorization status
+    // This is the critical setting that respects user's ATT choice
+    await Settings.setAdvertiserTrackingEnabled(isTrackingAuthorized);
     
-    // Note: setAdvertiserTrackingEnabled is deprecated as of iOS 14.5+
-    // The SDK now automatically reads ATT (App Tracking Transparency) permission status
-    // from iOS, so we no longer need to manually set this flag.
-    // See: https://developers.facebook.com/docs/app-events/getting-started-app-events-ios
-    console.log('[MetaAnalytics] SDK uses automatic ATT status detection (iOS 14.5+)');
+    // Only enable advertiser ID (IDFA) collection if user authorized tracking
+    // This ensures we comply with Apple's ATT requirements
+    await Settings.setAdvertiserIDCollectionEnabled(isTrackingAuthorized);
+    
+    console.log('[MetaAnalytics] Facebook SDK initialized with ATT status:', {
+      isTrackingAuthorized,
+      advertiserTrackingEnabled: isTrackingAuthorized,
+      advertiserIDCollectionEnabled: isTrackingAuthorized,
+    });
     
     // Flush any pending events
     AppEventsLogger.flush();
@@ -80,6 +92,25 @@ export async function initializeFacebookSDK(): Promise<void> {
     console.log('[MetaAnalytics] Facebook SDK initialized successfully');
   } catch (error) {
     console.error('[MetaAnalytics] Failed to initialize Facebook SDK:', error);
+  }
+}
+
+/**
+ * Update advertiser tracking status after ATT permission changes
+ * 
+ * Call this if user changes their tracking preference in Settings
+ * or if you need to update the SDK's tracking status dynamically.
+ * 
+ * @param isTrackingAuthorized - Whether tracking is now authorized
+ */
+export async function updateTrackingStatus(isTrackingAuthorized: boolean): Promise<void> {
+  try {
+    await Settings.setAdvertiserTrackingEnabled(isTrackingAuthorized);
+    await Settings.setAdvertiserIDCollectionEnabled(isTrackingAuthorized);
+    
+    console.log('[MetaAnalytics] Updated tracking status:', { isTrackingAuthorized });
+  } catch (error) {
+    console.error('[MetaAnalytics] Failed to update tracking status:', error);
   }
 }
 
@@ -339,6 +370,7 @@ export { FB_EVENTS, FB_PARAMS };
 export default {
   // Initialization
   initializeFacebookSDK,
+  updateTrackingStatus,
   
   // Standard events (new naming)
   trackCompleteRegistration,

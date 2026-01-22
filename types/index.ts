@@ -878,6 +878,21 @@ export interface BrandKitRow {
 // ============================================
 
 /**
+ * Subscription tier for tiered monetization
+ * - free: Full app access, create unlimited content, preview everything
+ * - pro: Download to Photos + Share to social media
+ * - studio: Pro features + All AI generation capabilities
+ */
+export type SubscriptionTier = 'free' | 'pro' | 'studio';
+
+/**
+ * Source of subscription tier
+ * - superwall: Paid subscription via Superwall
+ * - complimentary: Admin-granted for influencers, partners, testers
+ */
+export type SubscriptionTierSource = 'superwall' | 'complimentary';
+
+/**
  * User profile from Supabase profiles table
  */
 export interface UserProfile {
@@ -892,7 +907,10 @@ export interface UserProfile {
   industry?: string;
   goal?: string;
   onboardingCompletedAt?: string;
-  // Complimentary pro access (admin-granted)
+  // Subscription tier (new tiered system)
+  subscriptionTier?: SubscriptionTier;
+  subscriptionTierSource?: SubscriptionTierSource;
+  // @deprecated Use subscriptionTier instead - kept for backwards compatibility during migration
   isComplimentaryPro?: boolean;
   complimentaryProGrantedAt?: string;
   complimentaryProNotes?: string;
@@ -913,7 +931,10 @@ export interface ProfileRow {
   industry: string | null;
   goal: string | null;
   onboarding_completed_at: string | null;
-  // Complimentary pro access (admin-granted)
+  // Subscription tier (new tiered system)
+  subscription_tier: SubscriptionTier | null;
+  subscription_tier_source: SubscriptionTierSource | null;
+  // @deprecated Use subscription_tier instead - kept for backwards compatibility during migration
   is_complimentary_pro: boolean | null;
   complimentary_pro_granted_at: string | null;
   complimentary_pro_notes: string | null;
@@ -1060,7 +1081,8 @@ export interface AIModelConfigRow {
 }
 
 /**
- * User AI credits balance
+ * @deprecated Credits system replaced by tiered subscriptions (Pro/Studio)
+ * Kept for backwards compatibility with existing edge functions
  */
 export interface AICredits {
   creditsRemaining: number;
@@ -1071,7 +1093,7 @@ export interface AICredits {
 }
 
 /**
- * Database row type for ai_credits (snake_case from Supabase)
+ * @deprecated Credits system replaced by tiered subscriptions
  */
 export interface AICreditsRow {
   id: string;
@@ -1212,7 +1234,8 @@ export interface AIEnhanceResponse {
 }
 
 /**
- * AI feature check result
+ * @deprecated Credits system replaced by tiered subscriptions (Pro/Studio)
+ * Use useTieredSubscription().canUseAIStudio instead
  */
 export interface AIFeatureCheck {
   hasCredits: boolean;

@@ -36,6 +36,8 @@ import {
   AIProcessingProgress,
 } from '@/services/aiService';
 import { uploadTempImage } from '@/services/tempUploadService';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
+import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import { 
   GRADIENT_PRESETS, 
   GRADIENT_DIRECTIONS,
@@ -175,6 +177,9 @@ export default function ReplaceBackgroundView({
   onProgress,
   getAbortSignal,
 }: ReplaceBackgroundViewProps) {
+  // Tiered subscription for Studio-only AI features
+  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  
   // Input mode state
   const [activeTab, setActiveTab] = useState<BackgroundMode>('solid');
   
@@ -228,11 +233,8 @@ export default function ReplaceBackgroundView({
   }, [activeTab, customPrompt, isPreparing]);
 
 
-  // Handle apply
-  const handleApply = useCallback(async () => {
-    // Block if preparing
-    if (isPreparing) return;
-    
+  // Actual apply logic (called after tier check passes)
+  const performApply = useCallback(async () => {
     try {
       setIsPreparing(true);
       
@@ -262,9 +264,6 @@ export default function ReplaceBackgroundView({
           console.log('[ReplaceBackgroundView] Using cached transparent PNG:', cachedTransparentPngUrl);
           console.log('[ReplaceBackgroundView] SKIPPING birefnet API call - cost saved!');
           
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReplaceBackgroundView.tsx:handleApply',message:'SKIPPING birefnet - using cached transparentPngUrl',data:{cachedUrl:cachedTransparentPngUrl?.substring(0,50),apiCallSkipped:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'api-skip'})}).catch(()=>{});
-          // #endregion
           transparentPngUrl = cachedTransparentPngUrl;
           
           // Show brief animation to give AI feedback feel
@@ -287,10 +286,6 @@ export default function ReplaceBackgroundView({
         } else {
           // Need to run birefnet to get transparent PNG
           console.log('[ReplaceBackgroundView] No cached PNG - calling birefnet API');
-          
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReplaceBackgroundView.tsx:handleApply',message:'CALLING birefnet API - no cached transparentPngUrl',data:{apiCallMade:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'api-call'})}).catch(()=>{});
-          // #endregion
           
           onProgress({
             status: 'processing',
@@ -337,7 +332,33 @@ export default function ReplaceBackgroundView({
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [activeTab, customPrompt, selectedColor, selectedGradient, imageUri, imageSize, isPreparing, cachedTransparentPngUrl, onStartProcessing, onProgress, getAbortSignal]);
+  }, [activeTab, customPrompt, selectedColor, selectedGradient, imageUri, imageSize, cachedTransparentPngUrl, onStartProcessing, onProgress, getAbortSignal]);
+
+  // Handle apply button - checks Studio tier first
+  const handleApply = useCallback(async () => {
+    // Block if preparing
+    if (isPreparing) return;
+    
+    // Track the AI generation attempt
+    captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_STARTED, {
+      feature: 'replace_background',
+      mode: activeTab,
+      current_tier: tier,
+    });
+
+    // Check if user has Studio access
+    if (!canUseAIStudio) {
+      console.log(`[ReplaceBackgroundView] User is ${tier} tier, showing Studio paywall`);
+      await requestStudioAccess(
+        () => performApply(),
+        'replace_background'
+      );
+      return;
+    }
+
+    // User has Studio access, proceed with apply
+    await performApply();
+  }, [isPreparing, activeTab, canUseAIStudio, tier, requestStudioAccess, performApply]);
 
   // Handle color selection from preset
   const handleColorSelect = useCallback((color: string) => {

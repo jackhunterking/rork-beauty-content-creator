@@ -42,6 +42,7 @@ export const POSTHOG_EVENTS = {
   PAYWALL_DISMISSED: 'paywall_dismissed',
   PAYWALL_SKIPPED: 'paywall_skipped',
   PAYWALL_ERROR: 'paywall_error',
+  PAYWALL_TRIGGERED: 'paywall_triggered', // When a paywall is triggered (pre-present)
   
   // Transaction events (forwarded from Superwall)
   TRANSACTION_START: 'transaction_start',
@@ -50,6 +51,16 @@ export const POSTHOG_EVENTS = {
   TRANSACTION_RESTORE: 'transaction_restore',
   SUBSCRIPTION_START: 'subscription_start',
   TRIAL_START: 'trial_start',
+  
+  // Tier change events
+  TIER_UPGRADED: 'tier_upgraded', // { from_tier, to_tier, source }
+  TIER_DOWNGRADED: 'tier_downgraded', // { from_tier, to_tier }
+  COMPLIMENTARY_TIER_GRANTED: 'complimentary_tier_granted', // { tier, user_id }
+  COMPLIMENTARY_TIER_REVOKED: 'complimentary_tier_revoked', // { previous_tier, user_id }
+  
+  // Feature interest tracking
+  DOWNLOAD_ATTEMPTED: 'download_attempted', // { platform, tier }
+  AI_GENERATE_ATTEMPTED: 'ai_generate_attempted', // { feature, tier }
   
   // Content creation events
   TEMPLATE_SELECTED: 'template_selected',
@@ -75,7 +86,9 @@ export const POSTHOG_EVENTS = {
   AI_ENHANCEMENT_STARTED: 'ai_enhancement_started',
   AI_ENHANCEMENT_COMPLETED: 'ai_enhancement_completed',
   AI_ENHANCEMENT_FAILED: 'ai_enhancement_failed',
+  /** @deprecated Credits system replaced by tiered subscriptions */
   AI_CREDITS_DEPLETED: 'ai_credits_depleted',
+  /** @deprecated Credits system replaced by tiered subscriptions */
   AI_CREDITS_REFRESHED: 'ai_credits_refreshed',
   AI_FEATURE_CONFIG_LOADED: 'ai_feature_config_loaded',
   AI_BACKGROUND_PRESET_SELECTED: 'ai_background_preset_selected',
@@ -102,6 +115,12 @@ export const USER_PROPERTIES = {
   SUBSCRIPTION_STATUS: 'subscription_status',
   SUBSCRIPTION_SOURCE: 'subscription_source', // 'superwall' | 'complimentary'
   CURRENT_PLAN: 'current_plan',
+  SUBSCRIPTION_TIER: 'subscription_tier', // 'free' | 'pro' | 'studio'
+  
+  // Paywall analytics
+  MOST_REQUESTED_FEATURE: 'most_requested_feature', // Track what users want most
+  PAYWALL_VIEWS_COUNT: 'paywall_views_count',
+  LAST_PAYWALL_PLACEMENT: 'last_paywall_placement',
   
   // App properties
   APP_VERSION: 'app_version',
@@ -113,6 +132,7 @@ export const USER_PROPERTIES = {
   TOTAL_EXPORTS: 'total_exports',
   
   // AI properties
+  /** @deprecated Credits system replaced by tiered subscriptions */
   AI_CREDITS_REMAINING: 'ai_credits_remaining',
   AI_TOTAL_GENERATIONS: 'ai_total_generations',
   AI_FAVORITE_FEATURE: 'ai_favorite_feature',
@@ -695,6 +715,99 @@ export function trackBackgroundPresetSelected(
 }
 
 // ============================================
+// Subscription Tier Tracking
+// ============================================
+
+/**
+ * Track when a paywall is triggered (before it's presented)
+ */
+export function trackPaywallTriggered(
+  placement: string,
+  featureRequested: string,
+  currentTier: string
+): void {
+  captureEvent(POSTHOG_EVENTS.PAYWALL_TRIGGERED, {
+    placement,
+    feature_requested: featureRequested,
+    current_tier: currentTier,
+    timestamp: new Date().toISOString(),
+  });
+  
+  // Update user properties for funnel analysis
+  setUserProperties({
+    [USER_PROPERTIES.LAST_PAYWALL_PLACEMENT]: placement,
+    [USER_PROPERTIES.MOST_REQUESTED_FEATURE]: featureRequested,
+  });
+}
+
+/**
+ * Track tier upgrade
+ */
+export function trackTierUpgraded(
+  fromTier: string,
+  toTier: string,
+  source: 'superwall' | 'complimentary'
+): void {
+  captureEvent(POSTHOG_EVENTS.TIER_UPGRADED, {
+    from_tier: fromTier,
+    to_tier: toTier,
+    source,
+    timestamp: new Date().toISOString(),
+  });
+  
+  setUserProperties({
+    [USER_PROPERTIES.SUBSCRIPTION_TIER]: toTier,
+    [USER_PROPERTIES.SUBSCRIPTION_SOURCE]: source,
+  });
+}
+
+/**
+ * Track tier downgrade
+ */
+export function trackTierDowngraded(
+  fromTier: string,
+  toTier: string
+): void {
+  captureEvent(POSTHOG_EVENTS.TIER_DOWNGRADED, {
+    from_tier: fromTier,
+    to_tier: toTier,
+    timestamp: new Date().toISOString(),
+  });
+  
+  setUserProperties({
+    [USER_PROPERTIES.SUBSCRIPTION_TIER]: toTier,
+  });
+}
+
+/**
+ * Track download attempt (for feature interest analysis)
+ */
+export function trackDownloadAttempted(
+  platform: string,
+  currentTier: string
+): void {
+  captureEvent(POSTHOG_EVENTS.DOWNLOAD_ATTEMPTED, {
+    platform,
+    current_tier: currentTier,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * Track AI generate attempt (for feature interest analysis)
+ */
+export function trackAIGenerateAttempted(
+  feature: string,
+  currentTier: string
+): void {
+  captureEvent(POSTHOG_EVENTS.AI_GENERATE_ATTEMPTED, {
+    feature,
+    current_tier: currentTier,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+// ============================================
 // Opt-out Control
 // ============================================
 
@@ -773,6 +886,13 @@ export default {
   trackAICreditsDepleted,
   trackAICreditsRefreshed,
   trackBackgroundPresetSelected,
+  
+  // Tier tracking
+  trackPaywallTriggered,
+  trackTierUpgraded,
+  trackTierDowngraded,
+  trackDownloadAttempted,
+  trackAIGenerateAttempted,
   
   // Lifecycle
   flushEvents,

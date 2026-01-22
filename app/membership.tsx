@@ -18,14 +18,19 @@ import {
   AlertCircle,
   HelpCircle,
   Gift,
+  Sparkles,
+  Download,
+  Share2,
+  Wand2,
 } from "lucide-react-native";
 import Constants from 'expo-constants';
 import React, { useMemo } from "react";
 import { useRouter } from "expo-router";
-import { useSuperwallEvents } from "expo-superwall";
+import { useSuperwallEvents, usePlacement } from "expo-superwall";
 import Colors from "@/constants/colors";
-import { usePremiumStatus, usePremiumFeature } from "@/hooks/usePremiumStatus";
+import { useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useResponsive } from "@/hooks/useResponsive";
+import type { SubscriptionTier } from "@/types";
 
 /**
  * Detect if running in development/sandbox mode
@@ -35,27 +40,88 @@ const isDevelopmentMode = (): boolean => {
 };
 
 /**
+ * Get tier display info
+ */
+const getTierInfo = (tier: SubscriptionTier, source: string) => {
+  switch (tier) {
+    case 'studio':
+      return {
+        name: source === 'complimentary' ? 'Complimentary Studio' : 'Studio',
+        icon: Sparkles,
+        color: '#9333EA', // Purple
+        features: [
+          { icon: Download, text: 'Unlimited downloads' },
+          { icon: Share2, text: 'Share to all platforms' },
+          { icon: Wand2, text: 'All AI features' },
+          { icon: Check, text: 'No watermarks' },
+          { icon: Check, text: 'Priority support' },
+        ],
+      };
+    case 'pro':
+      return {
+        name: source === 'complimentary' ? 'Complimentary Pro' : 'Pro',
+        icon: Crown,
+        color: Colors.light.accent,
+        features: [
+          { icon: Download, text: 'Unlimited downloads' },
+          { icon: Share2, text: 'Share to all platforms' },
+          { icon: Check, text: 'No watermarks' },
+          { icon: Check, text: 'Priority support' },
+        ],
+      };
+    default:
+      return {
+        name: 'Free',
+        icon: null,
+        color: Colors.light.textSecondary,
+        features: [
+          { icon: Check, text: 'Browse all templates' },
+          { icon: Check, text: 'Capture & edit photos' },
+          { icon: Check, text: 'Preview results' },
+        ],
+      };
+  }
+};
+
+/**
  * Membership Management Screen
  * 
- * Dedicated screen for Pro members to:
- * - View their current plan details
- * - Change plan (via Superwall paywall)
- * - Cancel subscription (via App Store)
- * - Restore purchases
+ * Dedicated screen for viewing and managing subscription tiers:
+ * - Free: Basic features
+ * - Pro: Download + Share
+ * - Studio: Pro + AI features
+ * 
+ * Supports both Superwall (paid) and complimentary (admin-granted) tiers.
  */
 export default function MembershipScreen() {
   const router = useRouter();
   const responsive = useResponsive();
   
-  // Subscription status from Superwall
+  // Tiered subscription from Superwall + Supabase
   const { 
-    isPremium, 
+    tier,
     isLoading: isSubscriptionLoading,
-    subscriptionDetails,
-    isComplimentaryPro,
-  } = usePremiumStatus();
+    source,
+    currentPlan,
+    canDownload,
+    canUseAIStudio,
+    requestProAccess,
+    requestStudioAccess,
+  } = useTieredSubscription();
   
-  const { requestPremiumAccess, paywallState } = usePremiumFeature();
+  // Placement hook for manage plan
+  const { registerPlacement, state: paywallState } = usePlacement({
+    onDismiss: (info, result) => {
+      console.log('[Membership] Paywall dismissed:', result);
+      if (result.type === 'purchased') {
+        // Refresh will happen automatically via Superwall
+        Alert.alert('Success!', 'Your subscription has been updated.');
+      }
+    },
+    onError: (error) => {
+      console.error('[Membership] Paywall error:', error);
+    },
+  });
 
   // Listen for custom paywall actions (like "downgrade_to_free" from Superwall)
   useSuperwallEvents({
@@ -67,32 +133,47 @@ export default function MembershipScreen() {
     },
   });
 
-  // Handle Change Plan - opens Superwall paywall with Free/Paid options
-  // Passes currentPlan as a placement parameter so the paywall can show "Current" indicator
-  const handleChangePlan = async () => {
-    const currentPlan = isComplimentaryPro 
-      ? 'free' // Complimentary users see "free" in the paywall
-      : subscriptionDetails.currentPlan || 'unknown';
-    
-    console.log('[Membership] Opening Change Plan paywall with currentPlan:', currentPlan);
+  // Handle Upgrade to Pro
+  const handleUpgradeToPro = async () => {
+    await requestProAccess(() => {
+      console.log('[Membership] Pro access granted');
+    }, 'membership_upgrade');
+  };
+
+  // Handle Upgrade to Studio
+  const handleUpgradeToStudio = async () => {
+    await requestStudioAccess(() => {
+      console.log('[Membership] Studio access granted');
+    }, 'membership_upgrade');
+  };
+
+  // Handle Manage Plan - opens Superwall paywall for existing subscribers
+  const handleManagePlan = async () => {
+    console.log('[Membership] Opening membership_manage paywall');
     
     try {
-      await requestPremiumAccess('change_plan', undefined, { currentPlan });
-      console.log('[Membership] Change Plan paywall request completed');
+      await registerPlacement({
+        placement: 'membership_manage',
+        params: {
+          current_tier: tier,
+          current_plan: currentPlan || 'unknown',
+        },
+      });
     } catch (error) {
-      console.error('[Membership] Error opening Change Plan paywall:', error);
+      console.error('[Membership] Error opening paywall:', error);
     }
-    // Custom actions like "downgrade_to_free" are handled by useSuperwallEvents above
   };
 
   // Show downgrade confirmation dialog
   const handleDowngradeConfirmation = () => {
     Alert.alert(
-      'Downgrade to Free?',
-      'You will lose access to:\n\n• Unlimited downloads\n• Premium templates\n• Watermark-free exports\n\nYour Pro features will remain active until your current billing period ends.',
+      'Downgrade Plan?',
+      tier === 'studio' 
+        ? 'You will lose access to:\n\n• AI features (Auto Quality, Background Replace, etc.)\n\nYour current features will remain active until your billing period ends.'
+        : 'You will lose access to:\n\n• Unlimited downloads\n• Sharing features\n\nYour current features will remain active until your billing period ends.',
       [
         { 
-          text: 'Keep Pro', 
+          text: 'Keep Current', 
           style: 'cancel',
         },
         {
@@ -111,18 +192,17 @@ export default function MembershipScreen() {
     try {
       await Linking.openURL(iosSettingsUrl);
       
-      // Show follow-up instructions after a short delay
       setTimeout(() => {
         Alert.alert(
-          'Complete Cancellation',
-          'To finish downgrading:\n\n1. Find "Resulta" in your subscriptions\n2. Tap "Cancel Subscription"\n\nYour Pro features will remain active until your billing period ends.',
+          'Complete in App Store',
+          'To finish:\n\n1. Find "Resulta" in your subscriptions\n2. Make your desired changes\n\nYour features will remain active until your billing period ends.',
           [{ text: 'Got it' }]
         );
       }, 1000);
     } catch (error) {
       Alert.alert(
         'Open Settings Manually',
-        'Go to:\n\nSettings → [Your Name] → Subscriptions → Resulta\n\nThen tap "Cancel Subscription"',
+        'Go to:\n\nSettings → [Your Name] → Subscriptions → Resulta',
         [
           { text: 'Open Settings', onPress: () => Linking.openURL('app-settings:') },
           { text: 'OK', style: 'cancel' },
@@ -131,13 +211,13 @@ export default function MembershipScreen() {
     }
   };
 
-  // Handle direct cancel button (for users who want to cancel directly)
+  // Handle direct cancel button
   const handleCancelSubscription = () => {
     Alert.alert(
       'Cancel Subscription?',
-      'Are you sure you want to cancel your Pro subscription?\n\nYour features will remain active until your current billing period ends.',
+      'Are you sure you want to cancel your subscription?\n\nYour features will remain active until your current billing period ends.',
       [
-        { text: 'Keep Pro', style: 'cancel' },
+        { text: 'Keep Subscription', style: 'cancel' },
         {
           text: 'Cancel Subscription',
           style: 'destructive',
@@ -165,13 +245,10 @@ export default function MembershipScreen() {
     );
   };
 
-  // Features included in Pro
-  const proFeatures = [
-    'Unlimited downloads',
-    'All premium templates',
-    'No watermarks',
-    'Priority support',
-  ];
+  // Get tier display info
+  const tierInfo = getTierInfo(tier, source);
+  const isComplimentary = source === 'complimentary';
+  const isPaid = source === 'superwall';
 
   // Dynamic styles for responsive layout
   const dynamicStyles = useMemo(() => ({
@@ -188,8 +265,8 @@ export default function MembershipScreen() {
     },
   }), [responsive]);
 
-  // If not premium, redirect back (this screen is only for Pro members)
-  if (!isSubscriptionLoading && !isPremium) {
+  // Loading state
+  if (isSubscriptionLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={[styles.header, dynamicStyles.header]}>
@@ -203,19 +280,8 @@ export default function MembershipScreen() {
           <Text style={styles.headerTitle}>Membership</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <View style={styles.notPremiumContainer}>
-          <Crown size={48} color={Colors.light.textTertiary} />
-          <Text style={styles.notPremiumTitle}>No Active Membership</Text>
-          <Text style={styles.notPremiumText}>
-            Upgrade to Pro to access this page and unlock all premium features.
-          </Text>
-          <TouchableOpacity 
-            style={styles.upgradeButton}
-            onPress={() => router.back()}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.upgradeButtonText}>Go Back</Text>
-          </TouchableOpacity>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.light.accent} />
         </View>
       </SafeAreaView>
     );
@@ -243,63 +309,134 @@ export default function MembershipScreen() {
       >
         <View style={dynamicStyles.contentContainer}>
           {/* Current Plan Card */}
-          <View style={styles.card}>
+          <View style={[styles.card, { borderColor: tierInfo.color, borderWidth: tier !== 'free' ? 2 : 0 }]}>
             <Text style={styles.cardLabel}>Current Plan</Text>
-            {isComplimentaryPro ? (
-              <View style={styles.planInfo}>
-                <View style={styles.planHeader}>
-                  <Gift size={20} color={Colors.light.accent} />
-                  <Text style={styles.planName}>Complimentary Pro</Text>
-                </View>
-                <Text style={styles.planDescription}>
-                  Your Pro access was granted by an admin
+            <View style={styles.planInfo}>
+              <View style={styles.planHeader}>
+                {tierInfo.icon && (
+                  <tierInfo.icon size={24} color={tierInfo.color} />
+                )}
+                <Text style={[styles.planName, { color: tier === 'free' ? Colors.light.text : tierInfo.color }]}>
+                  {tierInfo.name}
                 </Text>
+                {isComplimentary && (
+                  <View style={styles.complimentaryBadge}>
+                    <Gift size={12} color={Colors.light.accent} />
+                    <Text style={styles.complimentaryBadgeText}>Complimentary</Text>
+                  </View>
+                )}
               </View>
-            ) : (
-              <View style={styles.planInfo}>
-                <View style={styles.planHeader}>
-                  <Crown size={20} color={Colors.light.accent} />
-                  <Text style={styles.planName}>
-                    {subscriptionDetails.currentPlan === 'weekly' 
-                      ? 'Pro Weekly' 
-                      : subscriptionDetails.currentPlan === 'monthly'
-                      ? 'Pro Monthly'
-                      : 'Pro Plan'}
-                  </Text>
-                </View>
+              {isPaid && currentPlan && (
                 <Text style={styles.planDescription}>
-                  {subscriptionDetails.currentPlan === 'weekly' 
-                    ? 'Billed $5.49/week • Auto-renews'
-                    : subscriptionDetails.currentPlan === 'monthly'
-                    ? 'Billed $9.99/month • Auto-renews'
+                  {currentPlan.includes('weekly') 
+                    ? 'Billed weekly • Auto-renews'
+                    : currentPlan.includes('monthly')
+                    ? 'Billed monthly • Auto-renews'
+                    : currentPlan.includes('yearly')
+                    ? 'Billed yearly • Auto-renews'
                     : 'Auto-renews • Managed via App Store'}
                 </Text>
-              </View>
-            )}
+              )}
+            </View>
           </View>
 
           {/* What's Included */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>WHAT'S INCLUDED</Text>
             <View style={styles.featuresList}>
-              {proFeatures.map((feature, index) => (
+              {tierInfo.features.map((feature, index) => (
                 <View key={index} style={styles.featureItem}>
-                  <Check size={18} color={Colors.light.success} />
-                  <Text style={styles.featureText}>{feature}</Text>
+                  <feature.icon size={18} color={Colors.light.success} />
+                  <Text style={styles.featureText}>{feature.text}</Text>
                 </View>
               ))}
             </View>
           </View>
 
+          {/* Upgrade Options - Only for Free or Pro users (not complimentary) */}
+          {tier === 'free' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>UPGRADE</Text>
+              
+              {/* Upgrade to Pro */}
+              <TouchableOpacity 
+                style={[styles.upgradeCard, { borderColor: Colors.light.accent }]}
+                onPress={handleUpgradeToPro}
+                activeOpacity={0.8}
+              >
+                <View style={styles.upgradeCardHeader}>
+                  <Crown size={24} color={Colors.light.accent} />
+                  <Text style={[styles.upgradeCardTitle, { color: Colors.light.accent }]}>Pro</Text>
+                </View>
+                <Text style={styles.upgradeCardDescription}>
+                  Download & share your content
+                </Text>
+                <View style={styles.upgradeCardFeatures}>
+                  <Text style={styles.upgradeCardFeature}>• Unlimited downloads</Text>
+                  <Text style={styles.upgradeCardFeature}>• Share to social media</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Upgrade to Studio */}
+              <TouchableOpacity 
+                style={[styles.upgradeCard, { borderColor: '#9333EA' }]}
+                onPress={handleUpgradeToStudio}
+                activeOpacity={0.8}
+              >
+                <View style={styles.upgradeCardHeader}>
+                  <Sparkles size={24} color="#9333EA" />
+                  <Text style={[styles.upgradeCardTitle, { color: '#9333EA' }]}>Studio</Text>
+                  <View style={styles.popularBadge}>
+                    <Text style={styles.popularBadgeText}>POPULAR</Text>
+                  </View>
+                </View>
+                <Text style={styles.upgradeCardDescription}>
+                  Everything in Pro + AI features
+                </Text>
+                <View style={styles.upgradeCardFeatures}>
+                  <Text style={styles.upgradeCardFeature}>• All Pro features</Text>
+                  <Text style={styles.upgradeCardFeature}>• AI Auto Quality</Text>
+                  <Text style={styles.upgradeCardFeature}>• AI Background Replace</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Upgrade to Studio - For Pro users */}
+          {tier === 'pro' && !isComplimentary && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>UPGRADE</Text>
+              
+              <TouchableOpacity 
+                style={[styles.upgradeCard, { borderColor: '#9333EA' }]}
+                onPress={handleUpgradeToStudio}
+                activeOpacity={0.8}
+              >
+                <View style={styles.upgradeCardHeader}>
+                  <Sparkles size={24} color="#9333EA" />
+                  <Text style={[styles.upgradeCardTitle, { color: '#9333EA' }]}>Upgrade to Studio</Text>
+                </View>
+                <Text style={styles.upgradeCardDescription}>
+                  Unlock all AI features
+                </Text>
+                <View style={styles.upgradeCardFeatures}>
+                  <Text style={styles.upgradeCardFeature}>• AI Auto Quality enhancement</Text>
+                  <Text style={styles.upgradeCardFeature}>• AI Background Replace</Text>
+                  <Text style={styles.upgradeCardFeature}>• AI Background Remove</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Management Options - Only for App Store subscriptions */}
-          {!isComplimentaryPro && (
+          {isPaid && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>MANAGE</Text>
               
-              {/* Change Plan Button - Opens Superwall paywall with Free/Paid options */}
+              {/* Change Plan Button */}
               <TouchableOpacity 
                 style={styles.actionButton}
-                onPress={handleChangePlan}
+                onPress={handleManagePlan}
                 disabled={paywallState === 'presenting'}
                 activeOpacity={0.8}
               >
@@ -339,18 +476,18 @@ export default function MembershipScreen() {
             </View>
           )}
 
-          {/* Complimentary Pro Info */}
-          {isComplimentaryPro && (
+          {/* Complimentary Info */}
+          {isComplimentary && (
             <View style={styles.complimentaryInfo}>
               <Gift size={20} color={Colors.light.accent} />
               <Text style={styles.complimentaryInfoText}>
-                Your Pro access was granted by an administrator and doesn't require a subscription. Contact support if you have any questions.
+                Your {tier === 'studio' ? 'Studio' : 'Pro'} access was granted by an administrator and doesn't require a subscription. Contact support if you have any questions.
               </Text>
             </View>
           )}
 
           {/* Sandbox Warning - Development mode only */}
-          {isDevelopmentMode() && !isComplimentaryPro && (
+          {isDevelopmentMode() && isPaid && (
             <TouchableOpacity 
               style={styles.sandboxWarning}
               onPress={handleSandboxHelp}
@@ -404,6 +541,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 20,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   
   // Card
   card: {
@@ -432,15 +574,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexWrap: 'wrap',
   },
   planName: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
     color: Colors.light.text,
   },
   planDescription: {
     fontSize: 14,
     color: Colors.light.textSecondary,
+  },
+  complimentaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(201, 168, 124, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  complimentaryBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.light.accent,
+    textTransform: 'uppercase',
   },
 
   // Section
@@ -471,6 +629,50 @@ const styles = StyleSheet.create({
   featureText: {
     fontSize: 15,
     color: Colors.light.text,
+  },
+
+  // Upgrade Cards
+  upgradeCard: {
+    backgroundColor: Colors.light.surface,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
+    borderWidth: 2,
+  },
+  upgradeCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  upgradeCardTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  upgradeCardDescription: {
+    fontSize: 14,
+    color: Colors.light.textSecondary,
+    marginBottom: 12,
+  },
+  upgradeCardFeatures: {
+    gap: 4,
+  },
+  upgradeCardFeature: {
+    fontSize: 13,
+    color: Colors.light.text,
+  },
+  popularBadge: {
+    backgroundColor: '#9333EA',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+    marginLeft: 'auto',
+  },
+  popularBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
   },
 
   // Action Buttons
@@ -509,12 +711,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.light.textSecondary,
   },
+
   // Complimentary Info
   complimentaryInfo: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: 'rgba(201, 168, 124, 0.15)', // Light golden
+    backgroundColor: 'rgba(201, 168, 124, 0.15)',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -541,38 +744,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     color: '#F57C00',
-  },
-
-  // Not Premium State
-  notPremiumContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  notPremiumTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  notPremiumText: {
-    fontSize: 15,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  upgradeButton: {
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-  },
-  upgradeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.surface,
   },
 });

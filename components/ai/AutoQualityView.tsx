@@ -27,6 +27,8 @@ import Colors from '@/constants/colors';
 import { getGradientPoints } from '@/constants/gradients';
 import { enhanceQuality, AIProcessingProgress } from '@/services/aiService';
 import { uploadTempImage } from '@/services/tempUploadService';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
+import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import type { MediaAsset } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -127,6 +129,9 @@ export default function AutoQualityView({
 }: AutoQualityViewProps) {
   const [isPreparing, setIsPreparing] = useState(false);
   
+  // Tiered subscription for Studio-only AI features
+  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  
   // Ref for the hidden compositing view (used when backgroundInfo exists)
   const compositingViewRef = useRef<View>(null);
   
@@ -171,9 +176,8 @@ export default function AutoQualityView({
     return null;
   };
   
-  const handleEnhance = useCallback(async () => {
-    if (isAlreadyEnhanced || isPreparing) return;
-    
+  // Actual enhancement logic (called after tier check passes)
+  const performEnhancement = useCallback(async () => {
     try {
       setIsPreparing(true);
       
@@ -241,7 +245,31 @@ export default function AutoQualityView({
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  }, [imageUriForAI, imageSize, isAlreadyEnhanced, isPreparing, onStartProcessing, onProgress, getAbortSignal, backgroundInfo, compositingSize]);
+  }, [imageUriForAI, imageSize, onStartProcessing, onProgress, getAbortSignal, backgroundInfo, compositingSize]);
+
+  // Handle enhance button - checks Studio tier first
+  const handleEnhance = useCallback(async () => {
+    if (isAlreadyEnhanced || isPreparing) return;
+    
+    // Track the AI generation attempt
+    captureEvent(POSTHOG_EVENTS.AI_ENHANCEMENT_STARTED, {
+      feature: 'auto_quality',
+      current_tier: tier,
+    });
+
+    // Check if user has Studio access
+    if (!canUseAIStudio) {
+      console.log(`[AutoQualityView] User is ${tier} tier, showing Studio paywall`);
+      await requestStudioAccess(
+        () => performEnhancement(),
+        'auto_quality'
+      );
+      return;
+    }
+
+    // User has Studio access, proceed with enhancement
+    await performEnhancement();
+  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestStudioAccess, performEnhancement]);
 
   return (
     <View style={styles.container}>

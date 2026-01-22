@@ -28,7 +28,8 @@ import { createPortfolioItem } from '@/services/portfolioService';
 import { uploadToStorage } from '@/services/imageUploadService';
 import { getAllFormatIds, getFormatById, getDefaultFormat } from '@/constants/formats';
 import { useResponsive } from '@/hooks/useResponsive';
-import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
+import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 
 // Platform options - simplified to Save to Photos and Share
 // Supported formats use centralized config so new formats are automatically included
@@ -128,9 +129,13 @@ export default function PublishScreen() {
 
   const { deleteDraft, resetProject, refreshPortfolio } = useApp();
   
-  // Premium status for download paywall
-  const { isPremium, isLoading: isPremiumLoading } = usePremiumStatus();
-  const { requestPremiumAccess, paywallState } = usePremiumFeature();
+  // Tiered subscription for download/share paywall
+  const { 
+    canDownload, 
+    isLoading: isSubscriptionLoading,
+    requestProAccess,
+    tier,
+  } = useTieredSubscription();
   
   // Responsive configuration
   const responsive = useResponsive();
@@ -358,29 +363,36 @@ export default function PublishScreen() {
     }
   }, [previewUri, showToastMessage]);
 
-  // Handle platform action - checks premium status and shows paywall if needed
+  // Handle platform action - checks tier and shows paywall if needed
   const handlePlatformAction = useCallback(async (platformId: PublishPlatform) => {
     if (!previewUri) {
       Alert.alert('Error', 'No preview image available');
       return;
     }
 
-    // If user is premium, execute action immediately
-    if (isPremium) {
+    // Track the download/share attempt
+    const featureRequested = platformId === 'download' ? 'download_to_photos' : 'share_to_social';
+    captureEvent(POSTHOG_EVENTS.PREMIUM_FEATURE_ATTEMPTED, {
+      feature: featureRequested,
+      platform: platformId,
+      current_tier: tier,
+    });
+
+    // If user can download (Pro or Studio), execute action immediately
+    if (canDownload) {
       await executePlatformAction(platformId);
       return;
     }
 
-    // User is not premium - show paywall
-    // The action name helps Superwall display relevant messaging
-    const actionName = platformId === 'download' ? 'download_image' : 'share_image';
+    // User is Free tier - show Pro paywall
+    console.log(`[Publish] User is ${tier} tier, showing Pro paywall for ${featureRequested}`);
     
-    await requestPremiumAccess(actionName, async () => {
+    await requestProAccess(async () => {
       // This callback is only executed if user successfully subscribes
-      console.log(`[Publish] Premium access granted for ${actionName}, executing action`);
+      console.log(`[Publish] Pro access granted for ${featureRequested}, executing action`);
       await executePlatformAction(platformId);
-    });
-  }, [previewUri, isPremium, executePlatformAction, requestPremiumAccess]);
+    }, featureRequested);
+  }, [previewUri, canDownload, tier, executePlatformAction, requestProAccess]);
 
   // Handle Done button - reset project and navigate to home
   const handleDone = useCallback(() => {
@@ -486,7 +498,7 @@ export default function PublishScreen() {
               <View style={styles.platformsGrid}>
                 {PLATFORM_OPTIONS.map((platform) => {
                   const isThisPlatformProcessing = processingPlatform === platform.id;
-                  const isDisabled = isProcessing || isCreatingPortfolio || isPremiumLoading || paywallState === 'presenting';
+                  const isDisabled = isProcessing || isCreatingPortfolio || isSubscriptionLoading;
                   
                   return (
                     <TouchableOpacity
