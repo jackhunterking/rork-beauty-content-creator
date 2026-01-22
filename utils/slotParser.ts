@@ -2,11 +2,14 @@ import { TemplatedLayer, Template, Slot, CapturedImages } from '@/types';
 
 /**
  * Check if a layer is a replaceable slot
- * Slots are identified by having "slot" in the layer name
- * e.g., "slot-before", "slot-after", "slot-hero", "slot-product"
+ * 
+ * STRICT PREFIX MATCHING: Layers must start with "slot-" prefix
+ * Examples: "slot-before", "slot-after", "slot-hero", "slot-product"
+ * 
+ * This ensures only intentionally named photo placeholders are detected.
  */
 export function isSlotLayer(layer: TemplatedLayer): boolean {
-  return layer.layer.toLowerCase().includes('slot');
+  return layer.layer.toLowerCase().startsWith('slot-');
 }
 
 /**
@@ -78,7 +81,8 @@ function parseLayersJson(layersJson: unknown): TemplatedLayer[] | null {
 
 /**
  * Extract all replaceable slots from a template
- * Slots are layers with "slot" in their name
+ * 
+ * Slots are layers with strict "slot-" prefix (e.g., slot-before, slot-after)
  * 
  * @param template - The template to extract slots from
  * @returns Array of Slot objects sorted by their order in layersJson
@@ -92,11 +96,12 @@ export function extractSlots(template: Template): Slot[] {
   }
 
   // Map slots with their ORIGINAL index in layers array (indicates z-order)
-  // In Templated.io: lower index = higher in layer panel = rendered IN FRONT (higher z-index)
+  // In Templated.io API: layer order is BACK to FRONT
+  // Index 0 = BACK (lowest z), Index N = FRONT (highest z)
   return layers
-    .map((layer, originalIndex) => ({ layer, originalIndex }))
+    .map((layer, index) => ({ layer, index }))
     .filter(({ layer }) => isSlotLayer(layer))
-    .map(({ layer, originalIndex }) => ({
+    .map(({ layer, index }) => ({
       layerId: layer.layer,
       label: deriveSlotLabel(layer.layer),
       x: layer.x,
@@ -104,11 +109,8 @@ export function extractSlots(template: Template): Slot[] {
       width: layer.width,
       height: layer.height,
       placeholderUrl: layer.image_url,
-      captureOrder: originalIndex + 1,
-      // Z-index: In Templated.io API, layer order is BACK to FRONT
-      // Index 0 = BACK (lowest z), Index N = FRONT (highest z)
-      // So higher originalIndex = higher z-index = rendered in front
-      zIndex: originalIndex + 1,
+      captureOrder: index + 1,
+      zIndex: index + 1, // Array position = z-order (1-indexed)
     }));
 }
 

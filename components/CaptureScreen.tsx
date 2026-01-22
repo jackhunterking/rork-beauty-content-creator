@@ -10,8 +10,8 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
-import { ImagePlus, ChevronLeft, Zap, ZapOff, SwitchCamera, RefreshCw, Sparkles } from "lucide-react-native";
-import BottomSheet from '@gorhom/bottom-sheet';
+import { ImagePlus, ChevronLeft, Zap, ZapOff, SwitchCamera, RefreshCw } from "lucide-react-native";
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import Colors from "@/constants/colors";
 import { FrameOverlay } from "@/components/FrameOverlay";
 import { 
@@ -23,8 +23,6 @@ import {
 import { ImageSlot, FramePositionInfo } from "@/types";
 import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
 import { uploadCapturedImage } from "@/services/tempUploadService";
-import { AIStudioSheet } from "@/components/ai";
-import { usePremiumStatus } from "@/hooks/usePremiumStatus";
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -70,11 +68,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
   const cameraRef = useRef<CameraView>(null);
   const isMountedRef = useRef(true);
   const isCapturingRef = useRef(false);
-  
-  // AI Studio integration
-  const aiStudioSheetRef = useRef<BottomSheet>(null);
-  const { isPremium } = usePremiumStatus();
-  const [aiEnhancedUri, setAiEnhancedUri] = useState<string | null>(null);
   
   // Store pending adjustments for retry
   const pendingUploadRef = useRef<{
@@ -480,25 +473,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
     setCameraFacing(prev => prev === 'back' ? 'front' : 'back');
   }, []);
 
-  // Open AI Studio
-  const handleOpenAIStudio = useCallback(() => {
-    aiStudioSheetRef.current?.expand();
-  }, []);
-
-  // Apply AI enhanced image
-  const handleAIApply = useCallback((enhancedUri: string) => {
-    console.log('[CaptureScreen] AI enhancement applied:', enhancedUri);
-    setAiEnhancedUri(enhancedUri);
-    // Update previewUri to show the enhanced version
-    setPreviewUri(enhancedUri);
-  }, []);
-
-  // Skip AI enhancement
-  const handleAISkip = useCallback(() => {
-    console.log('[CaptureScreen] AI enhancement skipped');
-    // Continue with the original image
-  }, []);
-
   // Permission not yet determined
   if (!permission) {
     return <View style={styles.container} />;
@@ -523,6 +497,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
   // Layer 2 (middle): Frame Mask - zIndex 2
   // Layer 3 (top): UI Controls - zIndex 3
   return (
+    <BottomSheetModalProvider>
     <View style={styles.container}>
       {/* LAYER 1: Camera (z-index: 1) - only renders when not in preview mode */}
       {!previewUri && (
@@ -586,10 +561,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
           </TouchableOpacity>
           <Text style={styles.title}>{title}</Text>
           {previewUri ? (
-            <TouchableOpacity style={styles.headerAIButton} onPress={handleOpenAIStudio}>
-              <Sparkles size={18} color={Colors.light.accent} />
-              <Text style={styles.headerAIText}>AI</Text>
-            </TouchableOpacity>
+            <View style={styles.spacer} />
           ) : (
             <TouchableOpacity style={styles.headerFlashButton} onPress={toggleFlash}>
               {flashEnabled ? (
@@ -627,42 +599,31 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
                 </View>
               </View>
             ) : (
-              // Normal preview state - AI-first layout
+              // Normal preview state - Retake/Continue layout
               <>
                 <Text style={styles.adjustmentInstructions}>
                   Pinch to zoom • Drag to position
                 </Text>
                 
-                {/* AI Enhancement Button - Primary Action */}
-                <TouchableOpacity 
-                  style={[styles.aiEnhanceButton, isUploading && styles.buttonDisabled]}
-                  onPress={handleOpenAIStudio}
-                  disabled={isUploading}
-                  activeOpacity={0.8}
-                >
-                  <Sparkles size={20} color="#FFFFFF" />
-                  <Text style={styles.aiEnhanceText}>Enhance with AI</Text>
-                </TouchableOpacity>
-                
-                {/* Secondary Actions Row */}
-                <View style={styles.secondaryActionsRow}>
+                {/* Primary Actions Row - Retake and Continue */}
+                <View style={styles.previewActions}>
                   <TouchableOpacity 
-                    style={styles.secondaryAction} 
+                    style={[styles.retakeButton, isUploading && styles.buttonDisabled]} 
                     onPress={handleRetake}
                     disabled={isUploading}
                   >
-                    <Text style={styles.secondaryActionText}>Retake</Text>
+                    <Text style={styles.retakeText}>Retake</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
-                    style={styles.secondaryAction} 
+                    style={[styles.continueButton, isUploading && styles.buttonDisabled]}
                     onPress={handleContinue}
                     disabled={isUploading}
                   >
                     {isUploading ? (
-                      <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
+                      <ActivityIndicator size="small" color={Colors.light.text} />
                     ) : (
-                      <Text style={styles.secondaryActionText}>Continue</Text>
+                      <Text style={styles.continueText}>Continue</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -694,18 +655,8 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         </View>
       )}
 
-      {/* AI Studio Sheet */}
-      {previewUri && (
-        <AIStudioSheet
-          bottomSheetRef={aiStudioSheetRef}
-          imageUri={aiEnhancedUri || previewUri}
-          imageSize={imageSize}
-          isPremium={isPremium}
-          onApply={handleAIApply}
-          onSkip={handleAISkip}
-        />
-      )}
     </View>
+    </BottomSheetModalProvider>
   );
 }
 
@@ -763,22 +714,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerAIButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(201, 168, 124, 0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.light.accent,
-  },
-  headerAIText: {
-    color: Colors.light.accent,
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 4,
   },
   captureControls: {
     flexDirection: 'row',
@@ -938,44 +873,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.text,
-  },
-  // AI-first layout styles
-  aiEnhanceButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.light.accent,
-    paddingVertical: 16,
-    paddingHorizontal: 28,
-    borderRadius: 30,
-    marginHorizontal: 24,
-    marginBottom: 12,
-    shadowColor: Colors.light.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  aiEnhanceText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginLeft: 8,
-  },
-  secondaryActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 32,
-    marginTop: 4,
-  },
-  secondaryAction: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  secondaryActionText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.7)',
   },
 });
 

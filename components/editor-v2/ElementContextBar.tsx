@@ -48,7 +48,6 @@ import {
   Calendar,
   Square,
   Wand2,
-  Scissors,
   ImagePlus,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -129,6 +128,7 @@ interface ContextBarAction {
   isPrimary?: boolean;
   expandable?: ExpandedOption;
   isAI?: boolean; // New: marks this as an AI feature
+  isApplied?: boolean; // Whether AI feature is already applied (disabled state)
 }
 
 interface ContextBarButtonProps {
@@ -245,7 +245,10 @@ const aiBadgeStyles = StyleSheet.create({
 });
 
 function ContextBarButton({ action }: ContextBarButtonProps) {
-  const iconColor = action.isPrimary
+  const isApplied = action.isApplied ?? false;
+  const iconColor = isApplied
+    ? '#34C759' // Green for applied state
+    : action.isPrimary
     ? Colors.light.accent
     : action.isAI
     ? Colors.light.ai.primary
@@ -253,13 +256,26 @@ function ContextBarButton({ action }: ContextBarButtonProps) {
 
   return (
     <TouchableOpacity
-      style={styles.actionButton}
+      style={[
+        styles.actionButton,
+        isApplied && styles.actionButtonApplied,
+      ]}
       onPress={action.onPress}
-      activeOpacity={0.7}
+      activeOpacity={isApplied ? 0.9 : 0.7}
     >
-      <View style={styles.actionIconWrapper}>
+      <View style={[
+        styles.actionIconWrapper,
+        isApplied && styles.actionIconWrapperApplied,
+      ]}>
         {action.isAI ? (
-          <AIBadge>{action.icon(iconColor)}</AIBadge>
+          <View style={styles.aiBadgeWrapper}>
+            <AIBadge>{action.icon(iconColor)}</AIBadge>
+            {isApplied && (
+              <View style={styles.appliedCheckBadge}>
+                <Text style={styles.appliedCheckText}>✓</Text>
+              </View>
+            )}
+          </View>
         ) : (
           action.icon(iconColor)
         )}
@@ -268,10 +284,11 @@ function ContextBarButton({ action }: ContextBarButtonProps) {
         style={[
           styles.actionLabel,
           action.isPrimary && styles.actionLabelPrimary,
+          isApplied && styles.actionLabelApplied,
         ]}
         numberOfLines={1}
       >
-        {action.label}
+        {isApplied ? 'Applied' : action.label}
       </Text>
     </TouchableOpacity>
   );
@@ -302,7 +319,11 @@ interface ElementContextBarProps {
   isPremium?: boolean;
   isAIProcessing?: boolean;
   aiProcessingType?: AIFeatureKey | null;
+  /** AI enhancements already applied to current image */
+  aiEnhancementsApplied?: AIFeatureKey[];
   onAIFeatureSelect?: (featureKey: AIFeatureKey) => void;
+  /** Callback when user taps an already-applied AI feature (to show toast) */
+  onAlreadyAppliedTap?: (featureKey: AIFeatureKey) => void;
   onRequestPremium?: (feature: string) => void;
   /** Text actions */
   onTextEdit?: () => void;
@@ -348,7 +369,9 @@ export function ElementContextBar({
   isPremium = false,
   isAIProcessing = false,
   aiProcessingType = null,
+  aiEnhancementsApplied = [],
   onAIFeatureSelect,
+  onAlreadyAppliedTap,
   onRequestPremium,
   onTextEdit,
   onTextFont,
@@ -458,9 +481,22 @@ export function ElementContextBar({
   }, [colorPickerMode, onTextColor, onTextBackground]);
 
   // Handle AI feature selection directly (for inline AI buttons)
+  // If feature is already applied, show toast instead - EXCEPT for background_replace
+  // which allows re-application since color changes use cached PNG (free!)
   const handleDirectAIFeature = useCallback((featureKey: AIFeatureKey) => {
-    onAIFeatureSelect?.(featureKey);
-  }, [onAIFeatureSelect]);
+    // Allow background_replace to be re-selected (color changes are free with cached PNG)
+    if (featureKey === 'background_replace') {
+      onAIFeatureSelect?.(featureKey);
+      return;
+    }
+    
+    // For other features, show toast if already applied
+    if (aiEnhancementsApplied.includes(featureKey)) {
+      onAlreadyAppliedTap?.(featureKey);
+    } else {
+      onAIFeatureSelect?.(featureKey);
+    }
+  }, [onAIFeatureSelect, onAlreadyAppliedTap, aiEnhancementsApplied]);
 
   // Get actions based on element type
   const getActions = (): ContextBarAction[] => {
@@ -485,13 +521,7 @@ export function ElementContextBar({
             label: 'Auto-Quality',
             onPress: () => handleDirectAIFeature('auto_quality'),
             isAI: true,
-          },
-          {
-            id: 'ai-remove-bg',
-            icon: (color) => <Scissors size={16} color={color} strokeWidth={1.8} />,
-            label: 'Remove BG',
-            onPress: () => handleDirectAIFeature('background_remove'),
-            isAI: true,
+            isApplied: aiEnhancementsApplied.includes('auto_quality'),
           },
           {
             id: 'ai-replace-bg',
@@ -499,6 +529,8 @@ export function ElementContextBar({
             label: 'Replace BG',
             onPress: () => handleDirectAIFeature('background_replace'),
             isAI: true,
+            // Don't mark as "applied" since color changes are free with cached PNG
+            isApplied: false,
           },
         ];
 
@@ -1606,6 +1638,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 4,
+  },
+  // Applied AI state styles
+  actionButtonApplied: {
+    opacity: 0.85,
+  },
+  actionIconWrapperApplied: {
+    // Optional: slight visual change
+  },
+  actionLabelApplied: {
+    color: '#34C759',
+    fontWeight: '600',
+  },
+  aiBadgeWrapper: {
+    position: 'relative',
+  },
+  appliedCheckBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -4,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#34C759',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.light.surface,
+  },
+  appliedCheckText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   // Bg icon wrapper for visibility
   bgIconWrapper: {

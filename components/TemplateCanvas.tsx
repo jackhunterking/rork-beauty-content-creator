@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
   useAnimatedStyle, 
   withRepeat, 
@@ -17,6 +18,7 @@ import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
 import { withCacheBust } from '@/services/imageUtils';
 import { LayeredCanvas } from './LayeredCanvas';
+import { getGradientPoints } from '@/constants/gradients';
 // Image processing constants moved inline for clarity
 
 const CANVAS_PADDING = 20;
@@ -56,6 +58,16 @@ interface ManipulationModeConfig {
   initialTranslateX: number;
   initialTranslateY: number;
   rotation: number; // Read-only - uses existing adjustments
+  /** Background info for transparent PNGs (from AI background replacement) */
+  backgroundInfo?: {
+    type: 'solid' | 'gradient';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
+  };
   onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
   onTapOutsideSlot?: () => void; // Called when user taps outside the slot to deselect
 }
@@ -684,6 +696,7 @@ function ManipulationOverlay({
   initialTranslateX,
   initialTranslateY,
   currentRotation, // Read-only
+  backgroundInfo,
   onAdjustmentChange,
   onTapOutsideSlot,
 }: {
@@ -695,6 +708,7 @@ function ManipulationOverlay({
   initialTranslateX: number;
   initialTranslateY: number;
   currentRotation: number; // Read-only - from existing adjustments
+  backgroundInfo?: ManipulationModeConfig['backgroundInfo'];
   onAdjustmentChange: (adjustments: { scale: number; translateX: number; translateY: number; rotation: number }) => void;
   onTapOutsideSlot?: () => void;
 }) {
@@ -1038,6 +1052,17 @@ function ManipulationOverlay({
         <View style={StyleSheet.absoluteFill}>
           {/* Overflow image at reduced opacity */}
           <Animated.View style={[overflowImageStyle, { opacity: CROP_OVERFLOW_OPACITY }]}>
+            {/* Background for transparent PNG */}
+            {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: backgroundInfo.solidColor }]} />
+            )}
+            {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+              <LinearGradient
+                colors={backgroundInfo.gradient.colors}
+                {...getGradientPoints(backgroundInfo.gradient.direction)}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
             <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
           </Animated.View>
         </View>
@@ -1049,6 +1074,17 @@ function ManipulationOverlay({
         pointerEvents="none"
       >
         <View style={cropStyles.slotClip}>
+          {/* Background color/gradient for transparent PNGs */}
+          {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: backgroundInfo.solidColor }]} />
+          )}
+          {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+            <LinearGradient
+              colors={backgroundInfo.gradient.colors}
+              {...getGradientPoints(backgroundInfo.gradient.direction)}
+              style={StyleSheet.absoluteFill}
+            />
+          )}
           <Animated.View style={slotImageStyle}>
             <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
           </Animated.View>
@@ -1163,23 +1199,9 @@ export function TemplateCanvas({
     return template.templatedPreviewUrl || template.thumbnail;
   }, [renderedPreviewUri, template.templatedPreviewUrl, template.thumbnail]);
 
-  // Determine if we should use client-side compositing
-  // Use LayeredCanvas when:
-  // 1. useClientSideCompositing is explicitly true
-  // 2. Template has a frame overlay URL with transparent background
-  // Works with OR without photos - enables instant background color changes
-  const hasPhotos = useMemo(() => {
-    return Object.values(capturedImages).some(img => img !== null);
-  }, [capturedImages]);
-
-  const shouldUseLayeredCanvas = useMemo(() => {
-    // Use LayeredCanvas whenever we have a frame overlay (works with or without photos)
-    return useClientSideCompositing && !!template.frameOverlayUrl;
-  }, [useClientSideCompositing, template.frameOverlayUrl]);
-
-
-  // Get slots for LayeredCanvas
-  const slots = useMemo(() => extractSlots(template), [template]);
+  // Use LayeredCanvas when useClientSideCompositing is enabled
+  // LayeredCanvas renders all layers directly from Templated.io API data
+  const shouldUseLayeredCanvas = useClientSideCompositing && template.layersJson && template.layersJson.length > 0;
 
   return (
     <View style={styles.wrapper}>
@@ -1192,11 +1214,10 @@ export function TemplateCanvas({
           },
         ]}
       >
-        {/* Client-side LayeredCanvas compositing (zero API calls for color changes) */}
+        {/* Client-side LayeredCanvas - renders all layers directly from Templated.io API */}
         {shouldUseLayeredCanvas ? (
           <LayeredCanvas
             template={template}
-            slots={slots}
             capturedImages={capturedImages}
             backgroundColor={backgroundColor}
             themeColor={themeColor}
@@ -1230,14 +1251,18 @@ export function TemplateCanvas({
         )}
 
         {/* Slot tap targets with placeholder - hidden during manipulation or crop mode */}
-        {!manipulationMode && !cropMode && scaledSlots.map(slot => (
-          <SlotRegion
-            key={slot.layerId}
-            slot={slot}
-            onPress={() => onSlotPress(slot.layerId)}
-            isEmpty={!capturedImages?.[slot.layerId]}
-          />
-        ))}
+        {!manipulationMode && !cropMode && (() => {
+          console.log(`[TemplateCanvas] Rendering ${scaledSlots.length} slot regions`);
+          scaledSlots.forEach(s => console.log(`[TemplateCanvas] Slot ${s.layerId}: x=${s.x.toFixed(0)}, y=${s.y.toFixed(0)}, w=${s.width.toFixed(0)}, h=${s.height.toFixed(0)}`));
+          return scaledSlots.map(slot => (
+            <SlotRegion
+              key={slot.layerId}
+              slot={slot}
+              onPress={() => onSlotPress(slot.layerId)}
+              isEmpty={!capturedImages?.[slot.layerId]}
+            />
+          ));
+        })()}
 
         {/* Canva-style selection overlay - hidden during manipulation or crop mode */}
         {!manipulationMode && !cropMode && selectedSlotId && scaledSlots.find(s => s.layerId === selectedSlotId) && (
@@ -1257,6 +1282,7 @@ export function TemplateCanvas({
             initialTranslateX={manipulationMode.initialTranslateX}
             initialTranslateY={manipulationMode.initialTranslateY}
             currentRotation={manipulationMode.rotation}
+            backgroundInfo={manipulationMode.backgroundInfo}
             onAdjustmentChange={manipulationMode.onAdjustmentChange}
             onTapOutsideSlot={manipulationMode.onTapOutsideSlot}
           />

@@ -28,9 +28,9 @@ import {
   ImageIcon,
   Upload,
   Briefcase,
-  Trash2,
   ZoomIn,
   ZoomOut,
+  Circle,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
@@ -44,16 +44,21 @@ interface BrandLogoData {
 }
 
 type PanelMode = 'picker' | 'editor';
+type EditorMode = 'size' | 'opacity';
 
 export interface LogoPanelProps {
   /** Currently selected logo overlay (for editing mode) */
   selectedLogo?: LogoOverlay | null;
   /** Current scale value (for editing mode) */
   currentScale?: number;
+  /** Current opacity value (for editing mode) */
+  currentOpacity?: number;
   /** Called when a logo is selected */
   onSelectLogo: (logoData: { uri: string; width: number; height: number }) => void;
   /** Called when scale changes */
   onScaleChange?: (scale: number) => void;
+  /** Called when opacity changes */
+  onOpacityChange?: (opacity: number) => void;
   /** Called when logo is deleted */
   onDeleteLogo?: () => void;
   /** Called when panel is closed */
@@ -62,7 +67,8 @@ export interface LogoPanelProps {
 
 export interface LogoPanelRef {
   openPicker: () => void;
-  openEditor: () => void;
+  openSizeEditor: () => void;
+  openOpacityEditor: () => void;
   close: () => void;
 }
 
@@ -71,8 +77,10 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
     {
       selectedLogo,
       currentScale = 1,
+      currentOpacity = 1,
       onSelectLogo,
       onScaleChange,
+      onOpacityChange,
       onDeleteLogo,
       onClose,
     },
@@ -81,6 +89,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
     const insets = useSafeAreaInsets();
     const bottomSheetRef = useRef<BottomSheet>(null);
     const [mode, setMode] = useState<PanelMode>('picker');
+    const [editorMode, setEditorMode] = useState<EditorMode>('size');
     const [brandLogo, setBrandLogo] = useState<BrandLogoData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -109,8 +118,14 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
         loadBrandLogo();
         bottomSheetRef.current?.snapToIndex(0);
       },
-      openEditor: () => {
+      openSizeEditor: () => {
         setMode('editor');
+        setEditorMode('size');
+        bottomSheetRef.current?.snapToIndex(0);
+      },
+      openOpacityEditor: () => {
+        setMode('editor');
+        setEditorMode('opacity');
         bottomSheetRef.current?.snapToIndex(0);
       },
       close: () => {
@@ -237,13 +252,22 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       }
     }, [brandLogo, onSelectLogo, handleClose]);
 
-    // Handle slider change
-    const handleSliderChange = useCallback(
+    // Handle scale slider change
+    const handleScaleSliderChange = useCallback(
       (value: number) => {
         const roundedValue = Math.round(value * 100) / 100;
         onScaleChange?.(roundedValue);
       },
       [onScaleChange]
+    );
+
+    // Handle opacity slider change
+    const handleOpacitySliderChange = useCallback(
+      (value: number) => {
+        const roundedValue = Math.round(value * 100) / 100;
+        onOpacityChange?.(roundedValue);
+      },
+      [onOpacityChange]
     );
 
     // Render picker mode content
@@ -297,40 +321,56 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
     // Render editor mode content
     const renderEditorContent = () => {
       const scalePercentage = Math.round(currentScale * 100);
+      const opacityPercentage = Math.round(currentOpacity * 100);
 
       return (
         <View style={[styles.editorContent, { paddingBottom: bottomPadding }]}>
-          {/* Scale Slider */}
-          <View style={styles.sliderSection}>
-            <View style={styles.sliderHeader}>
-              <Text style={styles.sliderLabel}>Size</Text>
-              <Text style={styles.sliderValue}>{scalePercentage}%</Text>
+          {editorMode === 'size' ? (
+            /* Size Slider */
+            <View style={styles.sliderSection}>
+              <View style={styles.sliderHeader}>
+                <Text style={styles.sliderLabel}>Size</Text>
+                <Text style={styles.sliderValue}>{scalePercentage}%</Text>
+              </View>
+              <View style={styles.sliderRow}>
+                <ZoomOut size={18} color={Colors.light.textSecondary} />
+                <Slider
+                  style={styles.slider}
+                  minimumValue={LOGO_SIZE_CONSTRAINTS.minScale}
+                  maximumValue={LOGO_SIZE_CONSTRAINTS.maxScale}
+                  value={currentScale}
+                  onValueChange={handleScaleSliderChange}
+                  minimumTrackTintColor={Colors.light.accent}
+                  maximumTrackTintColor={Colors.light.border}
+                  thumbTintColor={Colors.light.accent}
+                />
+                <ZoomIn size={18} color={Colors.light.textSecondary} />
+              </View>
             </View>
-            <View style={styles.sliderRow}>
-              <ZoomOut size={18} color={Colors.light.textSecondary} />
-              <Slider
-                style={styles.slider}
-                minimumValue={LOGO_SIZE_CONSTRAINTS.minScale}
-                maximumValue={LOGO_SIZE_CONSTRAINTS.maxScale}
-                value={currentScale}
-                onValueChange={handleSliderChange}
-                minimumTrackTintColor={Colors.light.accent}
-                maximumTrackTintColor={Colors.light.border}
-                thumbTintColor={Colors.light.accent}
-              />
-              <ZoomIn size={18} color={Colors.light.textSecondary} />
+          ) : (
+            /* Opacity Slider */
+            <View style={styles.sliderSection}>
+              <View style={styles.sliderHeader}>
+                <Text style={styles.sliderLabel}>Opacity</Text>
+                <Text style={styles.sliderValue}>{opacityPercentage}%</Text>
+              </View>
+              <View style={styles.sliderRow}>
+                <Circle size={18} color={Colors.light.textSecondary} strokeWidth={1} />
+                <Slider
+                  style={styles.slider}
+                  minimumValue={LOGO_SIZE_CONSTRAINTS.minOpacity}
+                  maximumValue={LOGO_SIZE_CONSTRAINTS.maxOpacity}
+                  value={currentOpacity}
+                  onValueChange={handleOpacitySliderChange}
+                  minimumTrackTintColor={Colors.light.accent}
+                  maximumTrackTintColor={Colors.light.border}
+                  thumbTintColor={Colors.light.accent}
+                />
+                <Circle size={18} color={Colors.light.textSecondary} fill={Colors.light.textSecondary} />
+              </View>
             </View>
-          </View>
+          )}
 
-          {/* Delete Button */}
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={onDeleteLogo}
-            activeOpacity={0.7}
-          >
-            <Trash2 size={18} color={Colors.light.error} />
-            <Text style={styles.deleteButtonText}>Delete Logo</Text>
-          </TouchableOpacity>
         </View>
       );
     };
@@ -350,7 +390,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>
-              {mode === 'picker' ? 'Add Logo' : 'Logo Settings'}
+              {mode === 'picker' ? 'Add Logo' : editorMode === 'size' ? 'Logo Size' : 'Logo Opacity'}
             </Text>
             <TouchableOpacity
               style={styles.closeButton}
@@ -503,20 +543,6 @@ const styles = StyleSheet.create({
   slider: {
     flex: 1,
     height: 40,
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(214, 69, 69, 0.1)',
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  deleteButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.light.error,
   },
 });
 

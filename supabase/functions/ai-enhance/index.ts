@@ -42,16 +42,23 @@ const FAL_MODELS = {
   auto_quality: {
     model: 'fal-ai/creative-upscaler',
     defaultParams: {
-      scale: 2,
-      creativity: 0,
-      detail: 5,
-      shape_preservation: 3,
-      prompt_suffix: 'high quality, highly detailed, high resolution, sharp',
-      negative_prompt: 'blurry, low resolution, bad, ugly, low quality, pixelated, interpolated, compression artifacts, noisey, grainy',
-      guidance_scale: 7.5,
-      num_inference_steps: 20,
+      scale: 2,  // Safe scale for most images (max 768px input → 1536px output)
+      creativity: 0,  // ZERO creativity - pure quality enhancement, no content changes
+      detail: 5,  // Maximum detail preservation
+      shape_preservation: 3,  // Maximum shape preservation (1-3 scale)
+      model_type: 'SDXL',  // Best quality model
+      // Updated prompt - explicitly preserves colors while enhancing sharpness and quality
+      prompt: 'enhance image resolution and sharpness only, preserve original colors exactly, maintain color accuracy, true-to-life color reproduction, professional photography quality, crisp focus, reduce pixelation, reduce blur, high definition clarity, DSLR quality output, preserve exact original tones and hues',
+      prompt_suffix: 'sharp, crisp, high resolution, clear details, noise-free, artifact-free, true to original colors, unretouched, natural, authentic colors, professional camera quality',
+      // Extended negative prompt - comprehensive color protection
+      negative_prompt: 'blurry, low resolution, pixelated, compression artifacts, noisy, grainy, jpeg artifacts, soft, hazy, motion blur, out of focus, color shift, color cast, altered colors, changed colors, color distortion, saturation changes, oversaturated, desaturated, warm color shift, cool color shift, tinted, faded colors, washed out, boosted colors, color correction applied, color grading, tone mapping, HDR effect, overprocessed, makeup, cosmetics, beauty filter, skin smoothing, airbrushed, retouched, stylized, artistic interpretation, filters applied',
+      guidance_scale: 15,  // INCREASED from 10: Stricter adherence to prompt for color preservation
+      num_inference_steps: 30,  // INCREASED from 15: More refinement steps for better sharpness
+      enable_safety_checker: true,
     },
     estimatedCostUsd: 0.015,
+    // Fal.AI limit: 4,194,304 max output pixels (2048x2048)
+    maxOutputPixels: 4194304,
   },
   background_remove: {
     model: 'fal-ai/birefnet/v2',
@@ -261,6 +268,41 @@ Deno.serve(async (req: Request) => {
 
     const modelConfig = FAL_MODELS[feature_key];
 
+    // ============================================
+    // DUPLICATE CHECK - Prevent re-processing same image
+    // ============================================
+    // Check if this exact image was already enhanced with this feature
+    // This prevents unnecessary API costs from double-clicks or UI bugs
+    const { data: existingGeneration, error: duplicateCheckError } = await adminClient
+      .from('ai_generations')
+      .select('id, output_image_url, completed_at')
+      .eq('user_id', user.id)
+      .eq('input_image_url', image_url)
+      .eq('feature_key', feature_key)
+      .eq('status', 'completed')
+      .not('output_image_url', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!duplicateCheckError && existingGeneration?.output_image_url) {
+      console.log(`[ai-enhance] Found existing enhancement for this image, returning cached result`);
+      console.log(`[ai-enhance] Cached generation_id: ${existingGeneration.id}`);
+      
+      // Return the cached result - no credits charged for duplicate
+      return new Response(
+        JSON.stringify({
+          success: true,
+          cached: true,
+          generation_id: existingGeneration.id,
+          output_url: existingGeneration.output_image_url,
+          credits_charged: 0,
+          message: 'Image was already enhanced with this feature. Returning cached result.',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get feature config from database (for premium check and cost tracking)
     const { data: config } = await adminClient
       .from('ai_model_config')
@@ -285,9 +327,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Get background preset prompt if needed
+    // Get background prompt based on input type
     let promptToUse = custom_prompt;
     let negativePrompt = modelConfig.defaultParams.negative_prompt || '';
+    let promptSource = 'default';
 
     if (feature_key === 'background_replace') {
       // Priority: solid_color > custom_prompt > preset_id > default
@@ -296,12 +339,14 @@ Deno.serve(async (req: Request) => {
         const colorPrompts = hexColorToPrompt(solid_color);
         promptToUse = colorPrompts.prompt;
         negativePrompt = colorPrompts.negative_prompt;
+        promptSource = `solid_color:${solid_color}`;
         console.log(`[ai-enhance] Using solid color: ${solid_color} -> "${promptToUse}"`);
       } else if (custom_prompt) {
-        // Custom prompt already set
-        promptToUse = custom_prompt;
+        // Custom text prompt
+        promptSource = 'custom_prompt';
+        console.log(`[ai-enhance] Using custom prompt: "${promptToUse}"`);
       } else if (preset_id) {
-        // Fetch preset from database
+        // Fetch preset from database (legacy support)
         const { data: preset, error: presetError } = await adminClient
           .from('background_presets')
           .select('*')
@@ -318,6 +363,8 @@ Deno.serve(async (req: Request) => {
 
         promptToUse = preset.prompt;
         negativePrompt = preset.negative_prompt || negativePrompt;
+        promptSource = `preset:${preset_id}`;
+        console.log(`[ai-enhance] Using preset: ${preset_id}`);
       }
     }
 
@@ -332,10 +379,13 @@ Deno.serve(async (req: Request) => {
           creativity: params?.creativity ?? modelConfig.defaultParams.creativity,
           detail: params?.detail ?? modelConfig.defaultParams.detail,
           shape_preservation: params?.shape_preservation ?? modelConfig.defaultParams.shape_preservation,
+          model_type: params?.model_type ?? modelConfig.defaultParams.model_type,
+          prompt: params?.prompt ?? modelConfig.defaultParams.prompt,
           prompt_suffix: params?.prompt_suffix ?? modelConfig.defaultParams.prompt_suffix,
           negative_prompt: params?.negative_prompt ?? modelConfig.defaultParams.negative_prompt,
           guidance_scale: params?.guidance_scale ?? modelConfig.defaultParams.guidance_scale,
           num_inference_steps: params?.num_inference_steps ?? modelConfig.defaultParams.num_inference_steps,
+          enable_safety_checker: params?.enable_safety_checker ?? modelConfig.defaultParams.enable_safety_checker,
         };
         break;
 
@@ -379,7 +429,7 @@ Deno.serve(async (req: Request) => {
         input_image_url: image_url,
         input_params: falRequestBody,
         background_preset_id: preset_id || null,
-        custom_prompt: solid_color ? `solid_color:${solid_color}` : (custom_prompt || null),
+        custom_prompt: promptSource !== 'default' ? promptSource : (custom_prompt || null),
         credits_charged: costCredits,
         status: 'processing'
       })
@@ -391,14 +441,18 @@ Deno.serve(async (req: Request) => {
       await adminClient.rpc('refund_ai_credits', { p_user_id: user.id, p_amount: costCredits });
       console.error('[ai-enhance] Generation creation error:', genError);
       return new Response(
-        JSON.stringify({ error: 'Failed to create generation record' }),
+        JSON.stringify({ error: 'Failed to create generation record', details: genError?.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Submit to Fal.AI queue
-    const falQueueUrl = `https://queue.fal.run/${modelConfig.model}`;
+    // Submit to Fal.AI queue with webhook for instant completion notification
+    // IMPORTANT: fal_webhook must be a QUERY PARAMETER, not in the request body!
+    const webhookUrl = `${supabaseUrl}/functions/v1/ai-webhook?generation_id=${generation.id}`;
+    const falQueueUrl = `https://queue.fal.run/${modelConfig.model}?fal_webhook=${encodeURIComponent(webhookUrl)}`;
+    
     console.log(`[ai-enhance] Submitting to Fal.AI: ${falQueueUrl}`);
+    console.log(`[ai-enhance] Webhook URL: ${webhookUrl}`);
 
     try {
       const falResponse = await fetch(falQueueUrl, {
@@ -430,14 +484,16 @@ Deno.serve(async (req: Request) => {
 
       console.log(`[ai-enhance] Queued successfully: generation=${generation.id}, request_id=${requestId}`);
 
-      // Return immediately for client-side polling
+      // Return immediately
+      // Primary: Webhook will update DB → Supabase Realtime notifies client instantly
+      // Fallback: Client can poll via ai-poll if webhook fails
       return new Response(
         JSON.stringify({
           success: true,
           generation_id: generation.id,
           request_id: requestId,
           fal_model: modelConfig.model,
-          poll_url: `https://queue.fal.run/${modelConfig.model}/requests/${requestId}`,
+          webhook_enabled: true,
           estimated_time_seconds: feature_key === 'auto_quality' ? 30 : 15,
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -21,29 +21,25 @@ async function getCurrentUserId(): Promise<string> {
 }
 
 /**
- * Helper to check if a URI is already uploaded to Supabase Storage
- * Returns true if the URI is a Supabase storage URL, false if it's a local file
+ * Helper to check if a URI is already in cloud storage (doesn't need upload)
+ * Returns true for any remote HTTP/HTTPS URL (Supabase, Fal.AI, etc.)
+ * Returns false for local files that need to be uploaded
  */
-function isSupabaseStorageUrl(uri: string | null | undefined): boolean {
+function isCloudStorageUrl(uri: string | null | undefined): boolean {
   if (!uri) return false;
-  
-  // Check for common Supabase storage URL patterns
-  // Pattern 1: Contains 'supabase.co/storage'
-  // Pattern 2: Contains the project ID followed by '.supabase.co'
-  const isSupabaseUrl = (
-    uri.includes('supabase.co/storage') ||
-    uri.includes('.supabase.co/') ||
-    // Also check for direct storage URLs
-    (uri.startsWith('https://') && uri.includes('/storage/v1/object/'))
-  );
   
   // Local files start with 'file://' or are absolute paths starting with '/'
   const isLocalFile = uri.startsWith('file://') || (uri.startsWith('/') && !uri.startsWith('//'));
   
-  // If it's explicitly a local file, it's not a Supabase URL
+  // Any HTTP/HTTPS URL is considered cloud storage (already uploaded)
+  // This includes: Supabase storage, Fal.AI (fal.media, fal-cdn.com), temp-uploads, etc.
+  const isRemoteUrl = uri.startsWith('http://') || uri.startsWith('https://');
+  
+  // If it's a local file, it needs to be uploaded (return false)
   if (isLocalFile) return false;
   
-  return isSupabaseUrl;
+  // If it's a remote URL, it's already in cloud storage (return true)
+  return isRemoteUrl;
 }
 
 /**
@@ -63,6 +59,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     capturedImageUrls: row.captured_image_urls || undefined,
     // Image adjustments (scale, translate, rotation) for each slot
     capturedImageAdjustments: row.captured_image_adjustments || undefined,
+    // Background info for transparent PNGs (from AI background replacement)
+    capturedImageBackgroundInfo: row.captured_image_background_info || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // Cached preview URL from Templated.io
@@ -71,6 +69,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     wasRenderedAsPremium: row.was_rendered_as_premium ?? undefined,
     // User-customized background layer colors
     backgroundOverrides: row.background_overrides || undefined,
+    // User-customized theme color for theme layers
+    themeColor: row.theme_color || undefined,
   };
 }
 
@@ -225,10 +225,20 @@ export async function updateDraft(
     afterImageUrl?: string | null;
     capturedImageUrls?: Record<string, string> | null;
     capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
+    capturedImageBackgroundInfo?: Record<string, {
+      type: 'solid' | 'gradient' | 'transparent';
+      solidColor?: string;
+      gradient?: {
+        type: 'linear';
+        colors: [string, string];
+        direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+      };
+    }> | null;
     renderedPreviewUrl?: string | null;
     wasRenderedAsPremium?: boolean | null;
     projectName?: string | null;
     backgroundOverrides?: Record<string, string> | null;
+    themeColor?: string | null;
   }
 ): Promise<Draft> {
   // Ensure user is authenticated (RLS will handle authorization)
@@ -250,6 +260,9 @@ export async function updateDraft(
   if (updates.capturedImageAdjustments !== undefined) {
     updateData.captured_image_adjustments = updates.capturedImageAdjustments;
   }
+  if (updates.capturedImageBackgroundInfo !== undefined) {
+    updateData.captured_image_background_info = updates.capturedImageBackgroundInfo;
+  }
   if (updates.renderedPreviewUrl !== undefined) {
     updateData.rendered_preview_url = updates.renderedPreviewUrl;
   }
@@ -261,6 +274,9 @@ export async function updateDraft(
   }
   if (updates.backgroundOverrides !== undefined) {
     updateData.background_overrides = updates.backgroundOverrides;
+  }
+  if (updates.themeColor !== undefined) {
+    updateData.theme_color = updates.themeColor;
   }
 
   const { data, error } = await supabase
@@ -303,7 +319,17 @@ export async function saveDraftWithImages(
   localPreviewPath?: string | null,
   projectName?: string | null,
   backgroundOverrides?: Record<string, string> | null,
-  capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null
+  capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null,
+  themeColor?: string | null,
+  capturedImageBackgroundInfo?: Record<string, {
+    type: 'solid' | 'gradient';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
+  }> | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -329,7 +355,7 @@ export async function saveDraftWithImages(
 
     // Handle legacy before/after format
     // Upload before image if it's a new local file
-    if (beforeImageUri && !isSupabaseStorageUrl(beforeImageUri)) {
+    if (beforeImageUri && !isCloudStorageUrl(beforeImageUri)) {
       beforeImageUrl = await uploadDraftImage(draft.id, beforeImageUri, 'before');
     } else if (beforeImageUri === null) {
       beforeImageUrl = null;
@@ -338,7 +364,7 @@ export async function saveDraftWithImages(
     }
 
     // Upload after image if it's a new local file
-    if (afterImageUri && !isSupabaseStorageUrl(afterImageUri)) {
+    if (afterImageUri && !isCloudStorageUrl(afterImageUri)) {
       afterImageUrl = await uploadDraftImage(draft.id, afterImageUri, 'after');
     } else if (afterImageUri === null) {
       afterImageUrl = null;
@@ -354,7 +380,7 @@ export async function saveDraftWithImages(
       const newCapturedImageUrls: Record<string, string> = {};
       
       for (const [slotId, uri] of Object.entries(capturedImageUris)) {
-        if (uri && !isSupabaseStorageUrl(uri)) {
+        if (uri && !isCloudStorageUrl(uri)) {
           const publicUrl = await uploadDraftImage(draft.id, uri, slotId);
           newCapturedImageUrls[slotId] = publicUrl;
         } else if (uri) {
@@ -371,10 +397,12 @@ export async function saveDraftWithImages(
       afterImageUrl,
       capturedImageUrls: Object.keys(capturedImageUrls).length > 0 ? capturedImageUrls : null,
       capturedImageAdjustments: capturedImageAdjustments !== undefined ? capturedImageAdjustments : draft.capturedImageAdjustments,
+      capturedImageBackgroundInfo: capturedImageBackgroundInfo !== undefined ? capturedImageBackgroundInfo : draft.capturedImageBackgroundInfo,
       renderedPreviewUrl: renderedPreviewUrl ?? draft.renderedPreviewUrl,
       wasRenderedAsPremium: wasRenderedAsPremium ?? draft.wasRenderedAsPremium,
       projectName: projectName !== undefined ? projectName : draft.projectName,
       backgroundOverrides: backgroundOverrides !== undefined ? backgroundOverrides : draft.backgroundOverrides,
+      themeColor: themeColor !== undefined ? themeColor : draft.themeColor,
     });
 
     // Return draft with localPreviewPath appended (client-side only, not in DB)

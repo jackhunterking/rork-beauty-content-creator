@@ -1,105 +1,445 @@
 /**
  * LayeredCanvas Component
  * 
- * Client-side composition of template elements for zero-API-call background color changes.
- * Renders layers in this order (bottom to top):
- * 1. Background color (solid color View via container backgroundColor)
- * 2. User photos (positioned at slot coordinates)
- * 3. Frame overlay PNG (card backgrounds, blur shadows, decorative elements)
- * 4. Theme layers (colored shapes/text - rendered ON TOP of frame overlay)
- * 5. User overlays (text, logo, date - handled by parent/children)
+ * Renders ALL layers directly from Templated.io API data using SINGLE SOURCE OF TRUTH.
  * 
- * This component enables instant background color switching without Templated.io API calls.
- * It also supports theme color customization for layers prefixed with 'theme-'.
+ * UNIFIED FONT LOADING (Jan 2026):
+ * Uses the unified font service to load fonts from any source:
+ * - Google Fonts (via Google Fonts Developer API)
+ * - Supabase Storage (for custom uploaded fonts like "Sacco-SemiBoldCondensed")
+ * - System fonts (no loading needed)
  * 
- * Z-Order Rationale:
- * - Frame overlay contains card backgrounds that theme layers should appear ON TOP of
- * - Theme layers (labels, circles) are rendered ABOVE the frame overlay
- * - This ensures theme elements are visible over the white card backgrounds
+ * Text layers are only rendered AFTER fonts are loaded to ensure pixel-perfect rendering.
  * 
- * Theme Layer Types:
- * - 'shape': Renders as colored View (rectangle/circle with border radius, stroke, fill)
- * - 'text': Renders as styled Text with customizable color
+ * Layer Handling:
+ * - slot-* prefix → render user's photo with adjustments
+ * - theme-* prefix → apply themeColor to dark colors (fill/stroke for shapes, text color for text)
+ * - type: "shape" with html → detect SVG element type (rect, ellipse, circle, path) and render appropriately
+ * - type: "vector" with html → parse and render SVG path with proper stroke support
+ * - type: "text" → render text with font styling
+ * - image_url → render image
+ * 
+ * SVG Element Support (Jan 2026):
+ * - <rect> → Rendered with Rect component, supports rx/ry for rounded corners
+ * - <ellipse> → Rendered with Ellipse component, supports cx/cy/rx/ry
+ * - <circle> → Rendered with Circle component, supports cx/cy/r
+ * - <path> → Rendered with Path component, supports d, fill, stroke, strokeWidth, strokeLinecap, strokeLinejoin
  */
 
-import React, { useMemo } from 'react';
-import { View, Image, Text, ImageStyle, ViewStyle, TextStyle } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { Template, CapturedImages, Slot, ThemeLayer, isTextThemeLayer, TextThemeLayer, ShapeThemeLayer, VectorLayer, MediaAsset } from '@/types';
+import React, { useState, useMemo } from 'react';
+import { View, Text, ViewStyle, TextStyle, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
+import { SvgUri, SvgXml, Svg, Path, Rect, Ellipse, Circle } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Template, CapturedImages, TemplatedLayer, MediaAsset, ThemeLayer, isTextThemeLayer } from '@/types';
+import { useTemplateFonts } from '@/hooks/useTemplateFonts';
+import { getGradientPoints } from '@/constants/gradients';
+
+// ============================================
+// SVG Element Type Detection
+// ============================================
+
+type SvgElementType = 'rect' | 'ellipse' | 'circle' | 'path' | 'unknown';
 
 /**
- * Parse a color string that might be hex, rgb(), or rgba()
- * Returns the color and any embedded opacity
+ * Detect the primary SVG element type in HTML
  */
-function parseColor(colorStr: string | undefined | null): { color: string; opacity?: number } {
-  if (!colorStr) return { color: 'transparent' };
+function detectSvgElementType(html: string): SvgElementType {
+  const lowerHtml = html.toLowerCase();
   
-  // Check for rgba format
-  const rgbaMatch = colorStr.match(/rgba\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/i);
-  if (rgbaMatch) {
-    const [, r, g, b, a] = rgbaMatch;
+  // Check for specific element types in order of specificity
+  if (/<path\s/i.test(html)) return 'path';
+  if (/<ellipse\s/i.test(html)) return 'ellipse';
+  if (/<circle\s/i.test(html)) return 'circle';
+  if (/<rect\s/i.test(html)) return 'rect';
+  
+  return 'unknown';
+}
+
+// ============================================
+// SVG Parsing Functions
+// ============================================
+
+interface RectAttributes {
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+  rx: number;
+  ry: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface EllipseAttributes {
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+}
+
+interface CircleAttributes {
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+  cx: number;
+  cy: number;
+  r: number;
+}
+
+interface PathAttributes {
+  d: string;
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+  strokeLinecap: string | null;
+  strokeLinejoin: string | null;
+  viewBox: string;
+}
+
+/**
+ * Extract rect element attributes from SVG HTML
+ */
+function parseRectAttributes(html: string): RectAttributes | null {
+  try {
+    const rectMatch = html.match(/<rect[^>]*>/i);
+    if (!rectMatch) return null;
+    
+    const rectTag = rectMatch[0];
+    
+    const fillMatch = rectTag.match(/fill="([^"]+)"/i);
+    const strokeMatch = rectTag.match(/stroke="([^"]+)"/i);
+    const strokeWidthMatch = rectTag.match(/stroke-width="([^"]+)"/i);
+    const rxMatch = rectTag.match(/rx="([^"]+)"/i);
+    const ryMatch = rectTag.match(/ry="([^"]+)"/i);
+    const xMatch = rectTag.match(/\sx="([^"]+)"/i);
+    const yMatch = rectTag.match(/\sy="([^"]+)"/i);
+    const widthMatch = rectTag.match(/width="([^"]+)"/i);
+    const heightMatch = rectTag.match(/height="([^"]+)"/i);
+    
     return {
-      color: `rgb(${r}, ${g}, ${b})`,
-      opacity: parseFloat(a),
+      fill: fillMatch ? fillMatch[1] : null,
+      stroke: strokeMatch ? strokeMatch[1] : null,
+      strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      rx: rxMatch ? parseFloat(rxMatch[1]) : 0,
+      ry: ryMatch ? parseFloat(ryMatch[1]) : 0,
+      x: xMatch ? parseFloat(xMatch[1]) : 0,
+      y: yMatch ? parseFloat(yMatch[1]) : 0,
+      width: widthMatch ? parseFloat(widthMatch[1]) : 0,
+      height: heightMatch ? parseFloat(heightMatch[1]) : 0,
     };
+  } catch {
+    return null;
   }
-  
-  return { color: colorStr };
 }
-
-// Font mapping from Templated.io fonts to React Native fonts
-const TEMPLATED_FONT_MAP: Record<string, string> = {
-  // Sans-serif fonts
-  'Noto Sans': 'System',
-  'Arial': 'Helvetica',
-  'Helvetica': 'Helvetica',
-  'Roboto': 'System',
-  'Open Sans': 'System',
-  'Inter': 'System',
-  'Montserrat': 'System',
-  'Lato': 'System',
-  'Poppins': 'System',
-  
-  // Serif fonts
-  'Times New Roman': 'Georgia',
-  'Georgia': 'Georgia',
-  'Playfair Display': 'Georgia',
-  'Merriweather': 'Georgia',
-  
-  // Default fallback
-  'System': 'System',
-};
 
 /**
- * Map Templated.io font family to React Native compatible font
+ * Extract ellipse element attributes from SVG HTML
  */
-function mapFont(templatedFont: string | undefined): string {
-  if (!templatedFont) return 'System';
-  return TEMPLATED_FONT_MAP[templatedFont] || 'System';
+function parseEllipseAttributes(html: string): EllipseAttributes | null {
+  try {
+    const ellipseMatch = html.match(/<ellipse[^>]*>/i);
+    if (!ellipseMatch) return null;
+    
+    const ellipseTag = ellipseMatch[0];
+    
+    const fillMatch = ellipseTag.match(/fill="([^"]+)"/i);
+    const strokeMatch = ellipseTag.match(/stroke="([^"]+)"/i);
+    const strokeWidthMatch = ellipseTag.match(/stroke-width="([^"]+)"/i);
+    const cxMatch = ellipseTag.match(/cx="([^"]+)"/i);
+    const cyMatch = ellipseTag.match(/cy="([^"]+)"/i);
+    const rxMatch = ellipseTag.match(/rx="([^"]+)"/i);
+    const ryMatch = ellipseTag.match(/ry="([^"]+)"/i);
+    
+    return {
+      fill: fillMatch ? fillMatch[1] : null,
+      stroke: strokeMatch ? strokeMatch[1] : null,
+      strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      cx: cxMatch ? parseFloat(cxMatch[1]) : 0,
+      cy: cyMatch ? parseFloat(cyMatch[1]) : 0,
+      rx: rxMatch ? parseFloat(rxMatch[1]) : 0,
+      ry: ryMatch ? parseFloat(ryMatch[1]) : 0,
+    };
+  } catch {
+    return null;
+  }
 }
+
+/**
+ * Extract circle element attributes from SVG HTML
+ */
+function parseCircleAttributes(html: string): CircleAttributes | null {
+  try {
+    const circleMatch = html.match(/<circle[^>]*>/i);
+    if (!circleMatch) return null;
+    
+    const circleTag = circleMatch[0];
+    
+    const fillMatch = circleTag.match(/fill="([^"]+)"/i);
+    const strokeMatch = circleTag.match(/stroke="([^"]+)"/i);
+    const strokeWidthMatch = circleTag.match(/stroke-width="([^"]+)"/i);
+    const cxMatch = circleTag.match(/cx="([^"]+)"/i);
+    const cyMatch = circleTag.match(/cy="([^"]+)"/i);
+    const rMatch = circleTag.match(/\sr="([^"]+)"/i);
+    
+    return {
+      fill: fillMatch ? fillMatch[1] : null,
+      stroke: strokeMatch ? strokeMatch[1] : null,
+      strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      cx: cxMatch ? parseFloat(cxMatch[1]) : 0,
+      cy: cyMatch ? parseFloat(cyMatch[1]) : 0,
+      r: rMatch ? parseFloat(rMatch[1]) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract path element attributes from SVG HTML (including stroke support for arrows)
+ */
+function parsePathAttributes(html: string): PathAttributes | null {
+  try {
+    const pathMatch = html.match(/<path[^>]*>/i);
+    if (!pathMatch) return null;
+    
+    const pathTag = pathMatch[0];
+    
+    // Extract viewBox from the SVG wrapper
+    const viewBoxMatch = html.match(/viewBox="([^"]+)"/i) || html.match(/viewbox="([^"]+)"/i);
+    const viewBox = viewBoxMatch ? viewBoxMatch[1] : '0 0 24 24';
+    
+    const dMatch = pathTag.match(/d="([^"]+)"/i);
+    const fillMatch = pathTag.match(/fill="([^"]+)"/i);
+    const strokeMatch = pathTag.match(/stroke="([^"]+)"/i);
+    const strokeWidthMatch = pathTag.match(/stroke-width="([^"]+)"/i);
+    const strokeLinecapMatch = pathTag.match(/stroke-linecap="([^"]+)"/i);
+    const strokeLinejoinMatch = pathTag.match(/stroke-linejoin="([^"]+)"/i);
+    
+    if (!dMatch) return null;
+    
+    return {
+      d: dMatch[1],
+      fill: fillMatch ? fillMatch[1] : null,
+      stroke: strokeMatch ? strokeMatch[1] : null,
+      strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      strokeLinecap: strokeLinecapMatch ? strokeLinecapMatch[1] : null,
+      strokeLinejoin: strokeLinejoinMatch ? strokeLinejoinMatch[1] : null,
+      viewBox,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ============================================
+// Utility Functions
+// ============================================
+
+/**
+ * SmartImage - Handles both PNG/JPG and SVG images
+ */
+function SmartImage({ uri, style }: { uri: string; style: ViewStyle }) {
+  const [useSvg, setUseSvg] = useState(false);
+
+  if (useSvg) {
+    return (
+      <View style={style}>
+        <SvgUri uri={uri} width="100%" height="100%" />
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={style}
+      contentFit="contain"
+      onError={() => setUseSvg(true)}
+    />
+  );
+}
+
+/**
+ * Parse border radius from number, string ("52px"), or null
+ */
+function parseBorderRadius(value: number | string | null | undefined): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  const match = String(value).match(/(\d+(?:\.\d+)?)/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+/**
+ * Check if a fill color value is transparent
+ * Handles: 'none', 'transparent', rgba with 0 alpha, etc.
+ */
+function isTransparentColor(color: string | null | undefined): boolean {
+  if (!color) return true;
+  if (color === 'none' || color === 'transparent') return true;
+  // Check for rgba with 0 alpha (e.g., rgba(255,255,255,0) or rgba(0,0,0,0))
+  if (color.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i)) return true;
+  return false;
+}
+
+/**
+ * Apply theme color to SVG HTML for theme-* prefixed layers
+ * 
+ * For theme layers, we replace fill/stroke colors with the theme color,
+ * BUT we preserve transparent fills to maintain stroke-only shapes.
+ */
+function applyThemeToSvgHtml(html: string, themeColor: string): string {
+  let result = html;
+  
+  // For theme layers, replace fill attributes ONLY if they are not transparent/none
+  // This preserves stroke-only shapes (transparent fill with visible stroke)
+  result = result.replace(/fill="([^"]+)"/gi, (match, fillValue) => {
+    // Don't replace transparent/none fills
+    if (isTransparentColor(fillValue)) {
+      return match;
+    }
+    return `fill="${themeColor}"`;
+  });
+  
+  // For strokes, only replace non-transparent/non-none strokes
+  // Don't replace stroke="none" or stroke="rgba(0,0,0,0)" as those indicate no stroke
+  result = result.replace(/stroke="([^"]+)"/gi, (match, strokeValue) => {
+    // Keep transparent strokes as-is
+    if (isTransparentColor(strokeValue)) {
+      return match;
+    }
+    return `stroke="${themeColor}"`;
+  });
+  
+  return result;
+}
+
+/**
+ * Clean SVG HTML for SvgXml - remove fixed dimensions to allow scaling
+ */
+function cleanSvgHtml(html: string): string {
+  let result = html;
+  
+  // Remove inline style with fixed dimensions
+  result = result.replace(/style="[^"]*width:\s*\d+px[^"]*"/gi, '');
+  
+  // Remove fixed width/height attributes from svg tag, keep viewBox
+  result = result.replace(/<svg\s+width="[^"]*"\s+height="[^"]*"/gi, '<svg');
+  result = result.replace(/<svg([^>]*)\s+width="[^"]*"/gi, '<svg$1');
+  result = result.replace(/<svg([^>]*)\s+height="[^"]*"/gi, '<svg$1');
+  
+  return result;
+}
+
+/**
+ * SlotImage - Renders user's captured photo with adjustments
+ * Supports background color/gradient for transparent PNGs (from AI background replacement)
+ */
+function SlotImage({ 
+  photo, 
+  slotWidth, 
+  slotHeight 
+}: { 
+  photo: MediaAsset; 
+  slotWidth: number; 
+  slotHeight: number;
+}) {
+  const { uri, width: imageWidth, height: imageHeight, adjustments, backgroundInfo } = photo;
+  
+  const imageStyle = useMemo(() => {
+    const imageAspect = imageWidth / imageHeight;
+    const slotAspect = slotWidth / slotHeight;
+    
+    const baseW = imageAspect > slotAspect ? slotHeight * imageAspect : slotWidth;
+    const baseH = imageAspect > slotAspect ? slotHeight : slotWidth / imageAspect;
+    
+    const scale = adjustments?.scale ?? 1;
+    const rotation = adjustments?.rotation ?? 0;
+    const normTx = adjustments?.translateX ?? 0;
+    const normTy = adjustments?.translateY ?? 0;
+    
+    const scaledW = baseW * scale;
+    const scaledH = baseH * scale;
+    
+    const angleRad = (rotation * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    
+    const maxU = Math.max(0, scaledW / 2 - (slotWidth * Math.abs(cos) + slotHeight * Math.abs(sin)) / 2);
+    const maxV = Math.max(0, scaledH / 2 - (slotWidth * Math.abs(sin) + slotHeight * Math.abs(cos)) / 2);
+    
+    const u = normTx * maxU;
+    const v = normTy * maxV;
+    const tx = u * cos - v * sin;
+    const ty = u * sin + v * cos;
+    
+    return {
+      position: 'absolute' as const,
+      width: scaledW,
+      height: scaledH,
+      left: (slotWidth - scaledW) / 2 + tx,
+      top: (slotHeight - scaledH) / 2 + ty,
+      transform: rotation !== 0 ? [{ rotate: `${rotation}deg` }] : [],
+    };
+  }, [imageWidth, imageHeight, slotWidth, slotHeight, adjustments]);
+  
+  // Render background color/gradient for transparent PNGs (AI background replacement)
+  const renderBackground = () => {
+    if (!backgroundInfo) return null;
+    
+    const bgStyle = {
+      position: 'absolute' as const,
+      width: slotWidth,
+      height: slotHeight,
+      left: 0,
+      top: 0,
+    };
+    
+    if (backgroundInfo.type === 'solid' && backgroundInfo.solidColor) {
+      return <View style={[bgStyle, { backgroundColor: backgroundInfo.solidColor }]} />;
+    }
+    
+    if (backgroundInfo.type === 'gradient' && backgroundInfo.gradient) {
+      return (
+        <LinearGradient
+          colors={backgroundInfo.gradient.colors}
+          {...getGradientPoints(backgroundInfo.gradient.direction)}
+          style={bgStyle}
+        />
+      );
+    }
+    
+    return null;
+  };
+  
+  return (
+    <>
+      {renderBackground()}
+      <Image source={{ uri }} style={imageStyle} contentFit="cover" />
+    </>
+  );
+}
+
+// ============================================
+// Main Component
+// ============================================
 
 interface LayeredCanvasProps {
-  /** Template data including frameOverlayUrl and themeLayers */
   template: Template;
-  /** Parsed slots from template layers */
-  slots: Slot[];
-  /** User's captured images keyed by slot ID */
   capturedImages: CapturedImages;
-  /** Current background color (hex) */
   backgroundColor: string;
-  /** Current theme color for theme layers (hex) */
   themeColor?: string;
-  /** Canvas width in device pixels */
   canvasWidth: number;
-  /** Canvas height in device pixels */
   canvasHeight: number;
-  /** Children to render on top (overlays) */
   children?: React.ReactNode;
 }
 
 export function LayeredCanvas({
   template,
-  slots,
   capturedImages,
   backgroundColor,
   themeColor,
@@ -107,497 +447,447 @@ export function LayeredCanvas({
   canvasHeight,
   children,
 }: LayeredCanvasProps) {
+  const scaleX = canvasWidth / template.canvasWidth;
+  const scaleY = canvasHeight / template.canvasHeight;
+  const uniformScale = Math.min(scaleX, scaleY);
 
-  // Calculate scale factor from template dimensions to display dimensions
-  const scale = useMemo(() => ({
-    x: canvasWidth / template.canvasWidth,
-    y: canvasHeight / template.canvasHeight,
-  }), [canvasWidth, canvasHeight, template.canvasWidth, template.canvasHeight]);
-
-
-  // Get container style for a photo slot (with clipping)
-  // This wraps the photo and clips it to the slot boundaries with rounded corners
-  const getPhotoContainerStyle = (slot: Slot): ViewStyle => {
-    // Scale border radius to match card corners (18px is common in Templated.io templates)
-    const scaledBorderRadius = 18 * Math.min(scale.x, scale.y);
-    
-    return {
-      position: 'absolute',
-      left: slot.x * scale.x,
-      top: slot.y * scale.y,
-      width: slot.width * scale.x,
-      height: slot.height * scale.y,
-      zIndex: slot.zIndex || 1,
-      overflow: 'hidden', // CRITICAL: Clips photo to slot boundaries
-      borderRadius: scaledBorderRadius, // Match card corner radius
-    };
-  };
+  // SINGLE SOURCE OF TRUTH: All rendering from layers_json
+  const layers: TemplatedLayer[] = Array.isArray(template.layersJson) ? template.layersJson : [];
   
-  // Calculate base image size for cover fit (image exactly fills slot at scale 1.0)
-  const getBaseImageSize = (imageWidth: number, imageHeight: number, slotWidth: number, slotHeight: number) => {
-    const imageAspect = imageWidth / imageHeight;
-    const slotAspect = slotWidth / slotHeight;
-    
-    if (imageAspect > slotAspect) {
-      // Image is wider - height fits, width overflows
-      return { width: slotHeight * imageAspect, height: slotHeight };
-    } else {
-      // Image is taller - width fits, height overflows
-      return { width: slotWidth, height: slotWidth / imageAspect };
-    }
-  };
-  
-  // Get photo style with adjustments applied (scale, translate, rotate)
-  // This replicates the logic from ManipulationOverlay for consistent rendering
-  const getPhotoStyleWithAdjustments = (slot: Slot, image: MediaAsset): { style: ImageStyle; hasAdjustments: boolean } => {
-    const slotWidth = slot.width * scale.x;
-    const slotHeight = slot.height * scale.y;
-    
-    // Check if we have meaningful adjustments
-    const adj = image.adjustments;
-    const hasAdjustments = adj && (
-      adj.scale !== 1 ||
-      adj.translateX !== 0 ||
-      adj.translateY !== 0 ||
-      (adj.rotation !== undefined && adj.rotation !== 0)
-    );
-    
-    if (!hasAdjustments) {
-      // No adjustments - use simple cover fit
-      return {
-        style: { width: '100%', height: '100%' },
-        hasAdjustments: false,
-      };
-    }
-    
-    const { scale: imgScale, translateX: normTx, translateY: normTy, rotation = 0 } = adj!;
-    
-    // Calculate base image size (cover fit at scale 1.0)
-    const baseSize = getBaseImageSize(image.width, image.height, slotWidth, slotHeight);
-    
-    // Apply scale
-    const scaledWidth = baseSize.width * imgScale;
-    const scaledHeight = baseSize.height * imgScale;
-    
-    // Calculate max translation for denormalization (same as ManipulationOverlay)
-    const halfW = scaledWidth / 2;
-    const halfH = scaledHeight / 2;
-    const halfSlotW = slotWidth / 2;
-    const halfSlotH = slotHeight / 2;
-    
-    const angleRad = (rotation * Math.PI) / 180;
-    const cos = Math.cos(angleRad);
-    const sin = Math.sin(angleRad);
-    const absCos = Math.abs(cos);
-    const absSin = Math.abs(sin);
-    
-    const maxU = Math.max(0, halfW - (halfSlotW * absCos + halfSlotH * absSin));
-    const maxV = Math.max(0, halfH - (halfSlotW * absSin + halfSlotH * absCos));
-    
-    // Denormalize translation from normalized rotated coords to actual rotated coords
-    const u = normTx * maxU;
-    const v = normTy * maxV;
-    
-    // Convert from rotated coords (u, v) to screen coords (tx, ty)
-    const tx = u * cos - v * sin;
-    const ty = u * sin + v * cos;
-    
-    // Center the image on the slot, then apply translation
-    const left = (slotWidth - scaledWidth) / 2 + tx;
-    const top = (slotHeight - scaledHeight) / 2 + ty;
-    
-    const style: ImageStyle = {
-      position: 'absolute',
-      left,
-      top,
-      width: scaledWidth,
-      height: scaledHeight,
-    };
-    
-    // Apply rotation transform if needed
-    if (rotation !== 0) {
-      style.transform = [{ rotate: `${rotation}deg` }];
-    }
-    
-    return { style, hasAdjustments: true };
-  };
+  // Legacy array for font loading only
+  const themeLayers: ThemeLayer[] = template.themeLayers || [];
 
-  // Get style for a shape theme layer (colored rectangle)
-  const getShapeLayerStyle = (layer: ShapeThemeLayer | ThemeLayer): ViewStyle => {
-    // Determine the fill color to use:
-    // - Layers with 'theme-' prefix: use themeColor (or fall back to original fill)
-    // - Other layers (heart-, icon-, decoration-): keep original fill color (not themed)
-    const isThemedLayer = layer.id.toLowerCase().startsWith('theme-');
-    
-    let fillColor: string;
-    if (isThemedLayer) {
-      // Theme layers use the selected theme color, or fall back to original fill
-      fillColor = themeColor || (('fill' in layer && layer.fill) ? parseColor(layer.fill).color : backgroundColor);
-    } else {
-      // Non-theme layers (heart-, icon-, etc.) keep their original fill color
-      fillColor = ('fill' in layer && layer.fill) ? parseColor(layer.fill).color : backgroundColor;
-    }
-    
-    // Calculate final opacity
-    // Combine layer opacity with any embedded opacity from fill color
-    let finalOpacity = layer.opacity ?? 1.0;
-    if ('fill' in layer && layer.fill) {
-      const parsed = parseColor(layer.fill);
-      if (parsed.opacity !== undefined) {
-        // Multiply explicit opacity with color-embedded opacity
-        finalOpacity = (layer.opacity ?? 1.0) * parsed.opacity;
+  // Collect fonts for loading from the unified font service
+  const templateFonts = useMemo(() => {
+    const fonts: string[] = [];
+    layers.forEach(layer => {
+      if (layer.font_family && !fonts.includes(layer.font_family)) {
+        fonts.push(layer.font_family);
       }
-    }
+    });
+    themeLayers.forEach(layer => {
+      if (isTextThemeLayer(layer) && layer.fontFamily && !fonts.includes(layer.fontFamily)) {
+        fonts.push(layer.fontFamily);
+      }
+    });
+    return fonts;
+  }, [layers, themeLayers]);
+
+  // Load fonts using the unified font service (supports Google Fonts + Supabase custom fonts)
+  const fontsLoaded = useTemplateFonts(templateFonts);
+
+  /**
+   * Render a single layer based on its type and prefix
+   */
+  const renderLayer = (layer: TemplatedLayer, index: number) => {
+    const name = (layer.layer || '').toLowerCase();
+    const isSlot = name.startsWith('slot-');
+    const isTheme = name.startsWith('theme-');
     
+    // Skip hidden layers
+    if (layer.hide === true) return null;
+
+    // Base positioning style
     const style: ViewStyle = {
       position: 'absolute',
-      left: layer.x * scale.x,
-      top: layer.y * scale.y,
-      width: layer.width * scale.x,
-      height: layer.height * scale.y,
-      backgroundColor: fillColor,
-      opacity: finalOpacity,
-      // Use layer's zIndex for proper stacking order relative to photos
-      zIndex: layer.zIndex || 1,
+      left: layer.x * scaleX,
+      top: layer.y * scaleY,
+      width: layer.width * scaleX,
+      height: layer.height * scaleY,
+      zIndex: index + 1,
+      opacity: layer.opacity ?? 1,
     };
 
-    // Apply border radius if specified (shape layers only)
-    // Handle both circle/ellipse (100% radius) and rectangle with rounded corners
-    if ('borderRadius' in layer && layer.borderRadius && layer.borderRadius > 0) {
-      style.borderRadius = layer.borderRadius * Math.min(scale.x, scale.y);
-    }
-    
-    // For circle/ellipse shapes, apply full border radius
-    if ('shapeType' in layer) {
-      const shapeType = (layer as ShapeThemeLayer).shapeType;
-      if (shapeType === 'circle' || shapeType === 'ellipse') {
-        // For circles/ellipses, use half the smaller dimension
-        const minDim = Math.min(layer.width * scale.x, layer.height * scale.y);
-        style.borderRadius = minDim / 2;
-      }
-    }
-    
-    // Apply stroke/border if specified
-    if ('stroke' in layer && layer.stroke) {
-      const strokeParsed = parseColor(layer.stroke);
-      const strokeWidth = ('strokeWidth' in layer && layer.strokeWidth) ? layer.strokeWidth : 1;
-      style.borderWidth = strokeWidth * Math.min(scale.x, scale.y);
-      style.borderColor = strokeParsed.color;
-    }
-
-    // Apply rotation if specified
-    if (layer.rotation && layer.rotation !== 0) {
+    if (layer.rotation) {
       style.transform = [{ rotate: `${layer.rotation}deg` }];
     }
 
-    return style;
-  };
-
-  // Get style for a text theme layer container
-  // Use ORIGINAL Templated.io dimensions - text lays out first, then container rotates
-  const getTextLayerContainerStyle = (layer: TextThemeLayer): ViewStyle => {
-    // Scale the original dimensions (DO NOT swap for rotation)
-    const scaledWidth = layer.width * scale.x;
-    const scaledHeight = layer.height * scale.y;
-    
-    // Position: Templated.io x,y is the top-left corner of the unrotated element
-    // The rotation happens around the CENTER of the element
-    const left = layer.x * scale.x;
-    const top = layer.y * scale.y;
-    
-    const style: ViewStyle = {
-      position: 'absolute',
-      left,
-      top,
-      width: scaledWidth,
-      height: scaledHeight,
-      // Center the text within the container
-      justifyContent: 'center',
-      alignItems: 'center',
-      // No background - text only (transparent container)
-      // Apply opacity from template (defaults to 1.0 if not specified)
-      opacity: layer.opacity ?? 1.0,
-      // Use layer's zIndex for proper stacking order relative to photos
-      zIndex: layer.zIndex || 1,
-    };
-
-    // Apply rotation around center (React Native default behavior)
-    if (layer.rotation && layer.rotation !== 0) {
-      style.transform = [{ rotate: `${layer.rotation}deg` }];
-    }
-
-    return style;
-  };
-
-  // Get text style for a text theme layer
-  const getTextLayerStyle = (layer: TextThemeLayer): TextStyle => {
-    // Calculate scaled font size - use uniform scale to maintain proportions
-    const uniformScale = Math.min(scale.x, scale.y);
-    const scaledFontSize = (layer.fontSize || 16) * uniformScale;
-    
-    // Determine text color:
-    // 1. If themeColor is provided, use it (user chose a theme)
-    // 2. Otherwise, use original color from template
-    // 3. Finally, fall back to black
-    let textColor = themeColor;
-    if (!textColor && 'color' in layer && layer.color) {
-      const parsed = parseColor(layer.color as string);
-      textColor = parsed.color;
-    }
-    textColor = textColor || '#000000';
-    
-    const style: TextStyle = {
-      color: textColor,
-      fontSize: scaledFontSize,
-      fontWeight: layer.fontWeight as TextStyle['fontWeight'] || 'normal',
-      textAlign: 'center',
-    };
-
-    // Apply font family mapping
-    const mappedFont = mapFont(layer.fontFamily);
-    if (mappedFont !== 'System') {
-      style.fontFamily = mappedFont;
-    }
-
-    // Apply letter spacing if specified
-    if (layer.letterSpacing !== undefined) {
-      style.letterSpacing = layer.letterSpacing * uniformScale;
-    }
-
-    return style;
-  };
-
-  // Check if we have any photos captured
-  const hasPhotos = useMemo(() => {
-    return Object.values(capturedImages).some(img => img !== null);
-  }, [capturedImages]);
-
-  // Check if we have theme layers
-  const hasThemeLayers = useMemo(() => {
-    return template.themeLayers && template.themeLayers.length > 0;
-  }, [template.themeLayers]);
-
-  // Check if we have vector layers
-  const hasVectorLayers = useMemo(() => {
-    return template.vectorLayers && template.vectorLayers.length > 0;
-  }, [template.vectorLayers]);
-
-  // Container style - keeps overflow hidden for proper canvas clipping
-  const containerStyle: ViewStyle = useMemo(() => {
-    return {
-      width: canvasWidth,
-      height: canvasHeight,
-      backgroundColor: backgroundColor,
-      position: 'relative',
-      overflow: 'hidden',
-      // DEBUG: Add border to see container bounds
-      // borderWidth: 5,
-      // borderColor: '#FF00FF', // Magenta
-    };
-  }, [canvasWidth, canvasHeight, backgroundColor]);
-  
-  // Theme layer wrapper style - allows rotated layers to show even if
-  // their unrotated bounding box extends outside the canvas
-  const themeLayerWrapperStyle: ViewStyle = useMemo(() => ({
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: canvasWidth,
-    height: canvasHeight,
-    overflow: 'visible', // Allow rotated text to show outside bounds
-  }), [canvasWidth, canvasHeight]);
-
-  // Frame overlay style - zIndex 0 ensures it's at the bottom of the stack
-  const frameOverlayStyle: ImageStyle = useMemo(() => ({
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: canvasWidth,
-    height: canvasHeight,
-    zIndex: 0,
-  }), [canvasWidth, canvasHeight]);
-
-  // Render a single theme layer (text or shape)
-  const renderThemeLayer = (layer: ThemeLayer) => {
-
-    // Check if this is a text layer
-    if (isTextThemeLayer(layer)) {
-      const containerStyle = getTextLayerContainerStyle(layer as TextThemeLayer);
-      const textStyle = getTextLayerStyle(layer as TextThemeLayer);
-      
-      return (
-        <View key={layer.id} style={containerStyle}>
-          <Text style={textStyle}>
-            {(layer as TextThemeLayer).text}
-          </Text>
-        </View>
-      );
-    }
-
-    // Shape layer - check if it has SVG path data (for custom shapes like heart)
-    const shapeLayer = layer as ShapeThemeLayer;
-    if (shapeLayer.pathData && shapeLayer.viewBox) {
-      // Render as SVG (like heart-icon with custom path)
-      const scaledWidth = layer.width * scale.x;
-      const scaledHeight = layer.height * scale.y;
-      
-      const svgStyle: ViewStyle = {
-        position: 'absolute',
-        left: layer.x * scale.x,
-        top: layer.y * scale.y,
-        width: scaledWidth,
-        height: scaledHeight,
-        opacity: layer.opacity ?? 1.0,
-        zIndex: layer.zIndex || 1,
-      };
-      
-      return (
-        <View key={layer.id} style={svgStyle}>
-          <Svg
-            width="100%"
-            height="100%"
-            viewBox={shapeLayer.viewBox}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <Path
-              d={shapeLayer.pathData}
-              fill={shapeLayer.fill || '#FF5757'}
-            />
-          </Svg>
-        </View>
-      );
-    }
-
-    // Regular shape layer (rectangle, circle, etc.)
-    const shapeStyle = getShapeLayerStyle(layer);
-    
-    return (
-      <View
-        key={layer.id}
-        style={shapeStyle}
-      />
-    );
-  };
-
-  // Render a single vector layer (icon/shape with SVG)
-  const renderVectorLayer = (layer: VectorLayer) => {
-    if (!layer.pathData) {
-      return null;
-    }
-
-    const scaledWidth = layer.width * scale.x;
-    const scaledHeight = layer.height * scale.y;
-
-    // Container style for the SVG
-    const vectorStyle: ViewStyle = {
-      position: 'absolute',
-      left: layer.x * scale.x,
-      top: layer.y * scale.y,
-      width: scaledWidth,
-      height: scaledHeight,
-      opacity: layer.opacity ?? 1.0,
-      // Use layer's zIndex for proper stacking order relative to photos
-      zIndex: layer.zIndex || 1,
-    };
-
-    // Apply rotation if specified
-    if (layer.rotation && layer.rotation !== 0) {
-      vectorStyle.transform = [{ rotate: `${layer.rotation}deg` }];
-    }
-
-    return (
-      <View key={layer.id} style={vectorStyle}>
-        <Svg
-          width="100%"
-          height="100%"
-          viewBox={layer.viewBox}
-          preserveAspectRatio="xMidYMid meet"
-        >
-          <Path
-            d={layer.pathData}
-            fill={layer.fill || '#FFFFFF'}
-          />
-        </Svg>
-      </View>
-    );
-  };
-
-
-
-  // Create a unified list of all renderable layers sorted by zIndex
-  // This ensures correct stacking order regardless of React Native z-index quirks
-  type RenderableLayer = 
-    | { type: 'photo'; slot: Slot; image: MediaAsset; zIndex: number }
-    | { type: 'theme'; layer: ThemeLayer; zIndex: number }
-    | { type: 'vector'; layer: VectorLayer; zIndex: number };
-
-  const sortedLayers = useMemo(() => {
-    const layers: RenderableLayer[] = [];
-    
-    // Add photos (only if captured)
-    slots.forEach((slot) => {
-      const image = capturedImages[slot.layerId];
-      if (image) {
-        layers.push({ type: 'photo', slot, image, zIndex: slot.zIndex || 1 });
-      }
-    });
-    
-    // Add theme layers
-    template.themeLayers?.forEach((layer) => {
-      layers.push({ type: 'theme', layer, zIndex: layer.zIndex || 1 });
-    });
-    
-    // Add vector layers
-    template.vectorLayers?.forEach((layer) => {
-      layers.push({ type: 'vector', layer, zIndex: layer.zIndex || 1 });
-    });
-    
-    // Sort by zIndex (ascending - lower zIndex renders first, higher renders on top)
-    return layers.sort((a, b) => a.zIndex - b.zIndex);
-  }, [slots, capturedImages, template.themeLayers, template.vectorLayers]);
-
-  // Render a single layer based on its type
-  const renderLayer = (item: RenderableLayer, index: number) => {
-    switch (item.type) {
-      case 'photo':
-        // Wrap photo in a View with overflow:hidden to clip to slot boundaries
-        const { style: photoStyle, hasAdjustments } = getPhotoStyleWithAdjustments(item.slot, item.image);
+    // ═══════════════════════════════════════════════════════════════════
+    // SLOT LAYERS: User's captured photos
+    // ═══════════════════════════════════════════════════════════════════
+    if (isSlot) {
+      const photo = capturedImages[layer.layer];
+      if (photo) {
         return (
-          <View key={`photo-${item.slot.layerId}`} style={getPhotoContainerStyle(item.slot)}>
-            <Image
-              source={{ uri: item.image.uri }}
-              style={photoStyle}
-              // Only use cover fit when no adjustments - otherwise we control sizing manually
-              resizeMode={hasAdjustments ? undefined : "cover"}
+          <View key={layer.layer} style={[style, { overflow: 'hidden' }]}>
+            <SlotImage 
+              photo={photo} 
+              slotWidth={layer.width * scaleX} 
+              slotHeight={layer.height * scaleY} 
             />
           </View>
         );
-      case 'theme':
-        return renderThemeLayer(item.layer);
-      case 'vector':
-        return renderVectorLayer(item.layer);
-      default:
-        return null;
+      }
+      // Empty slot placeholder
+      return <View key={layer.layer} style={[style, { backgroundColor: layer.fill || '#E5E5E5' }]} />;
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SHAPE LAYERS WITH HTML: Detect element type and render appropriately
+    // ═══════════════════════════════════════════════════════════════════
+    if (layer.type === 'shape' && layer.html) {
+      const elementType = detectSvgElementType(layer.html);
+      const scaledWidth = layer.width * scaleX;
+      const scaledHeight = layer.height * scaleY;
+      
+      // ─────────────────────────────────────────────────────────────────
+      // RECT ELEMENTS
+      // ─────────────────────────────────────────────────────────────────
+      if (elementType === 'rect') {
+        const attrs = parseRectAttributes(layer.html);
+        if (attrs) {
+          // Determine fill color - apply theme if needed
+          let fillColor = attrs.fill || 'transparent';
+          const isTransparentFill = !fillColor || 
+            fillColor === 'transparent' || 
+            fillColor === 'none' ||
+            fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
+          
+          if (!isTransparentFill && isTheme && themeColor) {
+            fillColor = themeColor;
+          }
+          
+          // Determine stroke color - apply theme if needed
+          let strokeColor = attrs.stroke || 'transparent';
+          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+            strokeColor = themeColor;
+          }
+          
+          const scaledRx = attrs.rx * uniformScale;
+          const scaledRy = attrs.ry * uniformScale;
+          const scaledStrokeWidth = attrs.strokeWidth * uniformScale;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                <Rect
+                  x={scaledStrokeWidth / 2}
+                  y={scaledStrokeWidth / 2}
+                  width={scaledWidth - scaledStrokeWidth}
+                  height={scaledHeight - scaledStrokeWidth}
+                  rx={scaledRx}
+                  ry={scaledRy}
+                  fill={fillColor}
+                  stroke={strokeColor}
+                  strokeWidth={scaledStrokeWidth}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // ELLIPSE ELEMENTS
+      // ─────────────────────────────────────────────────────────────────
+      if (elementType === 'ellipse') {
+        const attrs = parseEllipseAttributes(layer.html);
+        if (attrs) {
+          let fillColor = attrs.fill || 'transparent';
+          const isTransparentFill = !fillColor || 
+            fillColor === 'transparent' || 
+            fillColor === 'none' ||
+            fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
+          
+          if (!isTransparentFill && isTheme && themeColor) {
+            fillColor = themeColor;
+          }
+          
+          let strokeColor = attrs.stroke || 'transparent';
+          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+            strokeColor = themeColor;
+          }
+          
+          const scaledCx = attrs.cx * scaleX;
+          const scaledCy = attrs.cy * scaleY;
+          const scaledRx = attrs.rx * scaleX;
+          const scaledRy = attrs.ry * scaleY;
+          const scaledStrokeWidth = attrs.strokeWidth * uniformScale;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                <Ellipse
+                  cx={scaledCx}
+                  cy={scaledCy}
+                  rx={scaledRx}
+                  ry={scaledRy}
+                  fill={fillColor}
+                  stroke={strokeColor}
+                  strokeWidth={scaledStrokeWidth}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // CIRCLE ELEMENTS
+      // ─────────────────────────────────────────────────────────────────
+      if (elementType === 'circle') {
+        const attrs = parseCircleAttributes(layer.html);
+        if (attrs) {
+          let fillColor = attrs.fill || 'transparent';
+          const isTransparentFill = !fillColor || 
+            fillColor === 'transparent' || 
+            fillColor === 'none' ||
+            fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
+          
+          if (!isTransparentFill && isTheme && themeColor) {
+            fillColor = themeColor;
+          }
+          
+          let strokeColor = attrs.stroke || 'transparent';
+          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+            strokeColor = themeColor;
+          }
+          
+          const scaledCx = attrs.cx * scaleX;
+          const scaledCy = attrs.cy * scaleY;
+          const scaledR = attrs.r * uniformScale;
+          const scaledStrokeWidth = attrs.strokeWidth * uniformScale;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                <Circle
+                  cx={scaledCx}
+                  cy={scaledCy}
+                  r={scaledR}
+                  fill={fillColor}
+                  stroke={strokeColor}
+                  strokeWidth={scaledStrokeWidth}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // PATH ELEMENTS
+      // ─────────────────────────────────────────────────────────────────
+      if (elementType === 'path') {
+        const attrs = parsePathAttributes(layer.html);
+        if (attrs) {
+          let fillColor = attrs.fill;
+          const hasStroke = attrs.stroke && attrs.stroke !== 'none' && !isTransparentColor(attrs.stroke);
+          
+          if (!fillColor || fillColor === 'none') {
+            if (hasStroke && attrs.strokeWidth > 0) {
+              fillColor = 'none';
+            } else if (isTheme && themeColor) {
+              fillColor = themeColor;
+            } else if (isTheme) {
+              fillColor = layer.color || '#000000';
+            } else {
+              fillColor = layer.color || '#000000';
+            }
+          } else if (!isTransparentColor(fillColor) && isTheme && themeColor) {
+            fillColor = themeColor;
+          }
+          
+          let strokeColor = attrs.stroke || 'none';
+          if (strokeColor !== 'none' && isTheme && themeColor) {
+            strokeColor = themeColor;
+          }
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg
+                width="100%"
+                height="100%"
+                viewBox={attrs.viewBox}
+                preserveAspectRatio="xMidYMid meet"
+              >
+                <Path
+                  d={attrs.d}
+                  fill={fillColor}
+                  stroke={strokeColor}
+                  strokeWidth={attrs.strokeWidth}
+                  strokeLinecap={attrs.strokeLinecap as any || undefined}
+                  strokeLinejoin={attrs.strokeLinejoin as any || undefined}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // FALLBACK: Use SvgXml for unknown/complex SVG elements
+      // ─────────────────────────────────────────────────────────────────
+      let svgHtml = cleanSvgHtml(layer.html);
+      if (isTheme && themeColor) {
+        svgHtml = applyThemeToSvgHtml(svgHtml, themeColor);
+      }
+      
+      return (
+        <View key={layer.layer} style={style}>
+          <SvgXml xml={svgHtml} width="100%" height="100%" />
+        </View>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // VECTOR LAYERS: Parse path from HTML and render (legacy support)
+    // ═══════════════════════════════════════════════════════════════════
+    if (layer.type === 'vector' && layer.html) {
+      const attrs = parsePathAttributes(layer.html);
+      if (attrs) {
+        let fillColor = attrs.fill;
+        
+        if (!fillColor || fillColor === 'none') {
+          if (isTheme && themeColor) {
+            fillColor = themeColor;
+          } else if (isTheme) {
+            fillColor = layer.color || '#000000';
+          } else {
+            fillColor = layer.color || '#000000';
+          }
+        } else if (!isTransparentColor(fillColor) && isTheme && themeColor) {
+          fillColor = themeColor;
+        }
+        
+        let strokeColor = attrs.stroke || 'none';
+        if (strokeColor !== 'none' && isTheme && themeColor) {
+          strokeColor = themeColor;
+        }
+        
+        return (
+          <View key={layer.layer} style={style}>
+            <Svg
+              width="100%"
+              height="100%"
+              viewBox={attrs.viewBox}
+              preserveAspectRatio="xMidYMid meet"
+            >
+              <Path
+                d={attrs.d}
+                fill={fillColor}
+                stroke={strokeColor}
+                strokeWidth={attrs.strokeWidth}
+                strokeLinecap={attrs.strokeLinecap as any || undefined}
+                strokeLinejoin={attrs.strokeLinejoin as any || undefined}
+              />
+            </Svg>
+          </View>
+        );
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // THEME TEXT LAYERS: Text with theme-affected color
+    // Only render when fonts are loaded for pixel-perfect rendering
+    // ═══════════════════════════════════════════════════════════════════
+    if (isTheme && (layer.type === 'text' || layer.text)) {
+      // Don't render text until fonts are loaded
+      if (!fontsLoaded) {
+        return <View key={layer.layer} style={style} />;
+      }
+      
+      const fontSize = layer.font_size ? parseInt(String(layer.font_size)) * uniformScale : 16 * uniformScale;
+      const originalColor = layer.color || '#000000';
+      const textColor = themeColor ? themeColor : originalColor;
+      
+      const textStyle: TextStyle = {
+        color: textColor,
+        fontSize,
+        fontWeight: (layer.font_weight as TextStyle['fontWeight']) || 'normal',
+        fontFamily: layer.font_family || undefined,
+        textAlign: (layer.horizontal_align as TextStyle['textAlign']) || 'center',
+        letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
+      };
+      
+      return (
+        <View key={layer.layer} style={[style, { justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={textStyle}>{layer.text}</Text>
+        </View>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // THEME SHAPE LAYERS (without HTML): Simple fill shapes
+    // ═══════════════════════════════════════════════════════════════════
+    if (isTheme && layer.fill) {
+      const borderRadius = parseBorderRadius(layer.border_radius);
+      const fillColor = themeColor ? themeColor : layer.fill;
+      
+      return (
+        <View 
+          key={layer.layer} 
+          style={[style, { 
+            backgroundColor: fillColor,
+            borderRadius: borderRadius * uniformScale,
+          }]} 
+        />
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // IMAGE LAYERS: Render with SmartImage (handles PNG/JPG/SVG)
+    // ═══════════════════════════════════════════════════════════════════
+    if (layer.image_url) {
+      return <SmartImage key={layer.layer} uri={layer.image_url} style={style} />;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // TEXT LAYERS: Render text with font styling
+    // Only render when fonts are loaded for pixel-perfect rendering
+    // ═══════════════════════════════════════════════════════════════════
+    if (layer.text) {
+      // Don't render text until fonts are loaded
+      if (!fontsLoaded) {
+        return <View key={layer.layer} style={style} />;
+      }
+      
+      const fontSize = layer.font_size ? parseInt(String(layer.font_size)) * uniformScale : 16 * uniformScale;
+      const textStyle: TextStyle = {
+        color: layer.color || '#000000',
+        fontSize,
+        fontWeight: (layer.font_weight as TextStyle['fontWeight']) || 'normal',
+        fontFamily: layer.font_family || undefined,
+        textAlign: (layer.horizontal_align as TextStyle['textAlign']) || 'center',
+        letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
+      };
+      
+      return (
+        <View key={layer.layer} style={[style, { justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={textStyle}>{layer.text}</Text>
+        </View>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PLAIN SHAPE LAYERS: Simple colored rectangles
+    // ═══════════════════════════════════════════════════════════════════
+    if (layer.fill) {
+      const borderRadius = parseBorderRadius(layer.border_radius);
+      return (
+        <View 
+          key={layer.layer} 
+          style={[style, { 
+            backgroundColor: layer.fill,
+            borderRadius: borderRadius * uniformScale,
+          }]} 
+        />
+      );
+    }
+
+    // Fallback: transparent view
+    return <View key={layer.layer} style={style} />;
   };
 
   return (
-    <View style={containerStyle}>
-      {/* Layer 1: Frame Overlay PNG (card backgrounds, blur shadows - always at bottom) */}
-      {template.frameOverlayUrl && (
-        <Image
-          source={{ uri: template.frameOverlayUrl }}
-          style={frameOverlayStyle}
-          resizeMode="contain"
-        />
-      )}
-
-      {/* All other layers rendered in zIndex order */}
-      {/* Photos, theme layers, and vector layers are sorted by zIndex and rendered in order */}
-      {/* This ensures correct stacking: lower zIndex renders first (behind), higher zIndex renders last (in front) */}
-      {sortedLayers.map(renderLayer)}
-
-      {/* User Overlays (text, logo, date) - always on top */}
+    <View style={{ 
+      width: canvasWidth, 
+      height: canvasHeight, 
+      backgroundColor, 
+      position: 'relative', 
+      overflow: 'hidden' 
+    }}>
+      {layers.map(renderLayer)}
       {children}
     </View>
   );

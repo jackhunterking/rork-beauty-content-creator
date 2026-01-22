@@ -1,9 +1,12 @@
 /**
  * Remove Background View
  * UI for background removal using BiRefNet V2.
+ * 
+ * OPTIMIZED: Image preparation happens when user clicks Remove,
+ * NOT when the sheet opens. This makes sheet opening instant.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -11,32 +14,97 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 import Colors from '@/constants/colors';
 import { removeBackground, AIProcessingProgress } from '@/services/aiService';
+import { uploadTempImage } from '@/services/tempUploadService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Max dimension for AI processing
+const MAX_AI_DIMENSION = 1024;
 
 interface RemoveBackgroundViewProps {
   imageUri: string;
   imageSize: { width: number; height: number };
+  /** Whether this image has already had background removed */
+  isAlreadyEnhanced?: boolean;
   onBack: () => void;
   onStartProcessing: () => void;
   onProgress: (progress: AIProcessingProgress) => void;
   getAbortSignal: () => AbortSignal | undefined;
 }
 
+/**
+ * Prepare image for AI processing (resize + upload)
+ */
+async function prepareImageForAI(
+  imageUri: string,
+  imageSize: { width: number; height: number },
+  onProgress: (progress: AIProcessingProgress) => void
+): Promise<string> {
+  onProgress({
+    status: 'submitting',
+    message: 'Preparing image...',
+    progress: 5,
+  });
+
+  let localUri = imageUri;
+  const isRemote = imageUri.startsWith('http://') || imageUri.startsWith('https://');
+
+  if (isRemote) {
+    const localPath = `${FileSystem.cacheDirectory}ai_prep_${Date.now()}.webp`;
+    const downloadResult = await FileSystem.downloadAsync(imageUri, localPath);
+    localUri = downloadResult.uri;
+  }
+
+  onProgress({
+    status: 'submitting',
+    message: 'Optimizing for AI...',
+    progress: 15,
+  });
+
+  const maxDim = Math.max(imageSize.width, imageSize.height);
+  if (maxDim > MAX_AI_DIMENSION) {
+    const resizeRatio = MAX_AI_DIMENSION / maxDim;
+    const newWidth = Math.round(imageSize.width * resizeRatio);
+    const newHeight = Math.round(imageSize.height * resizeRatio);
+
+    const resized = await ImageManipulator.manipulateAsync(
+      localUri,
+      [{ resize: { width: newWidth, height: newHeight } }],
+      { compress: 0.9, format: ImageManipulator.SaveFormat.WEBP }
+    );
+    localUri = resized.uri;
+  }
+
+  onProgress({
+    status: 'submitting',
+    message: 'Uploading to cloud...',
+    progress: 25,
+  });
+
+  const cloudUrl = await uploadTempImage(localUri, `ai-remove-bg-${Date.now()}`);
+  return cloudUrl;
+}
+
 export default function RemoveBackgroundView({
   imageUri,
   imageSize,
+  isAlreadyEnhanced = false,
   onBack,
   onStartProcessing,
   onProgress,
   getAbortSignal,
 }: RemoveBackgroundViewProps) {
+  const [isPreparing, setIsPreparing] = useState(false);
+  
   const maxPreviewWidth = SCREEN_WIDTH - 48;
   const maxPreviewHeight = SCREEN_HEIGHT * 0.45;
   const aspectRatio = imageSize.width / imageSize.height;
@@ -50,9 +118,25 @@ export default function RemoveBackgroundView({
   }
 
   const handleRemove = useCallback(async () => {
-    onStartProcessing();
-    await removeBackground(imageUri, onProgress, getAbortSignal());
-  }, [imageUri, onStartProcessing, onProgress, getAbortSignal]);
+    if (isAlreadyEnhanced || isPreparing) return;
+    
+    try {
+      setIsPreparing(true);
+      const cloudUrl = await prepareImageForAI(imageUri, imageSize, onProgress);
+      setIsPreparing(false);
+      onStartProcessing();
+      await removeBackground(cloudUrl, onProgress, getAbortSignal());
+    } catch (error) {
+      setIsPreparing(false);
+      console.error('[RemoveBackgroundView] Failed to prepare image:', error);
+      onProgress({
+        status: 'failed',
+        message: 'Failed to prepare image',
+        progress: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }, [imageUri, imageSize, isAlreadyEnhanced, isPreparing, onStartProcessing, onProgress, getAbortSignal]);
 
   return (
     <View style={styles.container}>
@@ -70,28 +154,59 @@ export default function RemoveBackgroundView({
         </View>
 
         <View style={styles.previewContainer}>
-          <View style={[styles.previewWrapper, { width: previewWidth, height: previewHeight }]}>
+          <View style={[
+            styles.previewWrapper, 
+            { width: previewWidth, height: previewHeight },
+            isAlreadyEnhanced && styles.previewWrapperEnhanced
+          ]}>
             <ExpoImage
               source={{ uri: imageUri }}
               style={styles.preview}
               contentFit="cover"
               transition={200}
             />
+            {isAlreadyEnhanced && (
+              <View style={styles.enhancedBadge}>
+                <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                <Text style={styles.enhancedBadgeText}>Processed</Text>
+              </View>
+            )}
           </View>
         </View>
 
         <View style={styles.infoContainer}>
           <Ionicons name="information-circle-outline" size={18} color={Colors.light.textTertiary} />
           <Text style={styles.infoText}>
-            The result will have a transparent background (PNG)
+            {isAlreadyEnhanced
+              ? 'Background has already been removed. Recapture or upload a new photo to process again.'
+              : 'The result will have a transparent background (PNG)'}
           </Text>
         </View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: 16 }]}>
-        <TouchableOpacity style={styles.button} onPress={handleRemove} activeOpacity={0.8}>
-          <Ionicons name="cut-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.buttonText}>Remove Background</Text>
+        <TouchableOpacity 
+          style={[styles.button, (isAlreadyEnhanced || isPreparing) && styles.buttonDisabled]} 
+          onPress={handleRemove} 
+          activeOpacity={(isAlreadyEnhanced || isPreparing) ? 1 : 0.8}
+          disabled={isAlreadyEnhanced || isPreparing}
+        >
+          {isPreparing ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons 
+              name={isAlreadyEnhanced ? "checkmark-circle" : "cut-outline"} 
+              size={20} 
+              color={isAlreadyEnhanced ? Colors.light.textSecondary : "#FFFFFF"} 
+            />
+          )}
+          <Text style={[styles.buttonText, isAlreadyEnhanced && styles.buttonTextDisabled]}>
+            {isPreparing 
+              ? 'Preparing...' 
+              : isAlreadyEnhanced 
+                ? 'Already Processed' 
+                : 'Remove Background'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -142,9 +257,29 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.light.accent,
   },
+  previewWrapperEnhanced: {
+    borderColor: '#34C759', // Green to indicate success
+  },
   preview: {
     width: '100%',
     height: '100%',
+  },
+  enhancedBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#34C759',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  enhancedBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 4,
   },
   infoContainer: {
     flexDirection: 'row',
@@ -177,10 +312,16 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
   },
+  buttonDisabled: {
+    backgroundColor: Colors.light.surfaceSecondary,
+  },
   buttonText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
     marginLeft: 8,
+  },
+  buttonTextDisabled: {
+    color: Colors.light.textSecondary,
   },
 });

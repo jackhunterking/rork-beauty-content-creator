@@ -59,6 +59,9 @@ export function LogoOverlayContent({
     [overlay.originalWidth, overlay.originalHeight, baseSize]
   );
 
+  // Get opacity value (default to 1 if not set)
+  const opacity = overlay.opacity ?? 1;
+
   const handleLoad = () => {
     setIsLoading(false);
     setHasError(false);
@@ -70,7 +73,7 @@ export function LogoOverlayContent({
   };
 
   return (
-    <View style={[styles.container, dimensions]}>
+    <View style={[styles.container, dimensions, { opacity }]}>
       {isLoading && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="small" color={Colors.light.accent} />

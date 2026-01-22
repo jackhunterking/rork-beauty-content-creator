@@ -27,6 +27,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import ViewShot from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
 import { Home, Save, Download, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -39,6 +40,7 @@ import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCapturedSlotCount } from '@/utils/slotParser';
 import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
+import { uploadTempImage } from '@/services/tempUploadService';
 import {
   CropToolbar,
   EditorMainToolbar,
@@ -47,11 +49,10 @@ import {
   LogoPanel,
   TextEditToolbar,
 } from '@/components/editor-v2';
-import { BackgroundPresetPicker } from '@/components/editor-v2/BackgroundPresetPicker';
 import { enhanceImageWithPolling, AIProcessingProgress, AIProcessingStatus } from '@/services/aiService';
-import { AIStudioSheet, AIProcessingOverlay, AISuccessOverlay, AIErrorView } from '@/components/ai';
+import { AIStudioSheet, AIProcessingOverlay, AISuccessOverlay, AIErrorView, AIAlreadyAppliedToast } from '@/components/ai';
 import { BottomSheetModal, BottomSheetModalProvider } from '@gorhom/bottom-sheet';
-import type { AIFeatureKey, BackgroundPreset } from '@/types';
+import type { AIFeatureKey } from '@/types';
 import {
   SelectionState,
   DEFAULT_SELECTION,
@@ -99,12 +100,7 @@ export default function EditorV2Screen() {
 
   // Bottom sheet refs
   const aiStudioRef = useRef<BottomSheetModal>(null);
-  const backgroundPickerRef = useRef<BottomSheet>(null);
   const projectActionsRef = useRef<BottomSheet>(null);
-  
-  // Ref for AI transformed image - updated synchronously to avoid state timing issues
-  // Ref for synchronous access to transformed images (avoids React state timing issues)
-  const aiTransformedImagesRef = useRef<Record<string, string>>({});
   
   // Canva-style panel refs
   const textStylePanelRef = useRef<TextStylePanelRef>(null);
@@ -128,18 +124,17 @@ export default function EditorV2Screen() {
   const [aiProcessingType, setAIProcessingType] = useState<AIFeatureKey | null>(null);
   const [aiProgress, setAIProgress] = useState<AIProcessingProgress | null>(null);
   const [aiSuccessResult, setAISuccessResult] = useState<{ originalUri: string; enhancedUri: string } | null>(null);
+  
+  // Toast state for "already applied" AI feature feedback
+  const [aiAppliedToastVisible, setAIAppliedToastVisible] = useState(false);
+  const [aiAppliedToastFeature, setAIAppliedToastFeature] = useState<AIFeatureKey>('auto_quality');
   const [aiError, setAIError] = useState<string | null>(null);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
-  const [selectedBackgroundPresetId, setSelectedBackgroundPresetId] = useState<string | null>(null);
   
   // AI Studio sheet initial view - tracks which feature to open directly
   const [aiSheetInitialView, setAiSheetInitialView] = useState<AIFeatureKey | 'home'>('home');
   // Navigation trigger - increments each time a feature is clicked to force navigation
   const [aiNavTrigger, setAiNavTrigger] = useState(0);
-  
-  // Transformed images for AI - maps slot ID to processed image URI
-  // This captures current view state (zoom/pan/rotate) for ALL slots with adjustments
-  const [aiTransformedImages, setAiTransformedImages] = useState<Record<string, string>>({});
   
   // Background layer customization state - initialized from draft (LEGACY)
   const [backgroundOverrides, setBackgroundOverrides] = useState<Record<string, string>>(
@@ -153,9 +148,9 @@ export default function EditorV2Screen() {
   );
   
   // Theme color state (for theme layers - layers prefixed with 'theme-')
-  // Initialized from template's default theme color
+  // Initialized from draft's saved theme color (if loading a draft) OR template's default
   const [selectedThemeColor, setSelectedThemeColor] = useState<string | undefined>(
-    template?.defaultThemeColor
+    currentProject.themeColor || template?.defaultThemeColor
   );
   
   
@@ -293,6 +288,14 @@ export default function EditorV2Screen() {
     getCapturedSlotCount(slots, capturedImages),
     [slots, capturedImages]
   );
+  
+  // Get AI enhancements already applied to the currently selected slot's image
+  // Used to disable AI feature buttons and show "already applied" feedback
+  const selectedSlotAIEnhancements = useMemo(() => {
+    if (selection.type !== 'slot' || !selection.id) return [];
+    const image = capturedImages[selection.id];
+    return image?.aiEnhancementsApplied ?? [];
+  }, [selection.type, selection.id, capturedImages]);
 
   // Track the last loaded draft ID to prevent duplicate loads
   const lastLoadedDraftIdRef = useRef<string | null>(null);
@@ -335,13 +338,26 @@ export default function EditorV2Screen() {
     }
   }, [currentProject.draftId, currentProject.backgroundOverrides]);
 
-  // Reset colors to template defaults when template changes
+  // Sync theme color when draft is loaded (similar to backgroundOverrides sync)
+  // This ensures saved theme color from draft overrides the template default
+  useEffect(() => {
+    if (currentProject.draftId && currentProject.themeColor) {
+      setSelectedThemeColor(currentProject.themeColor);
+    }
+  }, [currentProject.draftId, currentProject.themeColor]);
+
+  // Reset colors to template defaults when template changes (for NEW projects only)
+  // Skip reset if we're loading an existing draft with saved customizations
   useEffect(() => {
     if (template) {
       setSelectedBackgroundColor(template.defaultBackgroundColor || '#FFFFFF');
-      setSelectedThemeColor(template.defaultThemeColor);
+      // Only reset to template default if no saved theme color exists
+      // This preserves user customizations when loading a draft
+      if (!currentProject.themeColor) {
+        setSelectedThemeColor(template.defaultThemeColor);
+      }
     }
-  }, [template?.id]);
+  }, [template?.id, currentProject.themeColor]);
 
   // Load overlays when loading a draft (FIX: was missing in EditorV2)
   useEffect(() => {
@@ -660,19 +676,6 @@ export default function EditorV2Screen() {
     setAIProgress(null);
   }, []);
 
-  // Handle background preset selection
-  const handleBackgroundPresetSelect = useCallback((preset: BackgroundPreset) => {
-    setSelectedBackgroundPresetId(preset.id);
-    backgroundPickerRef.current?.close();
-    // Trigger the enhancement with the selected preset
-    handleAIEnhancement('background_replace', preset.id);
-  }, [handleAIEnhancement]);
-
-  // Handle opening background picker
-  const handleOpenBackgroundPicker = useCallback(() => {
-    backgroundPickerRef.current?.snapToIndex(0);
-  }, []);
-
   // Handle background layer color change - client-side only, no API needed
   // LayeredCanvas re-renders automatically when backgroundOverrides state changes
   const handleBackgroundLayerColorChange = useCallback((layerId: string, color: string) => {
@@ -745,6 +748,7 @@ export default function EditorV2Screen() {
       // Open AI Studio sheet - shows image carousel to select image
       // The sheet handles the "no images" case with the carousel's empty state
       setAiSheetInitialView('home');
+      setAiNavTrigger(prev => prev + 1); // Reset view to home when opening from toolbar
       aiStudioRef.current?.present();
     }
   }, [activeMainTool, slots, capturedImages, router]);
@@ -817,16 +821,8 @@ export default function EditorV2Screen() {
   // Handle theme color change - CLIENT-SIDE ONLY (no API calls)
   // Theme layers (prefixed with 'theme-') are rendered as colored shapes by LayeredCanvas
   const handleThemeColorChange = useCallback((color: string) => {
-    const hasThemeLayers = template?.themeLayers && template.themeLayers.length > 0;
-    console.log('[EditorV2] Theme color change:', { color, hasThemeLayers, themeLayerCount: template?.themeLayers?.length || 0 });
     setSelectedThemeColor(color);
-    
-    if (hasThemeLayers) {
-      console.log('[EditorV2] ✓ Theme color applied to', template?.themeLayers?.length, 'theme layers');
-    } else {
-      console.log('[EditorV2] ⚠️ Template has no theme layers');
-    }
-  }, [template?.themeLayers]);
+  }, []);
 
   // Handle text edit action - enters editing mode with keyboard
   const handleTextEditAction = useCallback(() => {
@@ -902,12 +898,12 @@ export default function EditorV2Screen() {
 
   // Handle logo opacity action from context bar  
   const handleLogoOpacityAction = useCallback(() => {
-    logoPanelRef.current?.openEditor();
+    logoPanelRef.current?.openOpacityEditor();
   }, []);
 
   // Handle logo size action from context bar
   const handleLogoSizeAction = useCallback(() => {
-    logoPanelRef.current?.openEditor();
+    logoPanelRef.current?.openSizeEditor();
   }, []);
 
   // Handle logo selected from LogoPanel
@@ -925,9 +921,9 @@ export default function EditorV2Screen() {
     setOverlays(prev => [...prev, newOverlay]);
     setSelectedOverlayId(newOverlay.id);
     
-    // Open logo editor panel for the newly added logo
+    // Open logo editor panel for the newly added logo (default to size editor)
     setTimeout(() => {
-      logoPanelRef.current?.openEditor();
+      logoPanelRef.current?.openSizeEditor();
     }, 100);
     
     console.log('[EditorV2] Added logo overlay from panel:', newOverlay.id);
@@ -1241,6 +1237,17 @@ export default function EditorV2Screen() {
     handleUpdateOverlayTransform(selectedOverlayId, updatedTransform);
   }, [selectedOverlayId, selectedOverlay, handleUpdateOverlayTransform]);
 
+  // Handle opacity change from LogoPanel
+  const handleLogoOpacityChange = useCallback((newOpacity: number) => {
+    if (!selectedOverlayId || !selectedOverlay || !isLogoOverlay(selectedOverlay)) return;
+    
+    setOverlays(prev => prev.map(overlay => 
+      overlay.id === selectedOverlayId && isLogoOverlay(overlay)
+        ? { ...overlay, opacity: newOpacity, updatedAt: new Date().toISOString() }
+        : overlay
+    ));
+  }, [selectedOverlayId, selectedOverlay]);
+
   // Canva-style contextual toolbar actions
   const handlePhotoReplace = useCallback(() => {
     if (selection.id) {
@@ -1366,88 +1373,34 @@ export default function EditorV2Screen() {
     setPendingRotation(rotation);
   }, []);
 
-  // Helper to process a single slot's image with adjustments
-  const processSlotImage = useCallback(async (
-    slotId: string,
-    image: MediaAsset,
-    adjustments: MediaAsset['adjustments'],
-    slot: Slot
-  ): Promise<string> => {
-    const hasNonDefaultAdjustments = adjustments && (
-      adjustments.translateX !== 0 ||
-      adjustments.translateY !== 0 ||
-      adjustments.scale !== 1.0 ||
-      (adjustments.rotation !== undefined && adjustments.rotation !== 0)
-    );
-    
-    if (!hasNonDefaultAdjustments || !adjustments) {
-      return image.uri;
-    }
-    
-    try {
-      // Check if the image is a remote URL (Supabase storage)
-      let localImageUri = image.uri;
-      const isRemoteUrl = image.uri.startsWith('http://') || image.uri.startsWith('https://');
-      
-      if (isRemoteUrl) {
-        const localPath = `${FileSystem.cacheDirectory}ai_temp_${slotId}_${Date.now()}.jpg`;
-        const downloadResult = await FileSystem.downloadAsync(image.uri, localPath);
-        localImageUri = downloadResult.uri;
-        trackTempFile(localImageUri);
-      }
-      
-      const processed = await applyAdjustmentsAndCrop(
-        localImageUri,
-        image.width,
-        image.height,
-        slot.width,
-        slot.height,
-        adjustments
-      );
-      return processed.uri;
-    } catch (error) {
-      console.warn(`[EditorV2] Failed to process slot ${slotId}:`, error);
-      return image.uri;
-    }
-  }, []);
-
   // Handle AI feature selection from inline menu (context bar - photo already selected)
-  const handleAIFeatureSelect = useCallback(async (featureKey: AIFeatureKey) => {
+  // OPTIMIZED: Opens sheet instantly - image preparation is deferred to enhance action
+  const handleAIFeatureSelect = useCallback((featureKey: AIFeatureKey) => {
     if (selection.type !== 'slot' || !selection.id) {
       return;
     }
     
-    // Process ALL slots with images (not just the selected one)
-    // This ensures the carousel shows the correct cropped/zoomed state for all images
-    const transformedImages: Record<string, string> = {};
-    
-    for (const slot of slots) {
-      const image = capturedImages[slot.layerId];
-      if (!image?.uri) continue;
-      
-      // For the currently selected slot, use pending adjustments if available
-      const adjustments = slot.layerId === selection.id 
-        ? (pendingManipulationAdjustments || image.adjustments)
-        : image.adjustments;
-      
-      const processedUri = await processSlotImage(slot.layerId, image, adjustments, slot);
-      transformedImages[slot.layerId] = processedUri;
-    }
-    
-    // Update ref SYNCHRONOUSLY - this is read by AIStudioSheet immediately
-    aiTransformedImagesRef.current = transformedImages;
-    
-    // Also update state for React re-renders
-    setAiTransformedImages(transformedImages);
+    // Just set the feature view and open immediately - NO image processing here
+    // Images are prepared lazily when user actually clicks "Enhance"
     setAiSheetInitialView(featureKey);
     setAiNavTrigger(prev => prev + 1);
-    
-    // Present the sheet
     aiStudioRef.current?.present();
-  }, [selection, capturedImages, pendingManipulationAdjustments, slots, processSlotImage]);
+  }, [selection]);
+  
+  // Handle tap on already-applied AI feature - shows toast explaining why re-applying is disabled
+  const handleAlreadyAppliedTap = useCallback((featureKey: AIFeatureKey) => {
+    setAIAppliedToastFeature(featureKey);
+    setAIAppliedToastVisible(true);
+  }, []);
+  
+  // Dismiss the already-applied toast
+  const handleDismissAppliedToast = useCallback(() => {
+    setAIAppliedToastVisible(false);
+  }, []);
 
   // Handle AI feature selection from main toolbar (may not have photo selected)
-  const handleMainToolbarAISelect = useCallback(async (featureKey: AIFeatureKey) => {
+  // OPTIMIZED: Opens sheet instantly - image preparation is deferred to enhance action
+  const handleMainToolbarAISelect = useCallback((featureKey: AIFeatureKey) => {
     // Check if a photo slot is selected
     if (selection.type !== 'slot' || !selection.id) {
       // Need to select a photo first - find first slot with an image
@@ -1460,22 +1413,12 @@ export default function EditorV2Screen() {
           isTransforming: false,
         });
         
-        // Process ALL slots with images
-        const transformedImages: Record<string, string> = {};
-        for (const slot of slots) {
-          const image = capturedImages[slot.layerId];
-          if (!image?.uri) continue;
-          const processedUri = await processSlotImage(slot.layerId, image, image.adjustments, slot);
-          transformedImages[slot.layerId] = processedUri;
-        }
-        
-        aiTransformedImagesRef.current = transformedImages;
-        setAiTransformedImages(transformedImages);
+        // Set feature view and open after brief delay for selection to update
         setAiSheetInitialView(featureKey);
         setAiNavTrigger(prev => prev + 1);
         setTimeout(() => {
           aiStudioRef.current?.present();
-        }, 100);
+        }, 50);
       } else {
         // No photos yet - prompt to add one
         Alert.alert(
@@ -1487,33 +1430,11 @@ export default function EditorV2Screen() {
       return;
     }
     
-    // Photo already selected - process ALL slots and open AI Studio
-    const transformedImages: Record<string, string> = {};
-    
-    for (const slot of slots) {
-      const image = capturedImages[slot.layerId];
-      if (!image?.uri) continue;
-      
-      // For the currently selected slot, use pending adjustments if available
-      const adjustments = slot.layerId === selection.id 
-        ? (pendingManipulationAdjustments || image.adjustments)
-        : image.adjustments;
-      
-      const processedUri = await processSlotImage(slot.layerId, image, adjustments, slot);
-      transformedImages[slot.layerId] = processedUri;
-    }
-    
-    // Update ref SYNCHRONOUSLY
-    aiTransformedImagesRef.current = transformedImages;
-    
-    // Also update state for React re-renders
-    setAiTransformedImages(transformedImages);
+    // Photo already selected - just open the sheet immediately
     setAiSheetInitialView(featureKey);
     setAiNavTrigger(prev => prev + 1);
-    
-    // Present the sheet
     aiStudioRef.current?.present();
-  }, [selection, slots, capturedImages, pendingManipulationAdjustments, processSlotImage]);
+  }, [selection, slots, capturedImages]);
 
   const handlePhotoDelete = useCallback(() => {
     if (selection.id) {
@@ -1552,21 +1473,29 @@ export default function EditorV2Screen() {
     }
     
     try {
+      // Track what was selected so we know if we need to wait for re-render
+      const wasOverlaySelected = selectedOverlayId;
+      const wasSlotSelected = selection.id !== null;
+      const hadAnySelection = wasOverlaySelected || wasSlotSelected;
+      
       // Deselect any selected overlay before capture to hide selection UI
-      const wasSelected = selectedOverlayId;
-      if (wasSelected) {
+      if (wasOverlaySelected) {
         setSelectedOverlayId(null);
       }
       
-      console.log('[EditorV2] Preparing to capture canvas with overlays...');
+      // Deselect any selected slot before capture to hide manipulation grid UI
+      if (wasSlotSelected) {
+        setSelection(DEFAULT_SELECTION);
+        setPendingManipulationAdjustments(null);
+      }
       
-      // Brief wait for React to re-render without selection UI (if overlay was selected)
-      // NOTE: We removed the 3-second image load wait - if the preview is visible on screen,
-      // ViewShot can capture it. The previous wait was causing 3+ second delays due to
-      // unreliable ref state tracking.
-      if (wasSelected) {
-        // Only wait if we deselected something - need UI to update
-        await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[EditorV2] Preparing to capture canvas with overlays...', { wasOverlaySelected, wasSlotSelected });
+      
+      // Brief wait for React to re-render without selection UI
+      // This ensures the selection grid and manipulation overlays are hidden
+      if (hadAnySelection) {
+        // Wait for UI to update after clearing selections
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
       
       console.log('[EditorV2] Capturing canvas now...');
@@ -1596,7 +1525,7 @@ export default function EditorV2Screen() {
       console.error('[EditorV2] Failed to capture canvas:', error);
       return null;
     }
-  }, [capturedCount, selectedOverlayId]);
+  }, [capturedCount, selectedOverlayId, selection.id]);
 
   // Handle save draft action
   const handleSaveDraft = useCallback(async () => {
@@ -1677,9 +1606,19 @@ export default function EditorV2Screen() {
         }
       }
 
-      // STEP 2: Build adjustments map from capturedImages
+      // STEP 2: Build adjustments and backgroundInfo maps from capturedImages
       // Store adjustments separately since we can't bake them into remote images
       const capturedImageAdjustments: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> = {};
+      const capturedImageBackgroundInfo: Record<string, {
+        type: 'solid' | 'gradient' | 'transparent';
+        solidColor?: string;
+        gradient?: {
+          type: 'linear';
+          colors: [string, string];
+          direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+        };
+      }> = {};
+      
       for (const [slotId, media] of Object.entries(capturedImages)) {
         if (media?.adjustments) {
           capturedImageAdjustments[slotId] = {
@@ -1689,9 +1628,18 @@ export default function EditorV2Screen() {
             rotation: media.adjustments.rotation || 0,
           };
         }
+        // Also extract backgroundInfo for transparent PNGs
+        if (media?.backgroundInfo) {
+          capturedImageBackgroundInfo[slotId] = media.backgroundInfo;
+        }
       }
       
       console.log('[EditorV2] Saving adjustments:', capturedImageAdjustments);
+      console.log('[EditorV2] Saving backgroundInfo:', capturedImageBackgroundInfo);
+
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleSaveDraft',message:'Saving draft with backgroundInfo',data:{slotIds:Object.keys(capturedImageBackgroundInfo),backgroundInfoCount:Object.keys(capturedImageBackgroundInfo).length,sampleBgInfo:Object.values(capturedImageBackgroundInfo)[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'save-bg-info'})}).catch(()=>{});
+      // #endregion
 
       // STEP 3: Save the draft to get/confirm the draft ID
       // NOTE: renderedPreviewUrl is null since we use client-side rendering now
@@ -1705,6 +1653,8 @@ export default function EditorV2Screen() {
         wasRenderedAsPremium: isPremium,
         backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : null,
         capturedImageAdjustments: Object.keys(capturedImageAdjustments).length > 0 ? capturedImageAdjustments : null,
+        themeColor: selectedThemeColor || null,
+        capturedImageBackgroundInfo: Object.keys(capturedImageBackgroundInfo).length > 0 ? capturedImageBackgroundInfo : null,
       });
 
       console.log('[EditorV2] Draft saved:', savedDraft?.id);
@@ -1766,7 +1716,7 @@ export default function EditorV2Screen() {
       console.error('[EditorV2] Failed to save draft:', error);
       Alert.alert('Error', 'Failed to save draft. Please try again.');
     }
-  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts, backgroundOverrides]);
+  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts, backgroundOverrides, selectedThemeColor]);
 
   // Handle back/close with unsaved changes check
   // Navigation destination depends on context:
@@ -2139,6 +2089,7 @@ export default function EditorV2Screen() {
                   initialTranslateX: manipulationSlotData.image.adjustments?.translateX || 0,
                   initialTranslateY: manipulationSlotData.image.adjustments?.translateY || 0,
                   rotation: manipulationSlotData.image.adjustments?.rotation || 0,
+                  backgroundInfo: manipulationSlotData.image.backgroundInfo,
                   onAdjustmentChange: handleManipulationAdjustmentChange,
                   onTapOutsideSlot: handleCanvasTap,
                 } : null}
@@ -2212,7 +2163,9 @@ export default function EditorV2Screen() {
             isPremium={isPremium}
             isAIProcessing={isAIProcessing}
             aiProcessingType={aiProcessingType}
+            aiEnhancementsApplied={selectedSlotAIEnhancements}
             onAIFeatureSelect={handleAIFeatureSelect}
+            onAlreadyAppliedTap={handleAlreadyAppliedTap}
             onRequestPremium={(feature) => requestPremiumAccess(feature)}
             onTextEdit={handleTextEditAction}
             onTextFont={handleInlineFontChange}
@@ -2236,11 +2189,6 @@ export default function EditorV2Screen() {
             activeTool={activeMainTool}
             onToolSelect={handleMainToolbarSelect}
             visible={true}
-            isPremium={isPremium}
-            isAIProcessing={isAIProcessing}
-            aiProcessingType={aiProcessingType}
-            onAIFeatureSelect={handleMainToolbarAISelect}
-            onRequestPremium={(feature) => requestPremiumAccess(feature)}
             expandedTool={expandedMainTool}
             onExpandedToolChange={setExpandedMainTool}
             backgroundColor={selectedBackgroundColor}
@@ -2267,7 +2215,7 @@ export default function EditorV2Screen() {
         visible={!!editingOverlayId}
       />
 
-      {/* AI Studio Sheet - New dedicated feature views with image carousel */}
+      {/* AI Studio Sheet - OPTIMIZED: Opens instantly, image prep deferred to enhance action */}
       <AIStudioSheet
         bottomSheetRef={aiStudioRef}
         slots={slots}
@@ -2276,53 +2224,57 @@ export default function EditorV2Screen() {
         isPremium={isPremium}
         initialView={aiSheetInitialView}
         navTrigger={aiNavTrigger}
-        transformedImages={Object.keys(aiTransformedImagesRef.current).length > 0 ? aiTransformedImagesRef.current : aiTransformedImages}
-        onApply={(slotId, enhancedUri) => {
+        onApply={(slotId, enhancedUri, featureKey, backgroundInfo) => {
+          // #region agent log
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:onApply',message:'AI onApply called',data:{slotId,featureKey,hasBackgroundInfo:!!backgroundInfo,backgroundInfoType:backgroundInfo?.type,solidColor:backgroundInfo?.solidColor},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+          
           // Update the captured image with the enhanced version
-          // Also clear any pending adjustments since AI creates a new processed image
+          // Reset adjustments to default - enhanced image replaces at full size
           const existingImage = capturedImages[slotId];
           if (existingImage) {
+            // Track which AI enhancements have been applied to prevent duplicate processing
+            const existingEnhancements = existingImage.aiEnhancementsApplied ?? [];
+            const updatedEnhancements = existingEnhancements.includes(featureKey)
+              ? existingEnhancements
+              : [...existingEnhancements, featureKey];
+            
+            // For background replacement, the enhancedUri IS the transparent PNG
+            // Cache it so color changes don't require re-running birefnet
+            const transparentPngUrl = (featureKey === 'background_replace' && backgroundInfo)
+              ? enhancedUri
+              : existingImage.transparentPngUrl;
+            
             setCapturedImage(slotId, {
               ...existingImage,
               uri: enhancedUri,
               adjustments: { scale: 1, translateX: 0, translateY: 0, rotation: 0 },
+              aiEnhancementsApplied: updatedEnhancements,
+              originalUri: existingImage.originalUri ?? existingImage.uri,
+              // Store background info for transparent PNG display
+              backgroundInfo: backgroundInfo,
+              // Cache transparent PNG URL for color changes
+              transparentPngUrl: transparentPngUrl,
             });
           }
           // Clear pending manipulation if we modified the currently selected slot
           if (selection.id === slotId) {
             setPendingManipulationAdjustments(null);
           }
-          // Reset AI sheet state - clear both ref and state
-          aiTransformedImagesRef.current = {};
-          setAiTransformedImages({});
           setAiSheetInitialView('home');
           aiStudioRef.current?.dismiss();
         }}
         onSkip={() => {
-          // Reset AI sheet state - clear both ref and state
-          aiTransformedImagesRef.current = {};
-          setAiTransformedImages({});
           setAiSheetInitialView('home');
           aiStudioRef.current?.dismiss();
         }}
         onAddImage={() => {
-          // Close the sheet and navigate to capture for the first empty slot
           aiStudioRef.current?.dismiss();
           const firstEmptySlot = slots.find(slot => !capturedImages[slot.layerId]?.uri);
           if (firstEmptySlot) {
             router.push(`/capture/${firstEmptySlot.layerId}`);
           }
         }}
-      />
-
-      {/* Background Preset Picker (AI Background Replace) */}
-      <BackgroundPresetPicker
-        bottomSheetRef={backgroundPickerRef}
-        isPremium={isPremium}
-        selectedPresetId={selectedBackgroundPresetId}
-        onSelectPreset={handleBackgroundPresetSelect}
-        onRequestPremium={(feature) => requestPremiumAccess(feature)}
-        onClose={() => backgroundPickerRef.current?.close()}
       />
 
       {/* Text Style Panel - compact panel for text/date overlays */}
@@ -2339,8 +2291,10 @@ export default function EditorV2Screen() {
         ref={logoPanelRef}
         selectedLogo={selectedOverlay && isLogoOverlay(selectedOverlay) ? selectedOverlay : null}
         currentScale={selectedOverlay?.transform.scale ?? 1}
+        currentOpacity={selectedOverlay && isLogoOverlay(selectedOverlay) ? (selectedOverlay as LogoOverlay).opacity ?? 1 : 1}
         onSelectLogo={handleLogoPanelSelect}
         onScaleChange={handleScaleSliderChange}
+        onOpacityChange={handleLogoOpacityChange}
         onDeleteLogo={handleDeleteSelectedOverlay}
         onClose={handleLogoPanelClose}
       />
@@ -2451,6 +2405,13 @@ export default function EditorV2Screen() {
           />
         </View>
       )}
+
+      {/* AI Already Applied Toast - shows when user taps disabled AI feature */}
+      <AIAlreadyAppliedToast
+        visible={aiAppliedToastVisible}
+        featureKey={aiAppliedToastFeature}
+        onDismiss={handleDismissAppliedToast}
+      />
       </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );

@@ -29,11 +29,6 @@ const FEATURES = [
     description: '2x AI upscaling & sharpening',
   },
   {
-    icon: 'cut-outline' as const,
-    title: 'Remove Background',
-    description: 'One-tap transparent backgrounds',
-  },
-  {
     icon: 'image-outline' as const,
     title: 'Replace Background',
     description: 'Professional studio backgrounds',

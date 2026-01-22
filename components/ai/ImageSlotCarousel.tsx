@@ -5,9 +5,9 @@
  * Shows all template slots with their captured images.
  * 
  * Features:
- * - Slidable between images that have content
- * - Empty slots are visible but grayed out and not slidable to
- * - "Add an image first" message when no images exist
+ * - Both filled and empty slots shown at same size, swipeable
+ * - Empty slots show "Add a photo" and are clickable
+ * - Pagination dots indicate current position
  * - Current selection indicator
  */
 
@@ -24,16 +24,18 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/colors';
+import { getGradientPoints } from '@/constants/gradients';
 import type { Slot, MediaAsset } from '@/types';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Constants for carousel sizing - Large hero image
-const CAROUSEL_HEIGHT = 380;
-const ITEM_WIDTH = SCREEN_WIDTH * 0.8;
-const ITEM_SPACING = 12;
+// Constants for carousel sizing - Larger images that maximize screen
+const CAROUSEL_HEIGHT = SCREEN_HEIGHT * 0.48; // ~48% of screen height
+const ITEM_WIDTH = SCREEN_WIDTH * 0.75;
+const ITEM_SPACING = 16;
 const SIDE_PADDING = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
 
 export interface ImageSlotCarouselProps {
@@ -53,28 +55,54 @@ interface SlotItemProps {
   slot: Slot;
   image: MediaAsset | null;
   isSelected: boolean;
-  isNextEmpty: boolean;
   onPress: () => void;
+  onAddImage?: () => void;
   index: number;
   totalCount: number;
 }
 
-function SlotItem({ slot, image, isSelected, isNextEmpty, onPress, index, totalCount }: SlotItemProps) {
+function SlotItem({ slot, image, isSelected, onPress, onAddImage, index, totalCount }: SlotItemProps) {
   const hasImage = !!image?.uri;
+  
+  // Render background for transparent PNGs (AI background replacement)
+  const renderBackground = () => {
+    if (!image?.backgroundInfo) return null;
+    
+    if (image.backgroundInfo.type === 'solid' && image.backgroundInfo.solidColor) {
+      return (
+        <View 
+          style={[styles.slotImage, { backgroundColor: image.backgroundInfo.solidColor, position: 'absolute' }]} 
+        />
+      );
+    }
+    
+    if (image.backgroundInfo.type === 'gradient' && image.backgroundInfo.gradient) {
+      return (
+        <LinearGradient
+          colors={image.backgroundInfo.gradient.colors}
+          {...getGradientPoints(image.backgroundInfo.gradient.direction)}
+          style={[styles.slotImage, { position: 'absolute' }]}
+        />
+      );
+    }
+    
+    return null;
+  };
   
   return (
     <TouchableOpacity
       style={[
         styles.slotItem,
-        isSelected && styles.slotItemSelected,
+        isSelected && hasImage && styles.slotItemSelected,
         !hasImage && styles.slotItemEmpty,
       ]}
-      onPress={onPress}
-      activeOpacity={hasImage ? 0.8 : 1}
-      disabled={!hasImage}
+      onPress={hasImage ? onPress : onAddImage}
+      activeOpacity={0.8}
     >
       {hasImage ? (
         <>
+          {/* Background color/gradient for transparent PNGs */}
+          {renderBackground()}
           <ExpoImage
             source={{ uri: image.uri }}
             style={styles.slotImage}
@@ -89,12 +117,16 @@ function SlotItem({ slot, image, isSelected, isNextEmpty, onPress, index, totalC
           )}
         </>
       ) : (
-        <View style={styles.emptySlotContent}>
-          <View style={styles.emptyIconContainer}>
-            <Ionicons name="image-outline" size={32} color={Colors.light.textTertiary} />
+        <TouchableOpacity 
+          style={styles.emptySlotContent}
+          onPress={onAddImage}
+          activeOpacity={0.8}
+        >
+          <View style={styles.addPhotoIconContainer}>
+            <Ionicons name="add" size={32} color={Colors.light.accent} />
           </View>
-          <Text style={styles.emptySlotText}>No Image</Text>
-        </View>
+          <Text style={styles.addPhotoText}>Add a photo</Text>
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -114,8 +146,8 @@ export default function ImageSlotCarousel({
   const filledSlots = slots.filter(slot => capturedImages[slot.layerId]?.uri);
   const hasAnyImages = filledSlots.length > 0;
   
-  // Find the index of the currently selected slot among filled slots
-  const selectedFilledIndex = filledSlots.findIndex(slot => slot.layerId === selectedSlotId);
+  // Find index of selected slot in all slots
+  const selectedSlotIndex = slots.findIndex(slot => slot.layerId === selectedSlotId);
   
   // Auto-select first filled slot if none selected
   useEffect(() => {
@@ -126,24 +158,27 @@ export default function ImageSlotCarousel({
   
   // Scroll to selected slot when it changes
   useEffect(() => {
-    if (selectedFilledIndex >= 0 && scrollViewRef.current) {
-      const scrollX = selectedFilledIndex * (ITEM_WIDTH + ITEM_SPACING);
+    if (selectedSlotIndex >= 0 && scrollViewRef.current) {
+      const scrollX = selectedSlotIndex * (ITEM_WIDTH + ITEM_SPACING);
       scrollViewRef.current.scrollTo({ x: scrollX, animated: true });
-      setCurrentIndex(selectedFilledIndex);
+      setCurrentIndex(selectedSlotIndex);
     }
-  }, [selectedFilledIndex]);
+  }, [selectedSlotIndex]);
   
-  // Handle scroll end to snap to nearest filled slot
+  // Handle scroll end to snap and select slot
   const handleScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / (ITEM_WIDTH + ITEM_SPACING));
-    const clampedIndex = Math.max(0, Math.min(index, filledSlots.length - 1));
+    const clampedIndex = Math.max(0, Math.min(index, slots.length - 1));
     
-    if (clampedIndex !== currentIndex && filledSlots[clampedIndex]) {
-      setCurrentIndex(clampedIndex);
-      onSelectSlot(filledSlots[clampedIndex].layerId);
+    setCurrentIndex(clampedIndex);
+    
+    // Only select if the slot has an image
+    const slot = slots[clampedIndex];
+    if (slot && capturedImages[slot.layerId]?.uri) {
+      onSelectSlot(slot.layerId);
     }
-  }, [currentIndex, filledSlots, onSelectSlot]);
+  }, [slots, capturedImages, onSelectSlot]);
   
   // No images state
   if (!hasAnyImages) {
@@ -172,85 +207,12 @@ export default function ImageSlotCarousel({
     );
   }
   
-  // Single image - show without scrolling but with empty slot preview
-  if (filledSlots.length === 1) {
-    const filledSlot = filledSlots[0];
-    const filledImage = capturedImages[filledSlot.layerId];
-    
-    // Find empty slots to show as grayed out previews
-    const emptySlots = slots.filter(slot => !capturedImages[slot.layerId]?.uri);
-    
-    return (
-      <View style={styles.container}>
-        <View style={styles.singleImageContainer}>
-          {/* Main filled image */}
-          <View style={styles.singleImageWrapper}>
-            <SlotItem
-              slot={filledSlot}
-              image={filledImage}
-              isSelected={true}
-              isNextEmpty={emptySlots.length > 0}
-              onPress={() => {}}
-              index={0}
-              totalCount={1}
-            />
-          </View>
-          
-          {/* Preview of next empty slot (grayed out) */}
-          {emptySlots.length > 0 && (
-            <View style={styles.emptySlotPreview}>
-              <View style={styles.emptySlotPreviewInner}>
-                <Ionicons name="image-outline" size={24} color={Colors.light.textTertiary} />
-                <Text style={styles.emptySlotPreviewText}>{emptySlots[0].label}</Text>
-              </View>
-            </View>
-          )}
-        </View>
-        
-        {/* Pagination dots */}
-        <View style={styles.pagination}>
-          <View style={[styles.paginationDot, styles.paginationDotActive]} />
-          {emptySlots.map((slot, index) => (
-            <View key={slot.layerId} style={[styles.paginationDot, styles.paginationDotEmpty]} />
-          ))}
-        </View>
-      </View>
-    );
-  }
-  
-  // Calculate snap offsets - only snap to filled slots
+  // Calculate snap offsets for ALL slots (both filled and empty)
   const snapOffsets = useMemo(() => {
-    const offsets: number[] = [];
-    let currentOffset = 0;
-    
-    slots.forEach((slot, index) => {
-      const hasImage = !!capturedImages[slot.layerId]?.uri;
-      if (hasImage) {
-        offsets.push(currentOffset);
-      }
-      currentOffset += ITEM_WIDTH + ITEM_SPACING;
-    });
-    
-    return offsets;
-  }, [slots, capturedImages]);
+    return slots.map((_, index) => index * (ITEM_WIDTH + ITEM_SPACING));
+  }, [slots]);
   
-  // Find the maximum scroll position (last filled slot)
-  const maxScrollX = useMemo(() => {
-    if (snapOffsets.length === 0) return 0;
-    return snapOffsets[snapOffsets.length - 1];
-  }, [snapOffsets]);
-  
-  // Handle scroll with bounds checking to prevent scrolling to empty slots
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    
-    // Clamp scroll to not go past the last filled slot
-    if (offsetX > maxScrollX + 50 && scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({ x: maxScrollX, animated: true });
-    }
-  }, [maxScrollX]);
-  
-  // Multiple images - show scrollable carousel
+  // Render carousel with all slots at equal sizes - swipeable
   return (
     <View style={styles.container}>
       <ScrollView
@@ -266,18 +228,13 @@ export default function ImageSlotCarousel({
           { paddingHorizontal: SIDE_PADDING }
         ]}
         onMomentumScrollEnd={handleScrollEnd}
-        onScroll={handleScroll}
         scrollEventThrottle={16}
       >
-        {/* Render all slots - filled ones are interactive, empty ones are grayed out */}
+        {/* Render all slots at equal sizes */}
         {slots.map((slot, index) => {
           const image = capturedImages[slot.layerId];
           const hasImage = !!image?.uri;
           const isSelected = slot.layerId === selectedSlotId;
-          
-          // Check if next slot is empty (for visual indicator)
-          const nextSlot = slots[index + 1];
-          const isNextEmpty = nextSlot && !capturedImages[nextSlot.layerId]?.uri;
           
           return (
             <View
@@ -291,8 +248,8 @@ export default function ImageSlotCarousel({
                 slot={slot}
                 image={image}
                 isSelected={isSelected && hasImage}
-                isNextEmpty={isNextEmpty}
                 onPress={() => hasImage && onSelectSlot(slot.layerId)}
+                onAddImage={onAddImage}
                 index={index}
                 totalCount={slots.length}
               />
@@ -305,15 +262,15 @@ export default function ImageSlotCarousel({
       <View style={styles.pagination}>
         {slots.map((slot, index) => {
           const hasImage = !!capturedImages[slot.layerId]?.uri;
-          const isSelected = slot.layerId === selectedSlotId;
+          const isCurrent = index === currentIndex;
           
           return (
             <View
               key={slot.layerId}
               style={[
                 styles.paginationDot,
-                isSelected && hasImage && styles.paginationDotActive,
-                !hasImage && styles.paginationDotEmpty,
+                isCurrent && styles.paginationDotActive,
+                !hasImage && !isCurrent && styles.paginationDotEmpty,
               ]}
             />
           );
@@ -325,7 +282,7 @@ export default function ImageSlotCarousel({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 16,
+    paddingVertical: 8,
   },
   scrollContent: {
     paddingVertical: 8,
@@ -336,18 +293,20 @@ const styles = StyleSheet.create({
   slotItem: {
     width: ITEM_WIDTH,
     height: CAROUSEL_HEIGHT,
-    borderRadius: 16,
+    borderRadius: 20,
     backgroundColor: Colors.light.surfaceSecondary,
     overflow: 'hidden',
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: 'transparent',
   },
   slotItemSelected: {
     borderColor: Colors.light.accent,
   },
   slotItemEmpty: {
-    opacity: 0.5,
     backgroundColor: Colors.light.surfaceSecondary,
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    borderStyle: 'dashed',
   },
   slotImage: {
     width: '100%',
@@ -357,33 +316,43 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     right: 12,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: Colors.light.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
+  
+  // Empty slot "Add a photo" content
   emptySlotContent: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16,
+    padding: 24,
   },
-  emptyIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.light.border,
+  addPhotoIconContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.light.ai.lightBg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: Colors.light.accent,
+    borderStyle: 'dashed',
   },
-  emptySlotText: {
-    fontSize: 14,
+  addPhotoText: {
+    fontSize: 16,
     fontWeight: '600',
-    color: Colors.light.textTertiary,
-    marginBottom: 4,
+    color: Colors.light.accent,
+    textAlign: 'center',
   },
   
   // No images state
@@ -433,56 +402,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   
-  // Single image with empty preview
-  singleImageContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  singleImageWrapper: {
-    width: ITEM_WIDTH,
-  },
-  emptySlotPreview: {
-    width: 70,
-    height: CAROUSEL_HEIGHT - 60,
-    marginLeft: 8,
-    borderRadius: 12,
-    backgroundColor: Colors.light.surfaceSecondary,
-    opacity: 0.4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderStyle: 'dashed',
-  },
-  emptySlotPreviewInner: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  emptySlotPreviewText: {
-    fontSize: 10,
-    color: Colors.light.textTertiary,
-    fontWeight: '500',
-  },
-  
   // Pagination
   pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
-    gap: 8,
+    marginTop: 20,
+    gap: 10,
   },
   paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: Colors.light.border,
   },
   paginationDotActive: {
     backgroundColor: Colors.light.accent,
-    width: 20,
+    width: 24,
   },
   paginationDotEmpty: {
     backgroundColor: Colors.light.border,

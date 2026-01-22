@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-import { File } from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
+import { File as ExpoFile } from 'expo-file-system';
 import { decode } from 'base64-arraybuffer';
 
 /**
@@ -116,9 +117,20 @@ export async function uploadTempImage(
   
   const session = sessionId || getSessionId();
   
-  // Read file as base64
-  const file = new File(normalizedUri);
-  const base64Data = await file.base64();
+  let base64Data: string;
+  
+  // Try new File API first
+  try {
+    const file = new ExpoFile(normalizedUri);
+    base64Data = await file.base64();
+  } catch (newApiError) {
+    console.log('[TempUpload] New File API failed, trying legacy:', newApiError);
+    
+    // Fallback to legacy API
+    base64Data = await FileSystemLegacy.readAsStringAsync(normalizedUri, {
+      encoding: FileSystemLegacy.EncodingType.Base64,
+    });
+  }
 
   // Generate unique filename within session folder
   const timestamp = Date.now();
@@ -190,9 +202,20 @@ export async function uploadCapturedImage(
     ? localUri 
     : `file://${localUri}`;
   
-  // Read file as base64
-  const file = new File(normalizedUri);
-  const base64Data = await file.base64();
+  let base64Data: string;
+  
+  // Try new File API first, fall back to legacy if needed
+  try {
+    const file = new ExpoFile(normalizedUri);
+    base64Data = await file.base64();
+  } catch (newApiError) {
+    console.log('[TempUpload] New File API failed, trying legacy:', newApiError);
+    
+    // Fallback to legacy API
+    base64Data = await FileSystemLegacy.readAsStringAsync(normalizedUri, {
+      encoding: FileSystemLegacy.EncodingType.Base64,
+    });
+  }
 
   // Generate unique filename: session/capture_slotId_timestamp.jpg
   const timestamp = Date.now();

@@ -8,6 +8,7 @@ import { SuperwallProvider, useSuperwallEvents, usePlacement } from "expo-superw
 import { PostHogProvider } from "posthog-react-native";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
+import { FontProvider } from "@/contexts/FontContext";
 import AnimatedSplash from "@/components/AnimatedSplash";
 import ForceUpdateScreen from "@/components/ForceUpdateScreen";
 import { useForceUpdate } from "@/hooks/useForceUpdate";
@@ -31,6 +32,7 @@ import {
 } from "@/services/tempCleanupService";
 import { usePostHog } from "posthog-react-native";
 import { useScreenTracking } from "@/hooks/useScreenTracking";
+import { prewarmFontCatalog } from "@/services/googleFontsService";
 // Note: In-app purchase tracking is handled automatically by Facebook SDK
 // Enable "Log In-App Purchases Automatically" in Facebook Developer Dashboard
 
@@ -493,21 +495,23 @@ function RootLayoutInner() {
   }
 
   return (
-    <AppProvider>
-      {/* Bridge to connect PostHogProvider client to service layer */}
-      <PostHogBridge />
-      <RootLayoutNav />
-      {showAnimatedSplash && (
-        <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
-      )}
-      {/* Onboarding flow handler - runs after splash and force update check */}
-      {!onboardingComplete && forceUpdateChecked && (
-        <OnboardingFlowHandler 
-          splashComplete={splashComplete}
-          onOnboardingComplete={handleOnboardingComplete}
-        />
-      )}
-    </AppProvider>
+    <FontProvider>
+      <AppProvider>
+        {/* Bridge to connect PostHogProvider client to service layer */}
+        <PostHogBridge />
+        <RootLayoutNav />
+        {showAnimatedSplash && (
+          <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
+        )}
+        {/* Onboarding flow handler - runs after splash and force update check */}
+        {!onboardingComplete && forceUpdateChecked && (
+          <OnboardingFlowHandler 
+            splashComplete={splashComplete}
+            onOnboardingComplete={handleOnboardingComplete}
+          />
+        )}
+      </AppProvider>
+    </FontProvider>
   );
 }
 
@@ -525,6 +529,10 @@ export default function RootLayout() {
     if (Platform.OS === 'ios') {
       initializeFacebookSDK().catch(console.error);
     }
+    
+    // Prewarm the Google Fonts catalog for faster font loading later
+    // This fetches the font metadata without loading any fonts
+    prewarmFontCatalog().catch(console.warn);
   }, []);
 
   // PostHog client configuration for the provider

@@ -35,9 +35,7 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
-import { AIFeatureMenu } from './AIFeatureMenu';
 import { ColorPickerModal } from './ColorPickerModal';
-import type { AIFeatureKey } from '@/types';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -277,12 +275,6 @@ interface EditorMainToolbarProps {
   items?: MainToolbarItem[];
   /** Whether to show the toolbar */
   visible?: boolean;
-  /** AI-related props */
-  isPremium?: boolean;
-  isAIProcessing?: boolean;
-  aiProcessingType?: AIFeatureKey | null;
-  onAIFeatureSelect?: (featureKey: AIFeatureKey) => void;
-  onRequestPremium?: (feature: string) => void;
   /** Currently expanded tool (for inline menus) */
   expandedTool?: MainToolbarItem | null;
   /** Callback when expanded tool changes */
@@ -301,11 +293,6 @@ export function EditorMainToolbar({
   disabled = false,
   items,
   visible = true,
-  isPremium = false,
-  isAIProcessing = false,
-  aiProcessingType = null,
-  onAIFeatureSelect,
-  onRequestPremium,
   expandedTool = null,
   onExpandedToolChange,
   backgroundColor = '#FFFFFF',
@@ -326,8 +313,8 @@ export function EditorMainToolbar({
 
   const handleToolPress = useCallback((tool: MainToolbarItem) => {
     console.log('[EditorMainToolbar] Tool pressed:', tool, 'current expandedTool:', expandedTool);
-    if (tool === 'ai' || tool === 'background' || tool === 'theme') {
-      // Toggle expandable menu
+    if (tool === 'background' || tool === 'theme') {
+      // Toggle expandable menu for background and theme color pickers
       if (expandedTool === tool) {
         console.log('[EditorMainToolbar] Closing expanded menu for:', tool);
         onExpandedToolChange?.(null);
@@ -335,17 +322,17 @@ export function EditorMainToolbar({
         console.log('[EditorMainToolbar] Opening expanded menu for:', tool);
         onExpandedToolChange?.(tool);
       }
+    } else if (tool === 'ai') {
+      // AI Studio: Close any expanded menu and open the bottom sheet via onToolSelect
+      console.log('[EditorMainToolbar] Opening AI Studio sheet');
+      onExpandedToolChange?.(null);
+      onToolSelect(tool);
     } else {
       // Close any expanded menu and select the tool
       onExpandedToolChange?.(null);
       onToolSelect(tool);
     }
   }, [expandedTool, onExpandedToolChange, onToolSelect]);
-
-  const handleAIFeatureSelect = useCallback((featureKey: AIFeatureKey) => {
-    onExpandedToolChange?.(null);
-    onAIFeatureSelect?.(featureKey);
-  }, [onExpandedToolChange, onAIFeatureSelect]);
 
   // Handle background color selection
   const handleBackgroundColorSelect = useCallback((color: string) => {
@@ -397,24 +384,6 @@ export function EditorMainToolbar({
         { paddingBottom: Math.max(insets.bottom, 8) },
       ]}
     >
-      {/* Expanded AI Menu */}
-      {expandedTool === 'ai' && (
-        <Animated.View 
-          style={styles.expandedMenuContainer}
-          entering={FadeIn.duration(150)}
-          exiting={FadeOut.duration(100)}
-        >
-          <AIFeatureMenu
-            isPremium={isPremium}
-            isProcessing={isAIProcessing}
-            processingType={aiProcessingType}
-            onSelectFeature={handleAIFeatureSelect}
-            onRequestPremium={onRequestPremium || (() => {})}
-            onClose={() => onExpandedToolChange?.(null)}
-          />
-        </Animated.View>
-      )}
-
       {/* Expanded Background Color Picker */}
       {expandedTool === 'background' && (
         <Animated.View 

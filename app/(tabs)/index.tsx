@@ -2,20 +2,14 @@ import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, Activi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Star, Image as ImageIcon, Layers, Video, Square, RectangleVertical, RectangleHorizontal } from "lucide-react-native";
+import { Star, Square, RectangleVertical, RectangleHorizontal } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
 import { useApp } from "@/contexts/AppContext";
-import { ContentType, Template, TemplateFormat } from "@/types";
+import { Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
 import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
 import { useResponsive, getResponsiveTileHeight } from "@/hooks/useResponsive";
-
-const contentTypes: { type: ContentType; icon: React.ReactNode; label: string; disabled?: boolean }[] = [
-  { type: 'single', icon: <ImageIcon size={20} color={Colors.light.text} />, label: 'Single' },
-  { type: 'carousel', icon: <Layers size={20} color={Colors.light.textTertiary} />, label: 'Carousel', disabled: true },
-  { type: 'video', icon: <Video size={20} color={Colors.light.textTertiary} />, label: 'Video', disabled: true },
-];
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -42,8 +36,6 @@ export default function CreateScreen() {
   const router = useRouter();
   const { 
     filteredTemplates, 
-    currentProject, 
-    setContentType, 
     setFormat, 
     selectedFormat, 
     selectTemplate, 
@@ -92,11 +84,6 @@ export default function CreateScreen() {
     }
   }, [refetchTemplates]);
 
-  const handleContentTypeSelect = useCallback((type: ContentType) => {
-    if (type === 'video' || type === 'carousel') return;
-    setContentType(type);
-  }, [setContentType]);
-
   const handleFormatSelect = useCallback((format: TemplateFormat) => {
     setFormat(format);
   }, [setFormat]);
@@ -125,12 +112,6 @@ export default function CreateScreen() {
     title: {
       fontSize: responsive.headerFontSize,
     },
-    typeSelector: {
-      paddingHorizontal: responsive.gridPadding,
-      maxWidth: responsive.isTablet ? 600 : undefined,
-      alignSelf: responsive.isTablet ? 'center' as const : undefined,
-      width: responsive.isTablet ? '100%' : undefined,
-    },
     templatesSection: {
       paddingHorizontal: responsive.gridPadding,
       alignItems: responsive.isTablet ? 'center' as const : undefined,
@@ -148,36 +129,28 @@ export default function CreateScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={[styles.header, dynamicStyles.header]}>
         <Text style={[styles.title, dynamicStyles.title]}>Create</Text>
-      </View>
-
-      <View style={[styles.typeSelector, dynamicStyles.typeSelector]}>
-        {contentTypes.map((item) => (
-          <TouchableOpacity
-            key={item.type}
-            style={[
-              styles.typeButton,
-              currentProject.contentType === item.type && styles.typeButtonActive,
-              item.disabled && styles.typeButtonDisabled,
-            ]}
-            onPress={() => handleContentTypeSelect(item.type)}
-            disabled={item.disabled}
-            activeOpacity={0.7}
-          >
-            {item.icon}
-            <Text style={[
-              styles.typeLabel,
-              currentProject.contentType === item.type && styles.typeLabelActive,
-              item.disabled && styles.typeLabelDisabled,
-            ]}>
-              {item.label}
-            </Text>
-            {item.disabled && (
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonText}>Soon</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
+        
+        {/* Favorites Filter Toggle in Header */}
+        <TouchableOpacity
+          style={[
+            styles.headerFavoritesButton,
+            showFavoritesOnly && styles.headerFavoritesButtonActive,
+          ]}
+          onPress={handleToggleFavoritesFilter}
+          activeOpacity={0.7}
+        >
+          <Star 
+            size={18} 
+            color={showFavoritesOnly ? Colors.light.accent : Colors.light.textSecondary}
+            fill={showFavoritesOnly ? Colors.light.accent : 'transparent'}
+          />
+          <Text style={[
+            styles.headerFavoritesText,
+            showFavoritesOnly && styles.headerFavoritesTextActive,
+          ]}>
+            Favorites
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {isLoading ? (
@@ -201,7 +174,7 @@ export default function CreateScreen() {
         >
           {/* Templates Section */}
           <View style={[styles.templatesSection, dynamicStyles.templatesSection]}>
-            {/* Format Filter Row with Favorites Toggle */}
+            {/* Format Filter Row */}
             <View style={[styles.filterRow, { maxWidth: dynamicStyles.grid.maxWidth }]}>
               <ScrollView 
                 horizontal 
@@ -231,30 +204,6 @@ export default function CreateScreen() {
                   );
                 })}
               </ScrollView>
-              
-              {/* Favorites Filter Toggle */}
-              <TouchableOpacity
-                style={[
-                  styles.favoritesFilterButton,
-                  showFavoritesOnly && styles.favoritesFilterButtonActive,
-                ]}
-                onPress={handleToggleFavoritesFilter}
-                activeOpacity={0.7}
-              >
-                <Star 
-                  size={16} 
-                  color={showFavoritesOnly ? Colors.light.accent : Colors.light.textSecondary}
-                  fill={showFavoritesOnly ? Colors.light.accent : 'transparent'}
-                />
-                {!responsive.isTablet && (
-                  <Text style={[
-                    styles.favoritesFilterText,
-                    showFavoritesOnly && styles.favoritesFilterTextActive,
-                  ]}>
-                    Favorites
-                  </Text>
-                )}
-              </TouchableOpacity>
             </View>
 
             {/* Templates Grid */}
@@ -333,56 +282,29 @@ const styles = StyleSheet.create({
     color: Colors.light.text,
     letterSpacing: -0.5,
   },
-  typeSelector: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  typeButton: {
-    flex: 1,
+  headerFavoritesButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     backgroundColor: Colors.light.surface,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: Colors.light.border,
   },
-  typeButtonActive: {
+  headerFavoritesButtonActive: {
     borderColor: Colors.light.accent,
-    backgroundColor: Colors.light.surfaceSecondary,
+    backgroundColor: 'rgba(201, 168, 124, 0.12)',
   },
-  typeButtonDisabled: {
-    opacity: 0.5,
-  },
-  typeLabel: {
+  headerFavoritesText: {
     fontSize: 14,
+    fontWeight: '500' as const,
+    color: Colors.light.textSecondary,
+  },
+  headerFavoritesTextActive: {
+    color: Colors.light.accent,
     fontWeight: '600' as const,
-    color: Colors.light.text,
-  },
-  typeLabelActive: {
-    color: Colors.light.accentDark,
-  },
-  typeLabelDisabled: {
-    color: Colors.light.textTertiary,
-  },
-  comingSoonBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: Colors.light.accent,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  comingSoonText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: Colors.light.surface,
-    textTransform: 'uppercase',
   },
   loadingContainer: {
     flex: 1,
@@ -441,31 +363,6 @@ const styles = StyleSheet.create({
   },
   formatLabelActive: {
     color: Colors.light.accentDark,
-    fontWeight: '600' as const,
-  },
-  favoritesFilterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: Colors.light.surface,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    flexShrink: 0,
-  },
-  favoritesFilterButtonActive: {
-    borderColor: Colors.light.accent,
-    backgroundColor: 'rgba(201, 168, 124, 0.12)',
-  },
-  favoritesFilterText: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: Colors.light.textSecondary,
-  },
-  favoritesFilterTextActive: {
-    color: Colors.light.accent,
     fontWeight: '600' as const,
   },
   emptyTemplates: {

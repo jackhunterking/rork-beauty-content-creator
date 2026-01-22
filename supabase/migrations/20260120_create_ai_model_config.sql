@@ -62,22 +62,28 @@ INSERT INTO ai_model_config (
     sort_order
 ) VALUES
 -- AI Auto-Quality: fal-ai/creative-upscaler
+-- PURE QUALITY ENHANCEMENT - Zero creativity, no content changes
+-- Works universally for all business types: dermatology, dental, landscaping, real estate, etc.
+-- Images are pre-cropped to max 1024px, then upscaled 2x to 2048px (within Fal.AI limit)
+-- Anti-makeup/beauty-filter protection in negative prompt
 (
     'auto_quality', 
     'AI Auto-Quality', 
-    'Enhance image clarity, reduce noise, and upscale resolution up to 5x', 
+    'Enhance image clarity, reduce noise, and upscale resolution 2x', 
     'sparkles',
     'fal_ai', 
     'fal-ai/creative-upscaler', 
     '{
-        "scale": 2, 
-        "creativity": 0, 
-        "detail": 5, 
-        "shape_preservation": 3, 
-        "prompt_suffix": "high quality, highly detailed, high resolution, sharp", 
-        "negative_prompt": "blurry, low resolution, bad, ugly, low quality, pixelated, interpolated, compression artifacts, noisey, grainy", 
-        "guidance_scale": 7.5, 
-        "num_inference_steps": 20,
+        "scale": 2,
+        "creativity": 0,
+        "detail": 5,
+        "shape_preservation": 3,
+        "model_type": "SDXL",
+        "prompt": "enhance image quality only, sharpen details, reduce pixelation, improve resolution, preserve exact original content, natural unedited appearance, authentic textures, no modifications to subject",
+        "prompt_suffix": "sharp, crisp, high resolution, clear details, noise-free, artifact-free, true to original, unretouched, natural, authentic",
+        "negative_prompt": "blurry, low resolution, pixelated, compression artifacts, noisy, grainy, jpeg artifacts, soft, hazy, motion blur, out of focus, makeup, cosmetics, beauty filter, skin smoothing, airbrushed, retouched, enhanced skin, perfect skin, flawless skin, foundation, lipstick, eyeshadow, mascara, blush, contour, face filter, beauty enhancement, skin retouching, smoothed texture, porcelain skin, altered, modified, changed, different, stylized, artistic interpretation, cartoon, anime, illustration, painting, drawing, sketch, CGI, 3D render, digital art, filters applied, color grading, tone mapping, HDR effect, overprocessed",
+        "guidance_scale": 10,
+        "num_inference_steps": 25,
         "enable_safety_checker": true
     }'::jsonb, 
     2, 

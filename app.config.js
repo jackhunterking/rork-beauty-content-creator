@@ -9,8 +9,8 @@ const superwallAndroidKey = process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY || "";
 const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_API_KEY || "";
 const posthogHost = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
-// Fal.AI API key - for client-side polling of AI enhancement status
-const falApiKey = process.env.EXPO_PUBLIC_FAL_API_KEY || "";
+// Note: FAL_API_KEY is now server-side only (in Supabase Edge Functions)
+// No client-side API key needed for AI features
 
 export default {
   expo: {
@@ -119,7 +119,6 @@ export default {
       superwallAndroidKey: superwallAndroidKey,
       posthogApiKey: posthogApiKey,
       posthogHost: posthogHost,
-      falApiKey: falApiKey,
     },
   },
 };

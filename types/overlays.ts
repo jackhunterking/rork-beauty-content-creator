@@ -87,6 +87,7 @@ export interface LogoOverlay extends BaseOverlay {
   originalWidth: number;   // Original image width
   originalHeight: number;  // Original image height
   isBrandKit: boolean;     // Whether this is from Brand Kit
+  opacity?: number;        // Opacity value (0-1), defaults to 1
 }
 
 /**
@@ -275,6 +276,9 @@ export const LOGO_SIZE_CONSTRAINTS = {
   minScale: 0.1,    // 10% of original
   maxScale: 3.0,    // 300% of original
   defaultScale: 1.0,
+  minOpacity: 0.1,  // 10% opacity (minimum visible)
+  maxOpacity: 1.0,  // 100% opacity (fully opaque)
+  defaultOpacity: 1.0,
 };
 
 // ============================================
@@ -320,6 +324,7 @@ export const DEFAULT_DATE_OVERLAY: Omit<DateOverlay, 'id' | 'createdAt' | 'updat
 export const DEFAULT_LOGO_OVERLAY: Omit<LogoOverlay, 'id' | 'createdAt' | 'updatedAt' | 'imageUri' | 'originalWidth' | 'originalHeight'> = {
   type: 'logo',
   isBrandKit: false,
+  opacity: LOGO_SIZE_CONSTRAINTS.defaultOpacity,
   transform: { ...DEFAULT_TRANSFORM, scale: 1.0 }, // Center position (DEFAULT_TRANSFORM already has x: 0.5, y: 0.5)
 };
 

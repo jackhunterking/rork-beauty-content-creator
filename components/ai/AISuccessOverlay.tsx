@@ -10,10 +10,10 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -22,26 +22,57 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/colors';
+import type { AIFeatureKey } from '@/types';
+import { getGradientPoints } from '@/constants/gradients';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COMPARISON_WIDTH = SCREEN_WIDTH - 48;
 const COMPARISON_HEIGHT = COMPARISON_WIDTH * 1.25;
 
+// Feature-specific labels for the comparison view
+const FEATURE_LABELS: Record<AIFeatureKey, { result: string; original: string }> = {
+  auto_quality: { result: 'ENHANCED', original: 'ORIGINAL' },
+  background_replace: { result: 'NEW BG', original: 'ORIGINAL' },
+};
+
+/** Background info for transparent PNG overlays (solid color, gradient, or transparent-only) */
+interface BackgroundInfo {
+  type: 'solid' | 'gradient' | 'transparent';
+  solidColor?: string;
+  gradient?: {
+    type: 'linear';
+    colors: [string, string];
+    direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+  };
+}
+
 interface AISuccessOverlayProps {
   originalUri: string;
   enhancedUri: string;
+  featureKey: AIFeatureKey;
   onKeepEnhanced: () => void;
   onRevert: () => void;
+  /** Background info for displaying transparent PNG over color/gradient */
+  backgroundInfo?: BackgroundInfo;
 }
 
 export default function AISuccessOverlay({
   originalUri,
   enhancedUri,
+  featureKey,
   onKeepEnhanced,
   onRevert,
+  backgroundInfo,
 }: AISuccessOverlayProps) {
+  console.log('[AISuccessOverlay] Feature:', featureKey);
+  console.log('[AISuccessOverlay] Original URI:', originalUri?.substring(0, 80) + '...');
+  console.log('[AISuccessOverlay] Enhanced URI:', enhancedUri?.substring(0, 80) + '...');
+  
+  const labels = FEATURE_LABELS[featureKey] || FEATURE_LABELS.auto_quality;
+  
   // Slider position (0-1, 0.5 = middle)
   const sliderPosition = useSharedValue(0.5);
   const [isDragging, setIsDragging] = useState(false);
@@ -86,18 +117,51 @@ export default function AISuccessOverlay({
       <GestureDetector gesture={panGesture}>
         <View style={styles.comparisonContainer}>
           {/* Original (After) - full width behind */}
-          <Image
+          {/* Background color/gradient for transparent PNG (shows user's perceived "original") */}
+          {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+            <View 
+              style={[styles.comparisonImage, { backgroundColor: backgroundInfo.solidColor, position: 'absolute' }]} 
+            />
+          )}
+          {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+            <LinearGradient
+              colors={backgroundInfo.gradient.colors}
+              {...getGradientPoints(backgroundInfo.gradient.direction)}
+              style={[styles.comparisonImage, { position: 'absolute' }]}
+            />
+          )}
+          {/* The original image (may be transparent PNG) on top of background */}
+          <ExpoImage
             source={{ uri: originalUri }}
             style={styles.comparisonImage}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="none"
           />
           
           {/* Enhanced (Before) - clipped on top */}
           <Animated.View style={[styles.enhancedClip, enhancedClipStyle]}>
-            <Image
+            {/* Background color/gradient for transparent PNG */}
+            {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+              <View 
+                style={[
+                  styles.comparisonImage, 
+                  { width: COMPARISON_WIDTH, backgroundColor: backgroundInfo.solidColor }
+                ]} 
+              />
+            )}
+            {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+              <LinearGradient
+                colors={backgroundInfo.gradient.colors}
+                {...getGradientPoints(backgroundInfo.gradient.direction)}
+                style={[styles.comparisonImage, { width: COMPARISON_WIDTH }]}
+              />
+            )}
+            {/* The transparent PNG on top */}
+            <ExpoImage
               source={{ uri: enhancedUri }}
               style={[styles.comparisonImage, { width: COMPARISON_WIDTH }]}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="none"
             />
           </Animated.View>
           
@@ -115,10 +179,10 @@ export default function AISuccessOverlay({
           {/* Labels */}
           <View style={styles.labelContainer}>
             <View style={styles.labelLeft}>
-              <Text style={styles.labelText}>ENHANCED</Text>
+              <Text style={styles.labelText}>{labels.result}</Text>
             </View>
             <View style={styles.labelRight}>
-              <Text style={styles.labelText}>ORIGINAL</Text>
+              <Text style={styles.labelText}>{labels.original}</Text>
             </View>
           </View>
         </View>

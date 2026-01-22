@@ -1,12 +1,21 @@
 /**
- * AI Service - Direct Fal.AI Integration
+ * AI Service - Webhook + Realtime Architecture
  * 
  * Client-side service for AI image enhancement features.
- * Uses Supabase Edge Functions to submit jobs, then polls Fal.AI directly.
+ * 
+ * Architecture:
+ * 1. Client submits job via ai-enhance Edge Function
+ * 2. ai-enhance submits to Fal.AI with webhook_url pointing to ai-webhook
+ * 3. Client subscribes to Supabase Realtime for ai_generations updates
+ * 4. When Fal.AI completes, webhook updates DB → Realtime notifies client instantly
+ * 5. Polling via ai-poll is a fallback if Realtime connection fails
+ * 
+ * This provides instant results without polling when webhooks work!
  */
 
 import { supabase, SUPABASE_URL } from '@/lib/supabase';
-import Constants from 'expo-constants';
+import { uploadTempImage } from './tempUploadService';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   AIFeatureKey,
   AIModelConfig,
@@ -30,16 +39,15 @@ const EDGE_FUNCTION_BASE = `${SUPABASE_URL}/functions/v1`;
 
 const ENDPOINTS = {
   enhance: `${EDGE_FUNCTION_BASE}/ai-enhance`,
+  poll: `${EDGE_FUNCTION_BASE}/ai-poll`,
   credits: `${EDGE_FUNCTION_BASE}/ai-credits`,
   config: `${EDGE_FUNCTION_BASE}/ai-config`,
 } as const;
 
-// Get Fal.AI API key for client-side polling
-const FAL_API_KEY = Constants.expoConfig?.extra?.falApiKey || '';
-
-// Polling configuration
-const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_TIME_MS = 120000; // 2 minutes max
+// Timing configuration
+const POLL_INTERVAL_MS = 2000; // Poll every 2 seconds
+const MAX_WAIT_TIME_MS = 90000; // 90 seconds max timeout
+const REALTIME_SETUP_DELAY_MS = 1000; // Start polling after 1s (give Realtime a moment to connect)
 
 // ============================================
 // Types
@@ -60,30 +68,38 @@ export interface AIProcessingProgress {
   progress?: number; // 0-100
   outputUrl?: string;
   error?: string;
-}
-
-interface FalQueueResponse {
-  request_id: string;
-  status: 'IN_QUEUE' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
-  response?: {
-    image?: { url: string };
-    output?: { url: string };
-    url?: string;
-    error?: string;
-  };
-  error?: {
-    message: string;
-    code?: string;
+  /** Background info for solid/gradient replacement (transparent PNG + background color) */
+  backgroundInfo?: {
+    type: 'solid' | 'gradient';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
   };
 }
 
 interface EnhanceSubmitResponse {
   success: boolean;
   generation_id: string;
-  request_id: string;
-  fal_model: string;
-  poll_url: string;
+  // Standard response fields (for new enhancements)
+  request_id?: string;
+  fal_model?: string;
   estimated_time_seconds?: number;
+  // Cached response fields (for duplicate prevention)
+  cached?: boolean;
+  output_url?: string;
+  credits_charged?: number;
+  message?: string;
+  error?: string;
+}
+
+interface PollResponse {
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  message?: string;
+  output_url?: string;
+  processing_time_ms?: number;
   error?: string;
 }
 
@@ -284,115 +300,173 @@ export async function getGenerationHistory(
 }
 
 // ============================================
-// Fal.AI Polling Functions
+// Realtime Subscription + Polling Fallback
 // ============================================
 
 /**
- * Poll Fal.AI for job status
+ * Wait for enhancement completion using Supabase Realtime
+ * 
+ * Primary: Subscribe to DB changes (webhook triggers instant update)
+ * Fallback: Poll via ai-poll if Realtime doesn't deliver in time
  */
-async function pollFalAIStatus(
-  pollUrl: string,
+async function waitForEnhancementCompletion(
+  generationId: string,
   onProgress?: (progress: AIProcessingProgress) => void,
   abortSignal?: AbortSignal
 ): Promise<{ success: boolean; outputUrl?: string; error?: string }> {
   const startTime = Date.now();
+  let subscription: RealtimeChannel | null = null;
+  let resolved = false;
+  let lastPollTime = 0;
 
-  while (Date.now() - startTime < MAX_POLL_TIME_MS) {
-    // Check if cancelled
-    if (abortSignal?.aborted) {
-      return { success: false, error: 'Cancelled' };
+  return new Promise((resolve) => {
+    // Helper to clean up and resolve
+    const finish = (result: { success: boolean; outputUrl?: string; error?: string }) => {
+      if (resolved) return;
+      resolved = true;
+      subscription?.unsubscribe();
+      resolve(result);
+    };
+
+    // Handle abort signal
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', () => {
+        finish({ success: false, error: 'Cancelled' });
+      });
     }
 
-    try {
-      const response = await fetch(pollUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Key ${FAL_API_KEY}`,
+    // Set up Realtime subscription for instant webhook delivery
+    console.log(`[aiService] Setting up Realtime subscription for ${generationId}`);
+    
+    subscription = supabase
+      .channel(`ai_generation_${generationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'ai_generations',
+          filter: `id=eq.${generationId}`,
         },
+        (payload) => {
+          if (resolved) return;
+          
+          const newRecord = payload.new as AIGenerationRow;
+          console.log(`[aiService] Realtime update: status=${newRecord.status}`);
+
+          if (newRecord.status === 'completed' && newRecord.output_image_url) {
+            console.log('[aiService] 🚀 Instant result via webhook!');
+            console.log('[aiService] Output URL:', newRecord.output_image_url);
+            onProgress?.({
+              status: 'completed',
+              message: 'Enhancement complete!',
+              progress: 100,
+              outputUrl: newRecord.output_image_url,
+            });
+            finish({ success: true, outputUrl: newRecord.output_image_url });
+          } else if (newRecord.status === 'failed') {
+            onProgress?.({
+              status: 'failed',
+              message: newRecord.error_message || 'Enhancement failed',
+              error: newRecord.error_message,
+            });
+            finish({ success: false, error: newRecord.error_message || 'Enhancement failed' });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[aiService] Realtime subscription status: ${status}`);
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[aiService] Poll error:', response.status, errorText);
-        
-        // Retry on 5xx errors
-        if (response.status >= 500) {
-          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-          continue;
+    // Fallback polling loop (in case Realtime fails or webhook is slow)
+    const pollLoop = async () => {
+      while (!resolved && Date.now() - startTime < MAX_WAIT_TIME_MS) {
+        // Check abort
+        if (abortSignal?.aborted) {
+          finish({ success: false, error: 'Cancelled' });
+          return;
         }
-        
-        return { success: false, error: `Poll failed: ${response.status}` };
-      }
 
-      const result: FalQueueResponse = await response.json();
-      console.log('[aiService] Poll status:', result.status);
+        // Only poll if enough time has passed since last poll
+        const timeSinceLastPoll = Date.now() - lastPollTime;
+        if (timeSinceLastPoll >= POLL_INTERVAL_MS) {
+          lastPollTime = Date.now();
+          
+          try {
+            const result = await callEdgeFunction<PollResponse>(ENDPOINTS.poll, {
+              method: 'POST',
+              body: JSON.stringify({ generation_id: generationId }),
+            });
 
-      switch (result.status) {
-        case 'IN_QUEUE':
-          onProgress?.({
-            status: 'queued',
-            message: 'Waiting in queue...',
-            progress: 10,
-          });
-          break;
+            // Calculate progress
+            const elapsed = Date.now() - startTime;
+            const estimatedProgress = Math.min(10 + (elapsed / 1000) * 1.5, 95);
 
-        case 'IN_PROGRESS':
-          const elapsed = Date.now() - startTime;
-          const estimatedProgress = Math.min(30 + (elapsed / 1000) * 2, 90);
-          onProgress?.({
-            status: 'processing',
-            message: 'Enhancing your photo...',
-            progress: estimatedProgress,
-          });
-          break;
+            switch (result.status) {
+              case 'queued':
+                onProgress?.({
+                  status: 'queued',
+                  message: result.message || 'Waiting in queue...',
+                  progress: 10,
+                });
+                break;
 
-        case 'COMPLETED':
-          // Extract output URL from various possible locations
-          const outputUrl = 
-            result.response?.image?.url ||
-            result.response?.output?.url ||
-            result.response?.url;
+              case 'processing':
+                onProgress?.({
+                  status: 'processing',
+                  message: result.message || 'Enhancing your photo...',
+                  progress: estimatedProgress,
+                });
+                break;
 
-          if (!outputUrl) {
-            console.error('[aiService] No output URL in response:', result);
-            return { success: false, error: 'No output URL in response' };
+              case 'completed':
+                console.log('[aiService] ✓ Result via polling');
+                onProgress?.({
+                  status: 'completed',
+                  message: 'Enhancement complete!',
+                  progress: 100,
+                  outputUrl: result.output_url,
+                });
+                finish({ success: true, outputUrl: result.output_url });
+                return;
+
+              case 'failed':
+                onProgress?.({
+                  status: 'failed',
+                  message: result.error || 'Enhancement failed',
+                  error: result.error,
+                });
+                finish({ success: false, error: result.error });
+                return;
+            }
+          } catch (error: any) {
+            console.warn('[aiService] Poll error (will retry):', error.message);
           }
+        }
 
-          onProgress?.({
-            status: 'completed',
-            message: 'Enhancement complete!',
-            progress: 100,
-            outputUrl,
-          });
-
-          return { success: true, outputUrl };
-
-        case 'FAILED':
-          const errorMsg = result.error?.message || result.response?.error || 'Processing failed';
-          onProgress?.({
-            status: 'failed',
-            message: errorMsg,
-            error: errorMsg,
-          });
-          return { success: false, error: errorMsg };
+        // Wait a bit before next iteration
+        await new Promise(r => setTimeout(r, 500));
       }
 
-    } catch (error: any) {
-      console.error('[aiService] Poll error:', error);
-      // Continue polling on network errors
-    }
+      // Timeout
+      if (!resolved) {
+        onProgress?.({
+          status: 'timeout',
+          message: 'Processing took too long',
+          error: 'Timeout',
+        });
+        finish({ success: false, error: 'Processing timeout' });
+      }
+    };
 
-    // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-  }
-
-  // Timeout
-  onProgress?.({
-    status: 'timeout',
-    message: 'Processing took too long',
-    error: 'Timeout',
+    // Start polling loop after short delay (give Realtime a moment to connect)
+    setTimeout(() => {
+      if (!resolved) {
+        console.log('[aiService] Starting polling (Realtime + fallback)...');
+        pollLoop();
+      }
+    }, REALTIME_SETUP_DELAY_MS);
   });
-  return { success: false, error: 'Processing timeout' };
 }
 
 // ============================================
@@ -403,7 +477,7 @@ async function pollFalAIStatus(
  * Enhance an image with AI - with progress tracking
  * 
  * This is the main function to use for AI enhancements.
- * It submits to the edge function, then polls Fal.AI directly.
+ * It submits to the edge function, then polls via server-side ai-poll endpoint.
  */
 export async function enhanceImageWithPolling(
   request: AIEnhanceRequest,
@@ -420,12 +494,30 @@ export async function enhanceImageWithPolling(
       progress: 0,
     });
 
+    // Step 0: Upload local image to cloud storage if needed
+    // Fal.AI cannot access local file:// URLs, so we need a public HTTP URL
+    let imageUrl = request.imageUrl;
+    if (imageUrl.startsWith('file://') || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+      onProgress?.({
+        status: 'submitting',
+        message: 'Uploading image...',
+        progress: 5,
+      });
+      
+      try {
+        imageUrl = await uploadTempImage(imageUrl, `ai-enhance-${Date.now()}`);
+      } catch (uploadError: any) {
+        console.error('[aiService] Image upload failed:', uploadError);
+        throw new Error(`Failed to upload image: ${uploadError.message}`);
+      }
+    }
+
     // Step 1: Submit to edge function
     const submitResponse = await callEdgeFunction<EnhanceSubmitResponse>(ENDPOINTS.enhance, {
       method: 'POST',
       body: JSON.stringify({
         feature_key: request.featureKey,
-        image_url: request.imageUrl,
+        image_url: imageUrl,
         draft_id: request.draftId,
         slot_id: request.slotId,
         preset_id: request.presetId,
@@ -436,11 +528,34 @@ export async function enhanceImageWithPolling(
       }),
     });
 
-    if (!submitResponse.success || !submitResponse.request_id) {
+    // Check for cached response (duplicate prevention)
+    if (submitResponse.cached && submitResponse.output_url) {
+      console.log('[aiService] Received cached result - image was already enhanced');
+      
+      onProgress?.({
+        status: 'completed',
+        message: 'Using cached enhancement (already processed)',
+        progress: 100,
+        outputUrl: submitResponse.output_url,
+      });
+
+      return {
+        success: true,
+        generationId: submitResponse.generation_id,
+        outputUrl: submitResponse.output_url,
+        creditsCharged: submitResponse.credits_charged ?? 0,
+        creditsRemaining: 999,
+        processingTimeMs: Date.now() - startTime,
+        cached: true,
+      };
+    }
+
+    // Standard flow - validate generation_id for polling
+    if (!submitResponse.success || !submitResponse.generation_id) {
       throw new Error(submitResponse.error || 'Failed to submit enhancement request');
     }
 
-    console.log('[aiService] Submitted:', submitResponse.generation_id, submitResponse.request_id);
+    console.log('[aiService] Submitted:', submitResponse.generation_id);
 
     // Report queued status
     onProgress?.({
@@ -449,7 +564,7 @@ export async function enhanceImageWithPolling(
       progress: 5,
     });
 
-    // Check if cancelled before polling
+    // Check if cancelled before waiting
     if (abortSignal?.aborted) {
       return {
         success: false,
@@ -460,9 +575,10 @@ export async function enhanceImageWithPolling(
       };
     }
 
-    // Step 2: Poll Fal.AI directly
-    const pollResult = await pollFalAIStatus(
-      submitResponse.poll_url,
+    // Step 2: Wait for completion via Realtime (instant) or polling (fallback)
+    // Webhooks deliver results instantly via Realtime subscription
+    const pollResult = await waitForEnhancementCompletion(
+      submitResponse.generation_id,
       onProgress,
       abortSignal
     );
@@ -470,9 +586,6 @@ export async function enhanceImageWithPolling(
     const processingTime = Date.now() - startTime;
 
     if (!pollResult.success) {
-      // Update generation status via Supabase
-      await updateGenerationStatus(submitResponse.generation_id, 'failed', pollResult.error);
-      
       return {
         success: false,
         generationId: submitResponse.generation_id,
@@ -483,15 +596,12 @@ export async function enhanceImageWithPolling(
       };
     }
 
-    // Update generation with success
-    await updateGenerationStatus(submitResponse.generation_id, 'completed', undefined, pollResult.outputUrl, processingTime);
-
     return {
       success: true,
       generationId: submitResponse.generation_id,
       outputUrl: pollResult.outputUrl,
-      creditsCharged: 1, // Internal tracking
-      creditsRemaining: 999, // Unlimited for premium
+      creditsCharged: 1,
+      creditsRemaining: 999,
       processingTimeMs: processingTime,
     };
 
@@ -515,36 +625,6 @@ export async function enhanceImageWithPolling(
 }
 
 /**
- * Update generation status in database
- */
-async function updateGenerationStatus(
-  generationId: string,
-  status: 'completed' | 'failed',
-  errorMessage?: string,
-  outputUrl?: string,
-  processingTimeMs?: number
-): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('ai_generations')
-      .update({
-        status,
-        error_message: errorMessage || null,
-        output_image_url: outputUrl || null,
-        processing_time_ms: processingTimeMs || null,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', generationId);
-
-    if (error) {
-      console.error('[aiService] Failed to update generation:', error);
-    }
-  } catch (e) {
-    console.error('[aiService] Update generation error:', e);
-  }
-}
-
-/**
  * Legacy sync function - wraps the polling version
  */
 export async function enhanceImage(
@@ -564,18 +644,6 @@ export async function enhanceQuality(
 ): Promise<AIEnhanceResponse> {
   return enhanceImageWithPolling(
     { featureKey: 'auto_quality', imageUrl },
-    onProgress,
-    abortSignal
-  );
-}
-
-export async function removeBackground(
-  imageUrl: string,
-  onProgress?: (progress: AIProcessingProgress) => void,
-  abortSignal?: AbortSignal
-): Promise<AIEnhanceResponse> {
-  return enhanceImageWithPolling(
-    { featureKey: 'background_remove', imageUrl },
     onProgress,
     abortSignal
   );
@@ -618,6 +686,83 @@ export async function replaceBackgroundWithColor(
     onProgress,
     abortSignal
   );
+}
+
+/**
+ * Remove background from an image using birefnet
+ * Returns a transparent PNG that can be composited onto any background
+ * 
+ * @param imageUrl - URL of the image to process
+ * @param onProgress - Progress callback
+ * @param abortSignal - Optional abort signal for cancellation
+ * @returns AIEnhanceResponse with outputUrl pointing to transparent PNG
+ */
+export async function removeBackground(
+  imageUrl: string,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
+): Promise<AIEnhanceResponse> {
+  return enhanceImageWithPolling(
+    { featureKey: 'background_remove', imageUrl },
+    onProgress,
+    abortSignal
+  );
+}
+
+/**
+ * Replace background with an exact solid color
+ * 
+ * This is a two-step process:
+ * 1. Remove background using birefnet (returns transparent PNG)
+ * 2. Client-side composites the PNG onto the exact hex color
+ * 
+ * This approach guarantees pixel-perfect color matching since no AI
+ * interpretation is involved in the color application.
+ * 
+ * @param imageUrl - URL of the image to process
+ * @param onProgress - Progress callback
+ * @param abortSignal - Optional abort signal for cancellation
+ * @returns AIEnhanceResponse with outputUrl pointing to transparent PNG
+ * 
+ * Note: The client must handle compositing the returned transparent PNG
+ * onto the desired color using backgroundCompositeService.
+ */
+export async function replaceBackgroundWithExactColor(
+  imageUrl: string,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
+): Promise<AIEnhanceResponse> {
+  // Step 1: Remove background to get transparent PNG
+  // The client will handle Step 2: Compositing onto solid color
+  return removeBackground(imageUrl, onProgress, abortSignal);
+}
+
+/**
+ * Replace background with a gradient
+ * 
+ * This is a two-step process:
+ * 1. Remove background using birefnet (returns transparent PNG)
+ * 2. Client-side composites the PNG onto the gradient
+ * 
+ * This approach is required because AI cannot reliably generate
+ * specific gradients from text prompts.
+ * 
+ * @param imageUrl - URL of the image to process
+ * @param onProgress - Progress callback
+ * @param abortSignal - Optional abort signal for cancellation
+ * @returns AIEnhanceResponse with outputUrl pointing to transparent PNG
+ * 
+ * Note: The client must handle compositing the returned transparent PNG
+ * onto the desired gradient using backgroundCompositeService.
+ */
+export async function replaceBackgroundWithGradient(
+  imageUrl: string,
+  onProgress?: (progress: AIProcessingProgress) => void,
+  abortSignal?: AbortSignal
+): Promise<AIEnhanceResponse> {
+  // Step 1: Remove background to get transparent PNG
+  // The client will handle Step 2: Compositing onto gradient
+  return removeBackground(imageUrl, onProgress, abortSignal);
 }
 
 // ============================================
@@ -673,10 +818,14 @@ export default {
   enhanceImage,
   enhanceImageWithPolling,
   enhanceQuality,
-  removeBackground,
   replaceBackgroundWithPreset,
   replaceBackgroundWithPrompt,
   replaceBackgroundWithColor,
+  
+  // Background Remove & Exact Color/Gradient (birefnet-based)
+  removeBackground,
+  replaceBackgroundWithExactColor,
+  replaceBackgroundWithGradient,
   
   // Direct DB access
   fetchAIConfigDirect,

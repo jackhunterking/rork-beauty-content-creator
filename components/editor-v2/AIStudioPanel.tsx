@@ -40,8 +40,7 @@ import {
 import Colors from '@/constants/colors';
 import { fetchAIConfig } from '@/services/aiService';
 import { AIStudioFeatureTab } from './AIStudioFeatureTab';
-import { AIStudioPresetGrid } from './AIStudioPresetGrid';
-import type { AIFeatureKey, AIModelConfig, BackgroundPreset } from '@/types';
+import type { AIFeatureKey, AIModelConfig } from '@/types';
 
 interface AIStudioPanelProps {
   /** Reference to bottom sheet */
@@ -85,7 +84,6 @@ export function AIStudioPanel({
   
   // UI state
   const [selectedFeature, setSelectedFeature] = useState<AIFeatureKey | null>(null);
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   
   // Calculate bottom padding with safe area
   const bottomPadding = Math.max(insets.bottom, 20) + 16;
@@ -133,10 +131,6 @@ export function AIStudioPanel({
     }
   }, [features, isPremium, selectedFeature, onRequestPremium]);
 
-  // Handle preset selection for BG Replacer
-  const handlePresetSelect = useCallback((preset: BackgroundPreset) => {
-    setSelectedPresetId(preset.id);
-  }, []);
 
   // Handle apply action
   const handleApply = useCallback(() => {
@@ -161,15 +155,9 @@ export function AIStudioPanel({
       return;
     }
     
-    // For BG Replacer, require preset selection
-    if (selectedFeature === 'background_replace' && !selectedPresetId) {
-      Alert.alert('Select a Background', 'Please choose a background style first.');
-      return;
-    }
-    
     // Apply the enhancement
-    onApplyEnhancement(selectedFeature, selectedPresetId || undefined);
-  }, [selectedFeature, selectedSlotId, selectedPresetId, onApplyEnhancement, onClose, onSelectPhoto]);
+    onApplyEnhancement(selectedFeature, undefined);
+  }, [selectedFeature, selectedSlotId, onApplyEnhancement, onClose, onSelectPhoto]);
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -186,7 +174,7 @@ export function AIStudioPanel({
 
   const hasImageSelected = selectedSlotId !== null;
   const selectedFeatureConfig = features.find(f => f.featureKey === selectedFeature);
-  const canApply = selectedFeature && (selectedFeature !== 'background_replace' || selectedPresetId);
+  const canApply = selectedFeature !== null;
 
   return (
     <BottomSheet
@@ -299,23 +287,20 @@ export function AIStudioPanel({
                   </View>
                 )}
 
-                {/* BG Replacer: Show Preset Grid */}
+                {/* BG Replacer: Show info message - full options available in AI Studio Sheet */}
                 {selectedFeature === 'background_replace' && (
-                  <AIStudioPresetGrid
-                    isPremium={isPremium}
-                    selectedPresetId={selectedPresetId}
-                    onSelectPreset={handlePresetSelect}
-                    onRequestPremium={onRequestPremium}
-                  />
+                  <View style={styles.simpleActionArea}>
+                    <Text style={styles.simpleActionText}>
+                      Replace with solid colors, gradients, blur effects, or custom prompts
+                    </Text>
+                  </View>
                 )}
 
                 {/* Simple Features: Show Confirm Area */}
                 {selectedFeature !== 'background_replace' && (
                   <View style={styles.simpleActionArea}>
                     <Text style={styles.simpleActionText}>
-                      {selectedFeature === 'background_remove' 
-                        ? 'Remove the background from your photo'
-                        : 'Enhance your photo with AI quality improvement'}
+                      Enhance your photo with AI quality improvement
                     </Text>
                   </View>
                 )}

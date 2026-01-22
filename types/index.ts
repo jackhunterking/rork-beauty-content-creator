@@ -430,11 +430,28 @@ export interface TemplatedLayer {
   width: number;
   height: number;
   rotation?: number;
+  opacity?: number;
   image_url?: string;
   text?: string;
   color?: string;
   fill?: string;
-  border_radius?: number;
+  // Border/stroke properties (from Templated.io API)
+  border_width?: number | null;  // Border/stroke width
+  border_color?: string | null;  // Border color
+  border_radius?: number | string | null;  // Can be "20" or 20
+  border_style?: string | null;  // solid, dashed, etc.
+  stroke?: string;  // SVG stroke color
+  hide?: boolean;  // Whether layer is hidden
+  // Text properties
+  font_family?: string;
+  font_size?: string | number;  // Can be "57px" or 57
+  font_weight?: string;
+  horizontal_align?: string;
+  vertical_align?: string;
+  letter_spacing?: number;
+  line_height?: number;
+  // SVG/Vector properties
+  html?: string;  // SVG HTML content for vector layers
   // Other properties can be added as needed
   [key: string]: unknown;
 }
@@ -505,6 +522,8 @@ export interface TextThemeLayer extends ThemeLayerBase {
   type: 'text';
   /** The actual text content to display */
   text: string;
+  /** Text color (separate from shape fill) */
+  color?: string;
   /** Font family name from Templated.io */
   fontFamily?: string;
   /** Font size in pixels (parsed from "58px" format) */
@@ -640,6 +659,18 @@ export interface Draft {
   // Image adjustments (scale, translate, rotation) for each slot
   // e.g., { "slot-before": { scale: 1.5, translateX: 0.1, translateY: -0.2, rotation: 0 } }
   capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }>;
+  // Background info for transparent PNGs (from AI background replacement/removal)
+  // e.g., { "slot-before": { type: "solid", solidColor: "#FF0000" } }
+  // Types: 'solid' | 'gradient' | 'transparent' (for remove background only)
+  capturedImageBackgroundInfo?: Record<string, {
+    type: 'solid' | 'gradient' | 'transparent';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
+  }>;
   createdAt: string;
   updatedAt: string;
   // Cached preview URL from Templated.io (avoids re-rendering on draft load)
@@ -653,6 +684,8 @@ export interface Draft {
   overlays?: Overlay[];
   // User-customized background layer colors (layerId -> fill color)
   backgroundOverrides?: Record<string, string>;
+  // User-customized theme color for theme layers (hex color, e.g., "#FF00F6")
+  themeColor?: string | null;
 }
 
 // Database row type for drafts
@@ -669,6 +702,17 @@ export interface DraftRow {
   captured_image_urls: Record<string, string> | null;
   // Image adjustments (scale, translate, rotation) for each slot as JSONB
   captured_image_adjustments: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
+  // Background info for transparent PNGs (from AI background replacement/removal) as JSONB
+  // Types: 'solid' | 'gradient' | 'transparent' (for remove background only)
+  captured_image_background_info: Record<string, {
+    type: 'solid' | 'gradient' | 'transparent';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
+  }> | null;
   created_at: string;
   updated_at: string;
   // Cached preview URL from Templated.io
@@ -677,6 +721,8 @@ export interface DraftRow {
   was_rendered_as_premium: boolean | null;
   // User-customized background layer colors (layerId -> fill color)
   background_overrides: Record<string, string> | null;
+  // User-customized theme color for theme layers (hex color)
+  theme_color: string | null;
 }
 
 // ============================================
@@ -710,6 +756,42 @@ export interface MediaAsset {
     scale: number;
     rotation?: number;
   };
+  /**
+   * Track which AI enhancements have been applied to this specific image.
+   * Resets when a new image is captured/uploaded.
+   * Used to prevent duplicate enhancement costs.
+   */
+  aiEnhancementsApplied?: AIFeatureKey[];
+  /**
+   * Original URI before any AI enhancements were applied.
+   * Used for change detection - if URI changes to something other than
+   * an AI output URL, we know a new image was captured/uploaded.
+   */
+  originalUri?: string;
+  /**
+   * Background info for transparent PNGs (from AI background replacement/removal).
+   * Used to display solid color, gradient, or transparent background behind the image.
+   * 
+   * Types:
+   * - 'solid': Solid color background (from Replace Background)
+   * - 'gradient': Gradient background (from Replace Background)
+   * - 'transparent': No background, show checkered pattern (from Remove Background)
+   */
+  backgroundInfo?: {
+    type: 'solid' | 'gradient' | 'transparent';
+    solidColor?: string;
+    gradient?: {
+      type: 'linear';
+      colors: [string, string];
+      direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+    };
+  };
+  /**
+   * Cached transparent PNG URL from birefnet background removal.
+   * Stored separately so color changes don't require re-running birefnet.
+   * Reset when a new image is captured/uploaded.
+   */
+  transparentPngUrl?: string;
 }
 
 export interface Project {
@@ -927,6 +1009,10 @@ export interface RenderProgress {
 /**
  * Available AI feature keys
  * Maps to feature_key in ai_model_config table
+ * 
+ * - 'auto_quality' - AI upscaling and enhancement
+ * - 'background_remove' - Remove background using birefnet (returns transparent PNG)
+ * - 'background_replace' - Replace background with AI-generated scene
  */
 export type AIFeatureKey = 'auto_quality' | 'background_remove' | 'background_replace';
 
@@ -1103,7 +1189,7 @@ export interface AIEnhanceRequest {
   imageUrl: string;
   draftId?: string;
   slotId?: string;
-  presetId?: string;  // For background_replace with preset
+  presetId?: string;  // For background_replace with preset (deprecated)
   customPrompt?: string;  // For background_replace with custom prompt
   solidColor?: string;  // For background_replace with solid color (hex code e.g., "#FF5733")
   modelType?: 'General' | 'Portrait' | 'Product';  // For background_remove
@@ -1121,6 +1207,8 @@ export interface AIEnhanceResponse {
   creditsRemaining: number;
   processingTimeMs?: number;
   error?: string;
+  /** Indicates the result was cached (duplicate prevention - no credits charged) */
+  cached?: boolean;
 }
 
 /**
@@ -1156,4 +1244,58 @@ export interface AIProcessingState {
   featureKey?: AIFeatureKey;
   progress?: number;  // 0-100
   message?: string;
+}
+
+// ============================================
+// Background Replacement Types (Solid Color & Gradient)
+// ============================================
+
+/**
+ * Background mode for the replace background feature
+ * - 'solid' - Exact hex color (uses birefnet + canvas composite)
+ * - 'gradient' - Linear gradient (uses birefnet + canvas composite)
+ * - 'custom' - AI-generated scene from text prompt (uses background_change model)
+ */
+export type BackgroundMode = 'solid' | 'gradient' | 'custom';
+
+/**
+ * Gradient direction for linear gradients
+ */
+export type GradientDirection = 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+
+/**
+ * Gradient configuration for background replacement
+ * Used with birefnet background removal + client-side canvas compositing
+ */
+export interface GradientConfig {
+  type: 'linear';
+  /** Start and end colors as hex codes (e.g., ['#FF6B6B', '#4ECDC4']) */
+  colors: [string, string];
+  /** Direction of the gradient */
+  direction: GradientDirection;
+}
+
+/**
+ * Preset gradient definition
+ * Pre-defined gradients for quick selection
+ */
+export interface GradientPreset {
+  id: string;
+  name: string;
+  config: GradientConfig;
+  /** Preview colors for UI display */
+  previewColors: [string, string];
+}
+
+/**
+ * Background selection state for the replace background view
+ */
+export interface BackgroundSelection {
+  mode: BackgroundMode;
+  /** Hex color for solid mode */
+  solidColor?: string;
+  /** Gradient config for gradient mode */
+  gradient?: GradientConfig;
+  /** Text prompt for custom mode */
+  customPrompt?: string;
 }

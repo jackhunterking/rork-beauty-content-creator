@@ -73,6 +73,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     localPreviewPath: string | null;
     projectName: string | null;
     backgroundOverrides: Record<string, string>;
+    themeColor: string | null;
   }>({
     contentType: 'single',
     template: null,
@@ -85,6 +86,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     localPreviewPath: null,
     projectName: null,
     backgroundOverrides: {},
+    themeColor: null,
   });
 
   // Initialize local storage on app start
@@ -212,6 +214,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
       projectName,
       backgroundOverrides,
       capturedImageAdjustments,
+      themeColor,
+      capturedImageBackgroundInfo,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -224,6 +228,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
       projectName?: string | null;
       backgroundOverrides?: Record<string, string> | null;
       capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
+      themeColor?: string | null;
+      capturedImageBackgroundInfo?: Record<string, {
+        type: 'solid' | 'gradient' | 'transparent';
+        solidColor?: string;
+        gradient?: {
+          type: 'linear';
+          colors: [string, string];
+          direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+        };
+      }> | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -236,7 +250,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
         localPreviewPath,
         projectName,
         backgroundOverrides,
-        capturedImageAdjustments
+        capturedImageAdjustments,
+        themeColor,
+        capturedImageBackgroundInfo
       );
     },
     onSuccess: (savedDraft) => {
@@ -249,6 +265,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         localPreviewPath: savedDraft.localPreviewPath || null,
         projectName: savedDraft.projectName || null,
         backgroundOverrides: savedDraft.backgroundOverrides || {},
+        themeColor: savedDraft.themeColor || null,
       }));
       // Note: No manual cache updates needed - useRealtimeDrafts will receive
       // the INSERT/UPDATE event from Supabase and update automatically
@@ -368,6 +385,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath: null,
       projectName: null,
       backgroundOverrides: {},
+      themeColor: null,
     }));
   }, []);
 
@@ -387,15 +405,72 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }));
   }, []);
 
-  // Set captured image
+  /**
+   * Helper to detect if a URI is from Fal.AI (AI enhancement output)
+   */
+  const isFalAIOutputUrl = (uri: string): boolean => {
+    return uri.includes('fal.media') || uri.includes('fal-cdn.com');
+  };
+
+  /**
+   * Set captured image for a slot.
+   * Handles AI enhancement tracking:
+   * - If the new image is an AI-enhanced version (Fal.AI URL), preserve enhancement tracking
+   * - If it's a new capture/upload (local file or different URL), reset enhancement tracking
+   */
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
-    setCurrentProject(prev => ({
-      ...prev,
-      capturedImages: {
-        ...prev.capturedImages,
-        [layerId]: media,
-      },
-    }));
+    // #region agent log
+    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:setCapturedImage',message:'setCapturedImage called',data:{layerId,hasMedia:!!media,hasBackgroundInfo:!!media?.backgroundInfo,backgroundInfoType:media?.backgroundInfo?.type,solidColor:media?.backgroundInfo?.solidColor},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
+    setCurrentProject(prev => {
+      const existingMedia = prev.capturedImages[layerId];
+      
+      // If setting to null, just clear the slot
+      if (!media) {
+        return {
+          ...prev,
+          capturedImages: {
+            ...prev.capturedImages,
+            [layerId]: null,
+          },
+        };
+      }
+      
+      // Determine if this is an AI enhancement or a new image
+      const isAIEnhancement = isFalAIOutputUrl(media.uri);
+      
+      let updatedMedia: MediaAsset;
+      
+      if (isAIEnhancement && existingMedia) {
+        // This is an AI enhancement - preserve existing tracking and originalUri
+        // The specific feature will be added by the caller (editor onApply)
+        updatedMedia = {
+          ...media,
+          aiEnhancementsApplied: media.aiEnhancementsApplied ?? existingMedia.aiEnhancementsApplied ?? [],
+          originalUri: media.originalUri ?? existingMedia.originalUri ?? existingMedia.uri,
+        };
+      } else {
+        // This is a new capture/upload - reset enhancement tracking
+        updatedMedia = {
+          ...media,
+          aiEnhancementsApplied: [],
+          originalUri: media.uri,
+        };
+      }
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:setCapturedImage:afterUpdate',message:'updatedMedia created',data:{layerId,hasBackgroundInfo:!!updatedMedia.backgroundInfo,backgroundInfoType:updatedMedia.backgroundInfo?.type,solidColor:updatedMedia.backgroundInfo?.solidColor,isAIEnhancement:isFalAIOutputUrl(media.uri)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      return {
+        ...prev,
+        capturedImages: {
+          ...prev.capturedImages,
+          [layerId]: updatedMedia,
+        },
+      };
+    });
     
     if (media) {
       setSlotState(layerId, 'ready');
@@ -477,6 +552,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath: null,
       projectName: null,
       backgroundOverrides: {},
+      themeColor: null,
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -523,13 +599,29 @@ export const [AppProvider, useApp] = createContextHook(() => {
       for (const [layerId, url] of Object.entries(draft.capturedImageUrls)) {
         const slot = slots.find(s => s.layerId === layerId);
         if (slot && url) {
-          // Also restore adjustments if they were saved
+          // Also restore adjustments and backgroundInfo if they were saved
           const adjustments = draft.capturedImageAdjustments?.[layerId];
+          const backgroundInfo = draft.capturedImageBackgroundInfo?.[layerId];
+          
+          // When loading with backgroundInfo, infer the transparent state
+          // Key insight: If backgroundInfo exists, the uri IS the transparent PNG
+          const inferredTransparentUrl = backgroundInfo ? url : undefined;
+          const inferredEnhancements = backgroundInfo ? ['background_replace'] as const : [];
+          
+          // #region agent log
+          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:loadDraft',message:'Restoring slot with inferred state',data:{layerId,hasBackgroundInfo:!!backgroundInfo,bgInfoType:backgroundInfo?.type,inferredTransparentUrl:inferredTransparentUrl?.substring(0,50),inferredEnhancements},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'load-bg-info'})}).catch(()=>{});
+          // #endregion
+          
           capturedImages[layerId] = {
             uri: url,
             width: slot.width,
             height: slot.height,
             adjustments: adjustments || undefined,
+            backgroundInfo: backgroundInfo || undefined,
+            // If backgroundInfo exists, uri IS the transparent PNG - cache it for color changes
+            transparentPngUrl: inferredTransparentUrl,
+            // Mark as enhanced so "Already applied" badge shows correctly
+            aiEnhancementsApplied: [...inferredEnhancements],
           };
           slotStates[layerId] = { state: 'ready' };
         }
@@ -564,6 +656,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath: draft.localPreviewPath || null,
       projectName: draft.projectName || null,
       backgroundOverrides: draft.backgroundOverrides || {},
+      themeColor: draft.themeColor || null,
     });
   }, []);
 
@@ -642,6 +735,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath?: string | null;
       projectName?: string | null;
       backgroundOverrides?: Record<string, string> | null;
+      themeColor?: string | null;
+      capturedImageBackgroundInfo?: Record<string, {
+        type: 'solid' | 'gradient' | 'transparent';
+        solidColor?: string;
+        gradient?: {
+          type: 'linear';
+          colors: [string, string];
+          direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
+        };
+      }> | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     duplicateDraft: (draftId: string) => duplicateDraftMutation.mutateAsync(draftId),

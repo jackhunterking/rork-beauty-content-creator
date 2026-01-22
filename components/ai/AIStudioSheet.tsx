@@ -28,12 +28,12 @@ import { AIProcessingProgress } from '@/services/aiService';
 import AIStudioHomeView from './AIStudioHomeView';
 import ImageSlotCarousel from './ImageSlotCarousel';
 import AutoQualityView from './AutoQualityView';
-import RemoveBackgroundView from './RemoveBackgroundView';
 import ReplaceBackgroundView from './ReplaceBackgroundView';
 import AIProcessingOverlay from './AIProcessingOverlay';
 import AISuccessOverlay from './AISuccessOverlay';
 import AIErrorView from './AIErrorView';
 import PremiumAIPrompt from './PremiumAIPrompt';
+import AIAlreadyAppliedToast from './AIAlreadyAppliedToast';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -41,7 +41,6 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export type AIStudioView = 
   | 'home'
   | 'auto_quality'
-  | 'background_remove'
   | 'background_replace'
   | 'processing'
   | 'success'
@@ -56,8 +55,8 @@ export interface AIStudioSheetProps {
   /** Currently selected slot ID (if any) */
   selectedSlotId: string | null;
   isPremium: boolean;
-  /** Called when AI enhancement is applied - includes slotId and enhanced URI */
-  onApply: (slotId: string, enhancedUri: string) => void;
+  /** Called when AI enhancement is applied - includes slotId, enhanced URI, feature key, and optional background info */
+  onApply: (slotId: string, enhancedUri: string, featureKey: AIFeatureKey, backgroundInfo?: AIProcessingProgress['backgroundInfo']) => void;
   onSkip: () => void;
   onUpgrade?: () => void;
   /** Callback when user wants to add an image (navigates to capture) */
@@ -66,8 +65,10 @@ export interface AIStudioSheetProps {
   initialView?: AIFeatureKey | 'home';
   /** Navigation trigger - when this changes, force navigate to initialView */
   navTrigger?: number;
-  /** Pre-processed/transformed images for ALL slots (with adjustments applied) - maps slotId to URI */
+  /** CROPPED images for DISPLAY in AI Studio preview (shows user's current view) */
   transformedImages?: Record<string, string>;
+  /** ORIGINAL images for AI PROCESSING (full images, not cropped) */
+  originalImagesForAI?: Record<string, string>;
 }
 
 export default function AIStudioSheet({
@@ -83,6 +84,7 @@ export default function AIStudioSheet({
   initialView = 'home',
   navTrigger = 0,
   transformedImages = {},
+  originalImagesForAI = {},
 }: AIStudioSheetProps) {
   const insets = useSafeAreaInsets();
   
@@ -91,13 +93,21 @@ export default function AIStudioSheet({
   
   // Get the currently selected slot's image
   const selectedImage = internalSelectedSlotId ? capturedImages[internalSelectedSlotId] : null;
-  // Use transformed image for the current slot if available, otherwise use original
-  const transformedUri = internalSelectedSlotId ? transformedImages[internalSelectedSlotId] : null;
-  const imageUri = transformedUri || selectedImage?.uri || '';
+  // DISPLAY URI: Use cropped/transformed image for preview (shows user's current view)
+  const displayUri = internalSelectedSlotId ? transformedImages[internalSelectedSlotId] : null;
+  // AI URI: Use original full image for AI processing
+  const aiUri = internalSelectedSlotId ? originalImagesForAI[internalSelectedSlotId] : null;
+  // imageUri for display - prefer cropped, fallback to original
+  const imageUri = displayUri || selectedImage?.uri || '';
+  // imageUriForAI - prefer full original, fallback to display
+  const imageUriForAI = aiUri || displayUri || selectedImage?.uri || '';
   const imageSize = {
     width: selectedImage?.width || 1080,
     height: selectedImage?.height || 1080,
   };
+  
+  // Get AI enhancements already applied to this image
+  const aiEnhancementsApplied = selectedImage?.aiEnhancementsApplied ?? [];
   
   // Navigation state - initialize based on initialView prop
   const [currentView, setCurrentView] = useState<AIStudioView>(
@@ -140,6 +150,12 @@ export default function AIStudioSheet({
   const [progress, setProgress] = useState<AIProcessingProgress | null>(null);
   const [enhancedImageUri, setEnhancedImageUri] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Background info for solid/gradient replacement (to display in comparison view)
+  const [backgroundInfo, setBackgroundInfo] = useState<AIProcessingProgress['backgroundInfo'] | null>(null);
+  
+  // Toast state for "already applied" feedback
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastFeatureKey, setToastFeatureKey] = useState<AIFeatureKey>('auto_quality');
   
   // For cancellation
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -154,6 +170,17 @@ export default function AIStudioSheet({
     setCurrentView(featureKey);
   }, []);
   
+  // Handle tap on already-applied feature (show toast instead of navigating)
+  const handleAlreadyAppliedTap = useCallback((featureKey: AIFeatureKey) => {
+    setToastFeatureKey(featureKey);
+    setToastVisible(true);
+  }, []);
+  
+  // Dismiss toast
+  const handleDismissToast = useCallback(() => {
+    setToastVisible(false);
+  }, []);
+  
   // Go back to home view
   const handleBack = useCallback(() => {
     setCurrentView('home');
@@ -161,6 +188,7 @@ export default function AIStudioSheet({
     setEnhancedImageUri(null);
     setErrorMessage(null);
     setProgress(null);
+    setBackgroundInfo(null);
   }, []);
   
   // Handle processing progress
@@ -168,7 +196,15 @@ export default function AIStudioSheet({
     setProgress(p);
     
     if (p.status === 'completed' && p.outputUrl) {
+      console.log('[AIStudioSheet] Received enhanced URL:', p.outputUrl);
       setEnhancedImageUri(p.outputUrl);
+      // Store background info for transparent PNG display in comparison view
+      if (p.backgroundInfo) {
+        console.log('[AIStudioSheet] Background info received:', p.backgroundInfo.type);
+        setBackgroundInfo(p.backgroundInfo);
+      } else {
+        setBackgroundInfo(null);
+      }
       setCurrentView('success');
     } else if (p.status === 'failed') {
       setErrorMessage(p.error || 'Enhancement failed');
@@ -195,11 +231,11 @@ export default function AIStudioSheet({
   
   // Apply enhanced image
   const handleApplyEnhanced = useCallback(() => {
-    if (enhancedImageUri && internalSelectedSlotId) {
-      onApply(internalSelectedSlotId, enhancedImageUri);
+    if (enhancedImageUri && internalSelectedSlotId && selectedFeature) {
+      onApply(internalSelectedSlotId, enhancedImageUri, selectedFeature, backgroundInfo || undefined);
       bottomSheetRef.current?.dismiss();
     }
-  }, [enhancedImageUri, internalSelectedSlotId, onApply, bottomSheetRef]);
+  }, [enhancedImageUri, internalSelectedSlotId, selectedFeature, backgroundInfo, onApply, bottomSheetRef]);
   
   // Try another enhancement
   const handleTryAnother = useCallback(() => {
@@ -207,6 +243,7 @@ export default function AIStudioSheet({
     setCurrentView('home');
     setSelectedFeature(null);
     setProgress(null);
+    setBackgroundInfo(null);
   }, []);
   
   // Retry after error
@@ -264,8 +301,10 @@ export default function AIStudioSheet({
             capturedImages={capturedImages}
             selectedSlotId={internalSelectedSlotId}
             transformedImages={transformedImages}
+            aiEnhancementsApplied={aiEnhancementsApplied}
             onSelectSlot={handleSelectSlot}
             onSelectFeature={handleSelectFeature}
+            onAlreadyAppliedTap={handleAlreadyAppliedTap}
             onSkip={handleSkip}
             onAddImage={onAddImage}
           />
@@ -275,19 +314,10 @@ export default function AIStudioSheet({
         return (
           <AutoQualityView
             imageUri={imageUri}
+            aiImageUri={imageUriForAI}
             imageSize={imageSize}
-            onBack={handleBack}
-            onStartProcessing={handleStartProcessing}
-            onProgress={handleProgress}
-            getAbortSignal={getAbortSignal}
-          />
-        );
-        
-      case 'background_remove':
-        return (
-          <RemoveBackgroundView
-            imageUri={imageUri}
-            imageSize={imageSize}
+            isAlreadyEnhanced={aiEnhancementsApplied.includes('auto_quality')}
+            backgroundInfo={selectedImage?.backgroundInfo}
             onBack={handleBack}
             onStartProcessing={handleStartProcessing}
             onProgress={handleProgress}
@@ -301,6 +331,9 @@ export default function AIStudioSheet({
             imageUri={imageUri}
             imageSize={imageSize}
             isPremium={isPremium}
+            isAlreadyEnhanced={aiEnhancementsApplied.includes('background_replace')}
+            transparentPngUrl={selectedImage?.transparentPngUrl}
+            currentBackgroundInfo={selectedImage?.backgroundInfo}
             onBack={handleBack}
             onStartProcessing={handleStartProcessing}
             onProgress={handleProgress}
@@ -319,12 +352,25 @@ export default function AIStudioSheet({
         );
         
       case 'success':
+        // For Auto Quality: use existing backgroundInfo from the image (user's current perceived state)
+        // For Replace Background: use the new backgroundInfo from the API response
+        const successBackgroundInfo = selectedFeature === 'auto_quality' 
+          ? selectedImage?.backgroundInfo 
+          : backgroundInfo;
+        
+        console.log('[AIStudioSheet] Success view - feature:', selectedFeature);
+        console.log('[AIStudioSheet] Success view - selectedImage?.backgroundInfo:', selectedImage?.backgroundInfo);
+        console.log('[AIStudioSheet] Success view - backgroundInfo state:', backgroundInfo);
+        console.log('[AIStudioSheet] Success view - successBackgroundInfo:', successBackgroundInfo);
+        
         return (
           <AISuccessOverlay
-            originalUri={imageUri}
+            originalUri={imageUriForAI}
             enhancedUri={enhancedImageUri!}
+            featureKey={selectedFeature || 'auto_quality'}
             onKeepEnhanced={handleApplyEnhanced}
             onRevert={handleTryAnother}
+            backgroundInfo={successBackgroundInfo || undefined}
           />
         );
         
@@ -343,21 +389,30 @@ export default function AIStudioSheet({
   };
 
   return (
-    <BottomSheetModal
-      ref={bottomSheetRef}
-      snapPoints={snapPoints}
-      index={0}
-      enablePanDownToClose
-      enableDynamicSizing={false}
-      backdropComponent={renderBackdrop}
-      handleIndicatorStyle={styles.indicator}
-      backgroundStyle={styles.sheetBackground}
-      style={styles.sheet}
-    >
-      <BottomSheetView style={[styles.content, { height: SCREEN_HEIGHT * 0.95 - 40 }]}>
-        {renderContent()}
-      </BottomSheetView>
-    </BottomSheetModal>
+    <>
+      <BottomSheetModal
+        ref={bottomSheetRef}
+        snapPoints={snapPoints}
+        index={0}
+        enablePanDownToClose
+        enableDynamicSizing={false}
+        backdropComponent={renderBackdrop}
+        handleIndicatorStyle={styles.indicator}
+        backgroundStyle={styles.sheetBackground}
+        style={styles.sheet}
+      >
+        <BottomSheetView style={[styles.content, { height: SCREEN_HEIGHT * 0.95 - 40 }]}>
+          {renderContent()}
+        </BottomSheetView>
+      </BottomSheetModal>
+      
+      {/* Toast for "already applied" feedback */}
+      <AIAlreadyAppliedToast
+        visible={toastVisible}
+        featureKey={toastFeatureKey}
+        onDismiss={handleDismissToast}
+      />
+    </>
   );
 }
 

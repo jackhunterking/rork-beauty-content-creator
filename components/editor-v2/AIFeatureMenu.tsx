@@ -22,7 +22,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Wand2,
-  Scissors,
   ImagePlus,
   Sparkles,
 } from 'lucide-react-native';
@@ -36,8 +35,6 @@ import type { AIFeatureKey, AIModelConfig } from '@/types';
 function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 16) {
   const strokeWidth = 1.8;
   switch (featureKey) {
-    case 'background_remove':
-      return <Scissors size={size} color={color} strokeWidth={strokeWidth} />;
     case 'background_replace':
       return <ImagePlus size={size} color={color} strokeWidth={strokeWidth} />;
     case 'auto_quality':
@@ -52,8 +49,6 @@ function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 
  */
 function getFeatureLabel(featureKey: AIFeatureKey): string {
   switch (featureKey) {
-    case 'background_remove':
-      return 'Remove BG';
     case 'background_replace':
       return 'Replace BG';
     case 'auto_quality':

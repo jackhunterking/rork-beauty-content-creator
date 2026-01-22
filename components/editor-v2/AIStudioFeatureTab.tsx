@@ -17,7 +17,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
-  Scissors,
   ImagePlus,
   Wand2,
   Crown,
@@ -37,8 +36,6 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
  */
 function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 28) {
   switch (featureKey) {
-    case 'background_remove':
-      return <Scissors size={size} color={color} strokeWidth={1.8} />;
     case 'background_replace':
       return <ImagePlus size={size} color={color} strokeWidth={1.8} />;
     case 'auto_quality':
@@ -55,8 +52,6 @@ function getFeatureGradient(featureKey: AIFeatureKey): [string, string] {
   switch (featureKey) {
     case 'auto_quality':
       return Colors.light.ai.gradientQuality;
-    case 'background_remove':
-      return Colors.light.ai.gradientRemove;
     case 'background_replace':
       return Colors.light.ai.gradientReplace;
     default:

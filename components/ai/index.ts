@@ -11,7 +11,6 @@ export type { AIStudioSheetProps, AIStudioView } from './AIStudioSheet';
 // Feature views
 export { default as AIStudioHomeView } from './AIStudioHomeView';
 export { default as AutoQualityView } from './AutoQualityView';
-export { default as RemoveBackgroundView } from './RemoveBackgroundView';
 export { default as ReplaceBackgroundView } from './ReplaceBackgroundView';
 
 // Image carousel for slot selection
@@ -22,6 +21,9 @@ export type { ImageSlotCarouselProps } from './ImageSlotCarousel';
 export { default as AIProcessingOverlay } from './AIProcessingOverlay';
 export { default as AISuccessOverlay } from './AISuccessOverlay';
 export { default as AIErrorView } from './AIErrorView';
+
+// Already applied toast
+export { default as AIAlreadyAppliedToast } from './AIAlreadyAppliedToast';
 
 // Premium prompt
 export { default as PremiumAIPrompt } from './PremiumAIPrompt';
