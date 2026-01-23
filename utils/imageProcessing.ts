@@ -4,6 +4,64 @@ import { ImageSlot, FramePositionInfo, MediaAsset } from '@/types';
 import { trackTempFile } from '@/services/tempCleanupService';
 
 // ============================================
+// Remote Image Localization for Templated.io
+// ============================================
+
+/**
+ * Ensure a URI is local (file://) for Templated.io upload
+ * 
+ * Templated.io's servers may not be able to access certain remote URLs
+ * (e.g., Supabase storage URLs). This function downloads remote images
+ * to local cache, ensuring they can be freshly uploaded to temp storage
+ * that Templated.io can access.
+ * 
+ * @param uri - Local file URI (file://) or remote URL (http/https)
+ * @returns Local file URI (always file://)
+ */
+export async function ensureLocalUri(uri: string): Promise<string> {
+  // Already local - return as-is
+  if (uri.startsWith('file://') || uri.startsWith(FileSystem.cacheDirectory || '')) {
+    return uri;
+  }
+  
+  // Remote URL - download to local cache using FileSystem
+  if (uri.startsWith('http://') || uri.startsWith('https://')) {
+    console.log('[ImageProcessing] Downloading remote image to local cache...');
+    console.log('[ImageProcessing] Source URL:', uri.substring(0, 80) + '...');
+    
+    // Generate unique filename for the download
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 8);
+    const localPath = `${FileSystem.cacheDirectory}download_${timestamp}_${random}.jpg`;
+    
+    // Download using FileSystem which is more reliable for remote URLs
+    const downloadResult = await FileSystem.downloadAsync(uri, localPath);
+    
+    if (downloadResult.status !== 200) {
+      console.error(`[ImageProcessing] Download failed with status ${downloadResult.status}`);
+      throw new Error(`Image download failed (status ${downloadResult.status}). The file may have been deleted or expired.`);
+    }
+    
+    // Verify the file was actually downloaded
+    const fileInfo = await FileSystem.getInfoAsync(downloadResult.uri);
+    if (!fileInfo.exists) {
+      console.error('[ImageProcessing] Downloaded file does not exist');
+      throw new Error('Downloaded image file not found');
+    }
+    
+    // Track the downloaded file for cleanup
+    trackTempFile(downloadResult.uri);
+    
+    console.log('[ImageProcessing] Remote image localized successfully:', downloadResult.uri.substring(0, 60) + '...');
+    return downloadResult.uri;
+  }
+  
+  // Unknown format - return as-is and let caller handle errors
+  console.warn('[ImageProcessing] Unknown URI format:', uri.substring(0, 30));
+  return uri;
+}
+
+// ============================================
 // Constants for Image Adjustment Feature
 // ============================================
 

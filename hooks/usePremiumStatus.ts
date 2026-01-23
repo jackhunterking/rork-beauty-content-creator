@@ -62,10 +62,10 @@ export interface TieredSubscription {
   entitlementsInfo: EntitlementsInfo | null;
   
   /** Request Pro tier access (shows paywall if not Pro/Studio) */
-  requestProAccess: (onGranted?: () => void, featureRequested?: string) => Promise<void>;
+  requestProAccess: (onGranted?: () => void, featureRequested?: string, previewImageUrl?: string) => Promise<void>;
   
   /** Request Studio tier access (shows paywall if not Studio) */
-  requestStudioAccess: (onGranted?: () => void, featureRequested?: string) => Promise<void>;
+  requestStudioAccess: (onGranted?: () => void, featureRequested?: string, previewImageUrl?: string) => Promise<void>;
 }
 
 /**
@@ -76,6 +76,8 @@ export interface PlacementParams {
   feature_requested?: string;
   /** User's current tier */
   current_tier?: SubscriptionTier;
+  /** Preview image URL for dynamic paywall content */
+  preview_image_url?: string;
   /** Any additional custom parameters */
   [key: string]: string | number | boolean | undefined;
 }
@@ -217,6 +219,10 @@ export function useTieredSubscription(): TieredSubscription {
             .eq('id', user.id)
             .single();
           
+          // #region agent log
+          console.log('🔴🔴🔴 [DEBUG-TIER] SUPABASE CHECK - email:', user.email, 'profileTier:', profile?.subscription_tier, 'error:', error?.message);
+          // #endregion
+          
           if (!error && profile?.subscription_tier) {
             setSupabaseTier(profile.subscription_tier as SubscriptionTier);
           } else {
@@ -273,6 +279,10 @@ export function useTieredSubscription(): TieredSubscription {
   // Resolve final tier
   const { tier, source } = resolveTier(activeEntitlements, supabaseTier);
 
+  // #region agent log
+  console.log('🔴🔴🔴 [DEBUG-TIER] RESOLVED - tier:', tier, 'source:', source, 'supabaseTier:', supabaseTier, 'superwallStatus:', subscriptionStatus?.status, 'entitlements:', activeEntitlements.map(e=>e.id), 'canDownload:', tier !== 'free');
+  // #endregion
+
   // Calculate loading state
   const superwallLoading = subscriptionStatus?.status === 'UNKNOWN' || subscriptionStatus === undefined;
   const isLoading = superwallLoading && isCheckingSupabase;
@@ -280,14 +290,19 @@ export function useTieredSubscription(): TieredSubscription {
   // Request Pro access helper
   const requestProAccess = useCallback(async (
     onGranted?: () => void,
-    featureRequested?: string
+    featureRequested?: string,
+    previewImageUrl?: string
   ) => {
+    // #region agent log
+    console.log('🔴🔴🔴 [DEBUG-PAYWALL] Calling registerPlacement with placement: "pro_download"');
+    // #endregion
     await registerPlacement({
       placement: 'pro_download',
       feature: onGranted,
       params: {
         feature_requested: featureRequested || 'download',
         current_tier: tier,
+        preview_image_url: previewImageUrl || '',
       } as PlacementParams,
     });
   }, [registerPlacement, tier]);
@@ -295,7 +310,8 @@ export function useTieredSubscription(): TieredSubscription {
   // Request Studio access helper
   const requestStudioAccess = useCallback(async (
     onGranted?: () => void,
-    featureRequested?: string
+    featureRequested?: string,
+    previewImageUrl?: string
   ) => {
     await registerPlacement({
       placement: 'studio_ai_generate',
@@ -303,6 +319,7 @@ export function useTieredSubscription(): TieredSubscription {
       params: {
         feature_requested: featureRequested || 'ai_studio',
         current_tier: tier,
+        preview_image_url: previewImageUrl || '',
       } as PlacementParams,
     });
   }, [registerPlacement, tier]);
@@ -374,9 +391,9 @@ export function usePremiumFeature() {
   ) => {
     // Route to appropriate tier based on placement
     if (placement.includes('studio') || placement.includes('ai')) {
-      await requestStudioAccess(onFeatureAccess, params?.feature_requested as string);
+      await requestStudioAccess(onFeatureAccess, params?.feature_requested as string, params?.preview_image_url);
     } else {
-      await requestProAccess(onFeatureAccess, params?.feature_requested as string);
+      await requestProAccess(onFeatureAccess, params?.feature_requested as string, params?.preview_image_url);
     }
   }, [requestProAccess, requestStudioAccess]);
 

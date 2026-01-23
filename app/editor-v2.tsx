@@ -34,11 +34,12 @@ import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { getProjectDisplayName } from '@/utils/projectName';
 import RenameProjectModal from '@/components/RenameProjectModal';
-import { downloadAndSaveToGallery } from '@/services/downloadService';
-import { usePremiumStatus, usePremiumFeature } from '@/hooks/usePremiumStatus';
+import { downloadAndSaveToGallery, saveToGallery } from '@/services/downloadService';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
+import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCapturedSlotCount } from '@/utils/slotParser';
-import { applyAdjustmentsAndCrop } from '@/utils/imageProcessing';
+import { applyAdjustmentsAndCrop, ensureLocalUri } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
 import { uploadTempImage } from '@/services/tempUploadService';
 import {
@@ -88,8 +89,21 @@ export default function EditorV2Screen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { currentProject, setCapturedImage, resetProject, saveDraft, isSavingDraft, refreshDrafts, renameDraft, isRenamingDraft, deleteDraft } = useApp();
-  const { isPremium } = usePremiumStatus();
-  const { requestPremiumAccess } = usePremiumFeature();
+  
+  // Tiered subscription for download paywall and AI features
+  const { canDownload, canUseAIStudio, tier, requestProAccess, requestStudioAccess } = useTieredSubscription();
+  
+  // Backward compatibility: isPremium = any tier above free
+  const isPremium = tier !== 'free';
+  
+  // Legacy requestPremiumAccess wrapper for child components
+  const requestPremiumAccess = useCallback(async (feature: string) => {
+    if (feature.includes('studio') || feature.includes('ai')) {
+      await requestStudioAccess(undefined, feature);
+    } else {
+      await requestProAccess(undefined, feature);
+    }
+  }, [requestProAccess, requestStudioAccess]);
   
   
   // Rename modal state
@@ -1765,82 +1779,25 @@ export default function EditorV2Screen() {
     }
   }, [hasUnsavedChanges, resetProject, router, handleSaveDraft, currentProject.draftId]);
 
-  // Handle download to gallery - calls Templated.io API on-demand
-  const handleDownload = useCallback(async () => {
-    // Check if we have any photos to render
-    const hasPhotos = Object.values(capturedImages).some(img => img !== null);
-    if (!hasPhotos) {
-      Alert.alert('No Photos', 'Please add at least one photo before downloading.');
-      return;
-    }
-
-    if (!template?.templatedId) {
-      Alert.alert('Error', 'Template not loaded properly.');
-      return;
-    }
-
+  // Execute the actual download to gallery
+  const executeDownload = useCallback(async () => {
     setIsDownloading(true);
 
     try {
-      console.log('[EditorV2] Starting on-demand render for download...');
+      console.log('[EditorV2] Starting download using ViewShot capture...');
       
-      // Prepare photos with adjustments applied
-      const photosToRender: Record<string, string> = {};
+      // Capture exactly what's displayed on screen - the single source of truth
+      // This includes: photos with adjustments, frame overlay, background color, overlays
+      const capturedUri = await captureCanvasWithOverlays();
       
-      for (const [slotId, media] of Object.entries(capturedImages)) {
-        if (!media?.uri) continue;
-        
-        const slot = getSlotById(slots, slotId);
-        if (!slot) {
-          photosToRender[slotId] = media.uri;
-          continue;
-        }
-        
-        // Apply adjustments if any
-        const adjustments = media.adjustments;
-        const hasNonDefaultAdjustments = adjustments && (
-          adjustments.translateX !== 0 ||
-          adjustments.translateY !== 0 ||
-          adjustments.scale !== 1.0 ||
-          (adjustments.rotation !== undefined && adjustments.rotation !== 0)
-        );
-        
-        if (hasNonDefaultAdjustments && adjustments) {
-          try {
-            const processed = await applyAdjustmentsAndCrop(
-              media.uri,
-              media.width,
-              media.height,
-              slot.width,
-              slot.height,
-              adjustments
-            );
-            photosToRender[slotId] = processed.uri;
-          } catch (adjustError) {
-            console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
-            photosToRender[slotId] = media.uri;
-          }
-        } else {
-          photosToRender[slotId] = media.uri;
-        }
+      if (!capturedUri) {
+        throw new Error('Failed to capture canvas. Please try again.');
       }
       
-      // Call Templated.io API NOW (on-demand)
-      console.log('[EditorV2] Calling Templated.io API for final render...');
-      const renderResult = await renderPreview({
-        templateId: template.templatedId,
-        slotImages: photosToRender,
-        backgroundOverrides: Object.keys(backgroundOverrides).length > 0 ? backgroundOverrides : undefined,
-      });
+      console.log('[EditorV2] Canvas captured, saving to gallery...');
       
-      if (!renderResult.success || !renderResult.renderUrl) {
-        throw new Error(renderResult.error || 'Render failed');
-      }
-      
-      console.log('[EditorV2] Render complete, downloading...');
-      
-      // Download the rendered image
-      const downloadResult = await downloadAndSaveToGallery(renderResult.renderUrl);
+      // Save the captured local image directly to gallery (no download needed)
+      const downloadResult = await saveToGallery(capturedUri);
       
       if (downloadResult.success) {
         Alert.alert('Saved!', 'Image saved to your photo library.');
@@ -1856,7 +1813,69 @@ export default function EditorV2Screen() {
     } finally {
       setIsDownloading(false);
     }
-  }, [capturedImages, template?.templatedId, slots, backgroundOverrides]);
+  }, [captureCanvasWithOverlays]);
+
+  // Handle download to gallery - checks subscription tier first
+  const handleDownload = useCallback(async () => {
+    // #region agent log
+    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] ENTRY - canDownload:', canDownload, 'tier:', tier);
+    // #endregion
+    
+    // Check if we have any photos to render
+    const hasPhotos = Object.values(capturedImages).some(img => img !== null);
+    if (!hasPhotos) {
+      Alert.alert('No Photos', 'Please add at least one photo before downloading.');
+      return;
+    }
+
+    // Track the download attempt
+    captureEvent(POSTHOG_EVENTS.PREMIUM_FEATURE_ATTEMPTED, {
+      feature: 'download_from_editor',
+      current_tier: tier,
+    });
+
+    // #region agent log
+    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] BEFORE CHECK - canDownload:', canDownload, 'tier:', tier, 'willAllow:', canDownload === true);
+    // #endregion
+
+    // If user has Pro or Studio tier, execute download immediately
+    if (canDownload) {
+      // #region agent log
+      console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] ALLOWING DOWNLOAD - canDownload is TRUE');
+      // #endregion
+      await executeDownload();
+      return;
+    }
+
+    // User is Free tier - show Pro paywall with preview image
+    console.log(`[EditorV2] User is ${tier} tier, showing Pro paywall for download`);
+    
+    // Capture preview for dynamic paywall content
+    let cloudPreviewUrl = '';
+    try {
+      const capturedUri = await captureCanvasWithOverlays();
+      if (capturedUri) {
+        console.log('[EditorV2] Uploading preview for paywall...');
+        cloudPreviewUrl = await uploadTempImage(capturedUri, 'paywall-preview');
+        console.log('[EditorV2] Preview uploaded for paywall');
+      }
+    } catch (error) {
+      console.warn('[EditorV2] Failed to upload preview for paywall:', error);
+    }
+    
+    // Show paywall - DO NOT pass callback, we verify access explicitly after
+    // #region agent log
+    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] Calling requestProAccess (no callback)');
+    // #endregion
+    await requestProAccess(undefined, 'download_from_editor', cloudPreviewUrl);
+    
+    // CRITICAL: After paywall, we do NOT auto-execute download
+    // User must tap download button again to verify they now have access
+    // This prevents any Superwall callback bugs from granting unauthorized access
+    // #region agent log
+    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] Paywall flow complete - user must tap download again to verify access');
+    // #endregion
+  }, [capturedImages, canDownload, tier, captureCanvasWithOverlays, requestProAccess]);
 
   // Handle opening project actions bottom sheet
   const handleOpenProjectActions = useCallback(() => {

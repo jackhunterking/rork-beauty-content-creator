@@ -26,6 +26,7 @@ import { downloadAndSaveToGallery } from '@/services/downloadService';
 import { downloadAndShare } from '@/services/shareService';
 import { createPortfolioItem } from '@/services/portfolioService';
 import { uploadToStorage } from '@/services/imageUploadService';
+import { uploadTempImage } from '@/services/tempUploadService';
 import { getAllFormatIds, getFormatById, getDefaultFormat } from '@/constants/formats';
 import { useResponsive } from '@/hooks/useResponsive';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
@@ -384,15 +385,29 @@ export default function PublishScreen() {
       return;
     }
 
-    // User is Free tier - show Pro paywall
+    // User is Free tier - show Pro paywall with their preview image
     console.log(`[Publish] User is ${tier} tier, showing Pro paywall for ${featureRequested}`);
     
-    await requestProAccess(async () => {
-      // This callback is only executed if user successfully subscribes
-      console.log(`[Publish] Pro access granted for ${featureRequested}, executing action`);
-      await executePlatformAction(platformId);
-    }, featureRequested);
-  }, [previewUri, canDownload, tier, executePlatformAction, requestProAccess]);
+    // Upload preview to get cloud URL for dynamic paywall content
+    let cloudPreviewUrl = previewUri;
+    if (previewUri.startsWith('file://')) {
+      try {
+        console.log('[Publish] Uploading preview for paywall...');
+        cloudPreviewUrl = await uploadTempImage(previewUri, 'paywall-preview');
+        console.log('[Publish] Preview uploaded for paywall:', cloudPreviewUrl.substring(0, 60) + '...');
+      } catch (error) {
+        console.warn('[Publish] Failed to upload preview for paywall:', error);
+        // Continue with local URI as fallback (Superwall will use placeholder)
+      }
+    }
+    
+    // Show paywall - DO NOT pass callback, we verify access explicitly
+    // CRITICAL: Never trust Superwall callbacks for access control
+    await requestProAccess(undefined, featureRequested, cloudPreviewUrl);
+    
+    // After paywall flow, user must tap button again to verify they have access
+    console.log(`[Publish] Paywall flow complete - user must tap again to verify access`);
+  }, [previewUri, canDownload, tier, requestProAccess]);
 
   // Handle Done button - reset project and navigate to home
   const handleDone = useCallback(() => {

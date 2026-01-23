@@ -43,6 +43,10 @@ const SUPERWALL_API_KEYS = {
   android: process.env.EXPO_PUBLIC_SUPERWALL_ANDROID_KEY || "",
 };
 
+// #region agent log
+console.log('🔴🔴🔴 [DEBUG-SUPERWALL] API Key set:', SUPERWALL_API_KEYS.ios ? `Yes (${SUPERWALL_API_KEYS.ios.substring(0, 10)}...)` : 'NO - EMPTY!');
+// #endregion
+
 // PostHog configuration - get from PostHog dashboard (Project Settings → Project API Key)
 const POSTHOG_API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY || "";
 const POSTHOG_HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
