@@ -18,6 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
   ImagePlus,
+  Scissors,
   Wand2,
   Crown,
 } from 'lucide-react-native';
@@ -38,6 +39,8 @@ function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 
   switch (featureKey) {
     case 'background_replace':
       return <ImagePlus size={size} color={color} strokeWidth={1.8} />;
+    case 'background_remove':
+      return <Scissors size={size} color={color} strokeWidth={1.8} />;
     case 'auto_quality':
       return <Wand2 size={size} color={color} strokeWidth={1.8} />;
     default:
@@ -52,6 +55,8 @@ function getFeatureGradient(featureKey: AIFeatureKey): [string, string] {
   switch (featureKey) {
     case 'auto_quality':
       return Colors.light.ai.gradientQuality;
+    case 'background_remove':
+      return Colors.light.ai.gradientReplace;
     case 'background_replace':
       return Colors.light.ai.gradientReplace;
     default:

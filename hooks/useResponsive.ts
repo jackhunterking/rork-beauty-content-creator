@@ -5,8 +5,8 @@
  * Handles device type detection, dynamic grid columns, and adaptive sizing.
  */
 
-import { useMemo } from 'react';
-import { useWindowDimensions, Platform } from 'react-native';
+import { useMemo, useRef } from 'react';
+import { useWindowDimensions, Platform, Dimensions } from 'react-native';
 
 // Breakpoints for responsive design
 const BREAKPOINTS = {
@@ -140,7 +140,32 @@ const getMaxPreviewWidth = (screenWidth: number, isTablet: boolean): number => {
  * Hook that provides responsive configuration based on screen dimensions
  */
 export function useResponsive(): ResponsiveConfig {
-  const { width, height } = useWindowDimensions();
+  const { width: rawWidth, height: rawHeight } = useWindowDimensions();
+  
+  // Cache to store last valid dimensions
+  // This prevents layout issues when useWindowDimensions temporarily returns 0
+  // (which happens when the app returns from background)
+  const lastValidDimensions = useRef<{ width: number; height: number } | null>(null);
+  
+  // Use raw dimensions if valid, otherwise fall back to cached or screen dimensions
+  let width = rawWidth;
+  let height = rawHeight;
+  
+  if (rawWidth > 0 && rawHeight > 0) {
+    // Valid dimensions - cache them
+    lastValidDimensions.current = { width: rawWidth, height: rawHeight };
+  } else {
+    // Invalid dimensions (0) - use cached or fallback to Dimensions API
+    if (lastValidDimensions.current) {
+      width = lastValidDimensions.current.width;
+      height = lastValidDimensions.current.height;
+    } else {
+      // No cached dimensions yet - use Dimensions API as fallback
+      const screen = Dimensions.get('screen');
+      width = screen.width || 375; // iPhone default
+      height = screen.height || 812;
+    }
+  }
   
   return useMemo(() => {
     // Device detection

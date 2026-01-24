@@ -210,7 +210,7 @@ function resolveTier(
  */
 export function useTieredSubscription(): TieredSubscription {
   const { subscriptionStatus, user: superwallUser } = useUser();
-  const { getEntitlements, setUserAttributes, registerPlacement: directRegisterPlacement } = useSuperwall();
+  const { getEntitlements, setUserAttributes } = useSuperwall();
   
   // Supabase tier state
   const [supabaseTier, setSupabaseTier] = useState<SubscriptionTier | undefined>(undefined);
@@ -314,38 +314,87 @@ export function useTieredSubscription(): TieredSubscription {
   
   /** Show Download paywall */
   const requestDownload = useCallback(async () => {
-    await directRegisterPlacement('pro_download', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'pro_download',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] pro_download error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
   /** Show Share paywall */
   const requestShare = useCallback(async () => {
-    await directRegisterPlacement('pro_share', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'pro_share',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] pro_share error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
   /** Show Remove Watermark paywall */
   const requestRemoveWatermark = useCallback(async () => {
-    await directRegisterPlacement('pro_watermark', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'pro_watermark',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] pro_watermark error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
   /** Show Auto Quality paywall */
   const requestAutoQuality = useCallback(async () => {
-    await directRegisterPlacement('studio_auto_quality', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'studio_auto_quality',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] studio_auto_quality error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
   /** Show BG Remove paywall */
   const requestBGRemove = useCallback(async () => {
-    await directRegisterPlacement('studio_bg_remove', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'studio_bg_remove',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] studio_bg_remove error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
   /** Show BG Replace paywall */
   const requestBGReplace = useCallback(async () => {
-    await directRegisterPlacement('studio_bg_replace', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'studio_bg_replace',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] studio_bg_replace error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
   
-  /** Show Membership paywall */
+  /** Show Membership paywall - using usePlacement as per Superwall docs */
   const requestMembership = useCallback(async () => {
-    await directRegisterPlacement('membership_manage', { current_tier: tier });
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'membership_manage',
+        params: { current_tier: tier },
+      });
+    } catch (error) {
+      console.error('[Subscription] membership_manage error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
 
   // ============================================
   // Legacy helpers (for backwards compatibility)
@@ -357,12 +406,18 @@ export function useTieredSubscription(): TieredSubscription {
     featureRequested?: string,
     previewImageUrl?: string
   ) => {
-    const params = {
-      feature_requested: featureRequested || 'download',
-      current_tier: tier,
-    } as PlacementParams;
-    await directRegisterPlacement('pro_download', params);
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'pro_download',
+        params: {
+          feature_requested: featureRequested || 'download',
+          current_tier: tier,
+        } as PlacementParams,
+      });
+    } catch (error) {
+      console.error('[Subscription] pro_download (legacy) error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
 
   /** @deprecated Use requestAutoQuality, requestBGRemove, or requestBGReplace instead */
   const requestStudioAccess = useCallback(async (
@@ -370,12 +425,18 @@ export function useTieredSubscription(): TieredSubscription {
     featureRequested?: string,
     previewImageUrl?: string
   ) => {
-    const params = {
-      feature_requested: featureRequested || 'ai_studio',
-      current_tier: tier,
-    } as PlacementParams;
-    await directRegisterPlacement('studio_ai_generate', params);
-  }, [directRegisterPlacement, tier]);
+    try {
+      await hookRegisterPlacement({
+        placement: 'studio_ai_generate',
+        params: {
+          feature_requested: featureRequested || 'ai_studio',
+          current_tier: tier,
+        } as PlacementParams,
+      });
+    } catch (error) {
+      console.error('[Subscription] studio_ai_generate (legacy) error:', error);
+    }
+  }, [hookRegisterPlacement, tier]);
 
   return {
     tier,

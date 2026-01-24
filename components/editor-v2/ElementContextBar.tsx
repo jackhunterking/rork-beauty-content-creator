@@ -49,6 +49,7 @@ import {
   Square,
   Wand2,
   ImagePlus,
+  Scissors,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors, { BACKGROUND_COLORS } from '@/constants/colors';
@@ -522,6 +523,14 @@ export function ElementContextBar({
             onPress: () => handleDirectAIFeature('auto_quality'),
             isAI: true,
             isApplied: aiEnhancementsApplied.includes('auto_quality'),
+          },
+          {
+            id: 'ai-remove-bg',
+            icon: (color) => <Scissors size={16} color={color} strokeWidth={1.8} />,
+            label: 'Remove BG',
+            onPress: () => handleDirectAIFeature('background_remove'),
+            isAI: true,
+            isApplied: aiEnhancementsApplied.includes('background_remove'),
           },
           {
             id: 'ai-replace-bg',

@@ -69,15 +69,6 @@ export interface ForceUpdateStatus {
  */
 export type PublishPlatform = 'download' | 'share';
 
-/**
- * Platform option for the publish screen
- */
-export interface PlatformOption {
-  id: PublishPlatform;
-  name: string;
-  icon: string;
-  supportedFormats: TemplateFormat[];
-}
 
 // ============================================
 // Portfolio Types
@@ -125,16 +116,6 @@ export interface PortfolioRow {
   created_at: string;
 }
 
-/**
- * Params passed to the publish screen
- */
-export interface PublishScreenParams {
-  draftId?: string;
-  templateId: string;
-  templateName: string;
-  previewUri: string;
-  format: TemplateFormat;
-}
 
 // ============================================
 // Slot State Management (NEW)

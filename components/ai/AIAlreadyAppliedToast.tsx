@@ -46,6 +46,8 @@ function getFeatureMessage(featureKey: AIFeatureKey): string {
   switch (featureKey) {
     case 'auto_quality':
       return 'Quality enhancement already applied. Re-applying may reduce image quality.';
+    case 'background_remove':
+      return 'Background already removed. Capture a new photo to process again.';
     case 'background_replace':
       return 'Background already processed. Re-applying may cause artifacts.';
     default:

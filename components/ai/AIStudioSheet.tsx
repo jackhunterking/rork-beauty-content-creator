@@ -28,6 +28,7 @@ import { AIProcessingProgress } from '@/services/aiService';
 import AIStudioHomeView from './AIStudioHomeView';
 import ImageSlotCarousel from './ImageSlotCarousel';
 import AutoQualityView from './AutoQualityView';
+import RemoveBackgroundView from './RemoveBackgroundView';
 import ReplaceBackgroundView from './ReplaceBackgroundView';
 import AIProcessingOverlay from './AIProcessingOverlay';
 import AISuccessOverlay from './AISuccessOverlay';
@@ -41,6 +42,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 export type AIStudioView = 
   | 'home'
   | 'auto_quality'
+  | 'background_remove'
   | 'background_replace'
   | 'processing'
   | 'success'
@@ -318,6 +320,19 @@ export default function AIStudioSheet({
             imageSize={imageSize}
             isAlreadyEnhanced={aiEnhancementsApplied.includes('auto_quality')}
             backgroundInfo={selectedImage?.backgroundInfo}
+            onBack={handleBack}
+            onStartProcessing={handleStartProcessing}
+            onProgress={handleProgress}
+            getAbortSignal={getAbortSignal}
+          />
+        );
+        
+      case 'background_remove':
+        return (
+          <RemoveBackgroundView
+            imageUri={imageUriForAI}
+            imageSize={imageSize}
+            isAlreadyEnhanced={aiEnhancementsApplied.includes('background_remove')}
             onBack={handleBack}
             onStartProcessing={handleStartProcessing}
             onProgress={handleProgress}

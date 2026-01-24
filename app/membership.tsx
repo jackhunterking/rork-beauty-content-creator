@@ -11,7 +11,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { 
   Crown, 
-  Check, 
   ChevronLeft,
   ExternalLink,
   Repeat,
@@ -19,14 +18,10 @@ import {
   HelpCircle,
   Gift,
   Sparkles,
-  Download,
-  Share2,
-  Wand2,
 } from "lucide-react-native";
 import Constants from 'expo-constants';
 import React, { useMemo } from "react";
 import { useRouter } from "expo-router";
-import { useSuperwallEvents } from "expo-superwall";
 import Colors from "@/constants/colors";
 import { useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useResponsive } from "@/hooks/useResponsive";
@@ -40,7 +35,7 @@ const isDevelopmentMode = (): boolean => {
 };
 
 /**
- * Get tier display info
+ * Get tier display info (simplified - no features list needed)
  */
 const getTierInfo = (tier: SubscriptionTier, source: string) => {
   switch (tier) {
@@ -49,36 +44,18 @@ const getTierInfo = (tier: SubscriptionTier, source: string) => {
         name: source === 'complimentary' ? 'Complimentary Studio' : 'Studio',
         icon: Sparkles,
         color: '#9333EA', // Purple
-        features: [
-          { icon: Download, text: 'Unlimited downloads' },
-          { icon: Share2, text: 'Share to all platforms' },
-          { icon: Wand2, text: 'All AI features' },
-          { icon: Check, text: 'No watermarks' },
-          { icon: Check, text: 'Priority support' },
-        ],
       };
     case 'pro':
       return {
         name: source === 'complimentary' ? 'Complimentary Pro' : 'Pro',
         icon: Crown,
         color: Colors.light.accent,
-        features: [
-          { icon: Download, text: 'Unlimited downloads' },
-          { icon: Share2, text: 'Share to all platforms' },
-          { icon: Check, text: 'No watermarks' },
-          { icon: Check, text: 'Priority support' },
-        ],
       };
     default:
       return {
         name: 'Free',
         icon: null,
         color: Colors.light.textSecondary,
-        features: [
-          { icon: Check, text: 'Browse all templates' },
-          { icon: Check, text: 'Capture & edit photos' },
-          { icon: Check, text: 'Preview results' },
-        ],
       };
   }
 };
@@ -86,10 +63,10 @@ const getTierInfo = (tier: SubscriptionTier, source: string) => {
 /**
  * Membership Management Screen
  * 
- * Dedicated screen for viewing and managing subscription tiers:
- * - Free: Basic features
- * - Pro: Download + Share
- * - Studio: Pro + AI features
+ * Simplified screen for managing subscription:
+ * - Shows current plan
+ * - Change Plan: Opens Superwall's membership_manage campaign
+ * - Cancel Subscription: Opens App Store subscription management
  * 
  * Supports both Superwall (paid) and complimentary (admin-granted) tiers.
  */
@@ -103,58 +80,13 @@ export default function MembershipScreen() {
     isLoading: isSubscriptionLoading,
     source,
     currentPlan,
-    canDownload,
-    canUseAIStudio,
     requestMembership,
   } = useTieredSubscription();
-  
-  // Listen for custom paywall actions (like "downgrade_to_free" from Superwall)
-  useSuperwallEvents({
-    onCustomAction: (name) => {
-      console.log('[Membership] Custom paywall action:', name);
-      if (name === 'downgrade_to_free') {
-        handleDowngradeConfirmation();
-      }
-    },
-  });
 
-  // Handle Upgrade to Pro - shows Membership paywall
-  const handleUpgradeToPro = async () => {
-    console.log('[Membership] Opening Membership paywall for Pro upgrade');
+  // Handle Change Plan - opens Superwall's membership_manage campaign
+  const handleChangePlan = async () => {
+    console.log('[Membership] Opening Superwall membership_manage campaign');
     await requestMembership();
-  };
-
-  // Handle Upgrade to Studio - shows Membership paywall
-  const handleUpgradeToStudio = async () => {
-    console.log('[Membership] Opening Membership paywall for Studio upgrade');
-    await requestMembership();
-  };
-
-  // Handle Manage Plan - opens Membership paywall for plan changes
-  const handleManagePlan = async () => {
-    console.log('[Membership] Opening Membership paywall for plan management');
-    await requestMembership();
-  };
-
-  // Show downgrade confirmation dialog
-  const handleDowngradeConfirmation = () => {
-    Alert.alert(
-      'Downgrade Plan?',
-      tier === 'studio' 
-        ? 'You will lose access to:\n\n• AI features (Auto Quality, Background Replace, etc.)\n\nYour current features will remain active until your billing period ends.'
-        : 'You will lose access to:\n\n• Unlimited downloads\n• Sharing features\n\nYour current features will remain active until your billing period ends.',
-      [
-        { 
-          text: 'Keep Current', 
-          style: 'cancel',
-        },
-        {
-          text: 'Downgrade',
-          style: 'destructive',
-          onPress: openCancellationSettings,
-        },
-      ]
-    );
   };
 
   // Open App Store subscription settings for cancellation
@@ -166,8 +98,8 @@ export default function MembershipScreen() {
       
       setTimeout(() => {
         Alert.alert(
-          'Complete in App Store',
-          'To finish:\n\n1. Find "Resulta" in your subscriptions\n2. Make your desired changes\n\nYour features will remain active until your billing period ends.',
+          'Manage in App Store',
+          'To manage your subscription:\n\n1. Find "Resulta" in your subscriptions\n2. Make your desired changes\n\nYour features will remain active until your billing period ends.',
           [{ text: 'Got it' }]
         );
       }, 1000);
@@ -183,16 +115,15 @@ export default function MembershipScreen() {
     }
   };
 
-  // Handle direct cancel button
+  // Handle cancel subscription button
   const handleCancelSubscription = () => {
     Alert.alert(
       'Cancel Subscription?',
-      'Are you sure you want to cancel your subscription?\n\nYour features will remain active until your current billing period ends.',
+      'You will be redirected to the App Store to manage your subscription.\n\nYour features will remain active until your current billing period ends.',
       [
         { text: 'Keep Subscription', style: 'cancel' },
         {
-          text: 'Cancel Subscription',
-          style: 'destructive',
+          text: 'Go to App Store',
           onPress: openCancellationSettings,
         },
       ]
@@ -312,118 +243,30 @@ export default function MembershipScreen() {
             </View>
           </View>
 
-          {/* What's Included */}
+          {/* Management Options - Available for all users */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>WHAT'S INCLUDED</Text>
-            <View style={styles.featuresList}>
-              {tierInfo.features.map((feature, index) => (
-                <View key={index} style={styles.featureItem}>
-                  <feature.icon size={18} color={Colors.light.success} />
-                  <Text style={styles.featureText}>{feature.text}</Text>
+            <Text style={styles.sectionTitle}>MANAGE</Text>
+            
+            {/* Change Plan Button - Opens Superwall membership_manage campaign */}
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={handleChangePlan}
+              activeOpacity={0.8}
+            >
+              <View style={styles.actionButtonContent}>
+                <View style={[styles.actionIcon, { backgroundColor: 'rgba(201, 168, 124, 0.15)' }]}>
+                  <Repeat size={20} color={Colors.light.accent} />
                 </View>
-              ))}
-            </View>
-          </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionButtonTitle}>Change Plan</Text>
+                  <Text style={styles.actionButtonSubtitle}>View available plans</Text>
+                </View>
+              </View>
+              <ChevronLeft size={20} color={Colors.light.textTertiary} style={{ transform: [{ rotate: '180deg' }] }} />
+            </TouchableOpacity>
 
-          {/* Upgrade Options - Only for Free or Pro users (not complimentary) */}
-          {tier === 'free' && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>UPGRADE</Text>
-              
-              {/* Upgrade to Pro */}
-              <TouchableOpacity 
-                style={[styles.upgradeCard, { borderColor: Colors.light.accent }]}
-                onPress={handleUpgradeToPro}
-                activeOpacity={0.8}
-              >
-                <View style={styles.upgradeCardHeader}>
-                  <Crown size={24} color={Colors.light.accent} />
-                  <Text style={[styles.upgradeCardTitle, { color: Colors.light.accent }]}>Pro</Text>
-                </View>
-                <Text style={styles.upgradeCardDescription}>
-                  Download & share your content
-                </Text>
-                <View style={styles.upgradeCardFeatures}>
-                  <Text style={styles.upgradeCardFeature}>• Unlimited downloads</Text>
-                  <Text style={styles.upgradeCardFeature}>• Share to social media</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Upgrade to Studio */}
-              <TouchableOpacity 
-                style={[styles.upgradeCard, { borderColor: '#9333EA' }]}
-                onPress={handleUpgradeToStudio}
-                activeOpacity={0.8}
-              >
-                <View style={styles.upgradeCardHeader}>
-                  <Sparkles size={24} color="#9333EA" />
-                  <Text style={[styles.upgradeCardTitle, { color: '#9333EA' }]}>Studio</Text>
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularBadgeText}>POPULAR</Text>
-                  </View>
-                </View>
-                <Text style={styles.upgradeCardDescription}>
-                  Everything in Pro + AI features
-                </Text>
-                <View style={styles.upgradeCardFeatures}>
-                  <Text style={styles.upgradeCardFeature}>• All Pro features</Text>
-                  <Text style={styles.upgradeCardFeature}>• AI Auto Quality</Text>
-                  <Text style={styles.upgradeCardFeature}>• AI Background Replace</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Upgrade to Studio - For Pro users */}
-          {tier === 'pro' && !isComplimentary && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>UPGRADE</Text>
-              
-              <TouchableOpacity 
-                style={[styles.upgradeCard, { borderColor: '#9333EA' }]}
-                onPress={handleUpgradeToStudio}
-                activeOpacity={0.8}
-              >
-                <View style={styles.upgradeCardHeader}>
-                  <Sparkles size={24} color="#9333EA" />
-                  <Text style={[styles.upgradeCardTitle, { color: '#9333EA' }]}>Upgrade to Studio</Text>
-                </View>
-                <Text style={styles.upgradeCardDescription}>
-                  Unlock all AI features
-                </Text>
-                <View style={styles.upgradeCardFeatures}>
-                  <Text style={styles.upgradeCardFeature}>• AI Auto Quality enhancement</Text>
-                  <Text style={styles.upgradeCardFeature}>• AI Background Replace</Text>
-                  <Text style={styles.upgradeCardFeature}>• AI Background Remove</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Management Options - Only for App Store subscriptions */}
-          {isPaid && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>MANAGE</Text>
-              
-              {/* Change Plan Button */}
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={handleManagePlan}
-                activeOpacity={0.8}
-              >
-                <View style={styles.actionButtonContent}>
-                  <View style={[styles.actionIcon, { backgroundColor: 'rgba(201, 168, 124, 0.15)' }]}>
-                    <Repeat size={20} color={Colors.light.accent} />
-                  </View>
-                  <View style={styles.actionTextContainer}>
-                    <Text style={styles.actionButtonTitle}>Change Plan</Text>
-                    <Text style={styles.actionButtonSubtitle}>View available plans</Text>
-                  </View>
-                </View>
-                <ChevronLeft size={20} color={Colors.light.textTertiary} style={{ transform: [{ rotate: '180deg' }] }} />
-              </TouchableOpacity>
-
-              {/* Cancel Subscription Button */}
+            {/* Cancel Subscription Button - Only shown for paid subscriptions */}
+            {isPaid && (
               <TouchableOpacity 
                 style={styles.actionButton}
                 onPress={handleCancelSubscription}
@@ -440,8 +283,8 @@ export default function MembershipScreen() {
                 </View>
                 <ChevronLeft size={20} color={Colors.light.textTertiary} style={{ transform: [{ rotate: '180deg' }] }} />
               </TouchableOpacity>
-            </View>
-          )}
+            )}
+          </View>
 
           {/* Complimentary Info */}
           {isComplimentary && (
@@ -579,67 +422,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 12,
-  },
-
-  // Features List
-  featuresList: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 16,
-    padding: 16,
-    gap: 14,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  featureText: {
-    fontSize: 15,
-    color: Colors.light.text,
-  },
-
-  // Upgrade Cards
-  upgradeCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 2,
-  },
-  upgradeCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  upgradeCardTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  upgradeCardDescription: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginBottom: 12,
-  },
-  upgradeCardFeatures: {
-    gap: 4,
-  },
-  upgradeCardFeature: {
-    fontSize: 13,
-    color: Colors.light.text,
-  },
-  popularBadge: {
-    backgroundColor: '#9333EA',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    marginLeft: 'auto',
-  },
-  popularBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
   },
 
   // Action Buttons

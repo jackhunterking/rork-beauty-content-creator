@@ -23,6 +23,7 @@ import Animated, {
 import {
   Wand2,
   ImagePlus,
+  Scissors,
   Sparkles,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
@@ -37,6 +38,8 @@ function getFeatureIcon(featureKey: AIFeatureKey, color: string, size: number = 
   switch (featureKey) {
     case 'background_replace':
       return <ImagePlus size={size} color={color} strokeWidth={strokeWidth} />;
+    case 'background_remove':
+      return <Scissors size={size} color={color} strokeWidth={strokeWidth} />;
     case 'auto_quality':
       return <Wand2 size={size} color={color} strokeWidth={strokeWidth} />;
     default:
@@ -51,6 +54,8 @@ function getFeatureLabel(featureKey: AIFeatureKey): string {
   switch (featureKey) {
     case 'background_replace':
       return 'Replace BG';
+    case 'background_remove':
+      return 'Remove BG';
     case 'auto_quality':
       return 'Auto-Quality';
     default:

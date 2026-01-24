@@ -296,8 +296,17 @@ export function AIStudioPanel({
                   </View>
                 )}
 
+                {/* BG Remover: Show info message */}
+                {selectedFeature === 'background_remove' && (
+                  <View style={styles.simpleActionArea}>
+                    <Text style={styles.simpleActionText}>
+                      Remove the background to get a transparent PNG
+                    </Text>
+                  </View>
+                )}
+
                 {/* Simple Features: Show Confirm Area */}
-                {selectedFeature !== 'background_replace' && (
+                {selectedFeature === 'auto_quality' && (
                   <View style={styles.simpleActionArea}>
                     <Text style={styles.simpleActionText}>
                       Enhance your photo with AI quality improvement

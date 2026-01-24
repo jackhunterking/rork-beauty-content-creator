@@ -35,6 +35,7 @@ const COMPARISON_HEIGHT = COMPARISON_WIDTH * 1.25;
 // Feature-specific labels for the comparison view
 const FEATURE_LABELS: Record<AIFeatureKey, { result: string; original: string }> = {
   auto_quality: { result: 'ENHANCED', original: 'ORIGINAL' },
+  background_remove: { result: 'REMOVED', original: 'ORIGINAL' },
   background_replace: { result: 'NEW BG', original: 'ORIGINAL' },
 };
 

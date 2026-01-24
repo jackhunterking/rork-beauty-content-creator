@@ -16,7 +16,7 @@ import {
   TouchableOpacity,
   Dimensions,
 } from 'react-native';
-import { Wand2, ImagePlus } from 'lucide-react-native';
+import { Wand2, ImagePlus, Scissors } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
 import type { AIFeatureKey, Slot, MediaAsset } from '@/types';
@@ -154,7 +154,7 @@ const aiBadgeStyles = StyleSheet.create({
   },
 });
 
-type AIIconType = 'wand' | 'imagePlus';
+type AIIconType = 'wand' | 'imagePlus' | 'scissors';
 
 interface ActionButtonProps {
   iconType: AIIconType;
@@ -178,6 +178,8 @@ function ActionButton({ iconType, label, isApplied = false, allowReapply = false
         return <Wand2 size={18} color={iconColor} strokeWidth={1.8} />;
       case 'imagePlus':
         return <ImagePlus size={18} color={iconColor} strokeWidth={1.8} />;
+      case 'scissors':
+        return <Scissors size={18} color={iconColor} strokeWidth={1.8} />;
     }
   };
 
@@ -287,6 +289,14 @@ export default function AIStudioHomeView({
           />
           
           <ActionButton
+            iconType="scissors"
+            label="Remove BG"
+            isApplied={aiEnhancementsApplied.includes('background_remove')}
+            onPress={() => onSelectFeature('background_remove')}
+            onAppliedPress={() => onAlreadyAppliedTap?.('background_remove')}
+          />
+          
+          <ActionButton
             iconType="imagePlus"
             label="Replace BG"
             isApplied={false}
@@ -298,7 +308,7 @@ export default function AIStudioHomeView({
   );
 }
 
-const BUTTON_WIDTH = (SCREEN_WIDTH - 48 - 12) / 2; // 48px side padding, 12px gap (2 buttons now)
+const BUTTON_WIDTH = (SCREEN_WIDTH - 48 - 24) / 3; // 48px side padding, 24px total gap (3 buttons)
 
 const styles = StyleSheet.create({
   container: {

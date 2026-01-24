@@ -117,6 +117,8 @@ export default function AIProcessingOverlay({
     switch (featureKey) {
       case 'auto_quality':
         return 'Enhancing quality...';
+      case 'background_remove':
+        return 'Removing background...';
       case 'background_replace':
         return 'Replacing background...';
       default:
