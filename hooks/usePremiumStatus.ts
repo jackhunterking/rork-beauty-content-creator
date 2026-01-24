@@ -235,22 +235,42 @@ export function useTieredSubscription(): TieredSubscription {
     onError: (error) => console.error('[Subscription] Paywall error:', error),
   });
 
-  // Check Supabase for complimentary tier
+  // Check Supabase subscriptions table - THE SINGLE SOURCE OF TRUTH
+  // This table is synced via Superwall webhooks and admin grants
   useEffect(() => {
     const checkSupabaseTier = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         
         if (user) {
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('subscription_tier')
-            .eq('id', user.id)
+          // Read from subscriptions table (single source of truth)
+          const { data: subscription, error } = await supabase
+            .from('subscriptions')
+            .select('tier, status, superwall_expires_at, admin_expires_at, source')
+            .eq('user_id', user.id)
             .single();
           
-          if (!error && profile?.subscription_tier) {
-            setSupabaseTier(profile.subscription_tier as SubscriptionTier);
+          if (!error && subscription) {
+            // Check if subscription is still valid (not expired)
+            const now = new Date();
+            const isExpired = 
+              (subscription.superwall_expires_at && new Date(subscription.superwall_expires_at) < now) ||
+              (subscription.admin_expires_at && new Date(subscription.admin_expires_at) < now);
+            
+            // Check if subscription is active
+            const isActive = subscription.status === 'active' && !isExpired;
+            
+            if (isActive && subscription.tier !== 'free') {
+              setSupabaseTier(subscription.tier as SubscriptionTier);
+              console.log(`[Subscription] Supabase tier: ${subscription.tier} (source: ${subscription.source})`);
+            } else {
+              setSupabaseTier('free');
+              if (subscription.tier !== 'free') {
+                console.log(`[Subscription] Subscription not active: status=${subscription.status}, expired=${isExpired}`);
+              }
+            }
           } else {
+            // No subscription record found - default to free
             setSupabaseTier('free');
           }
         } else {

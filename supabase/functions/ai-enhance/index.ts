@@ -312,19 +312,36 @@ Deno.serve(async (req: Request) => {
       .single();
 
     // Premium check (if feature requires premium)
+    // Check against subscriptions table - THE SINGLE SOURCE OF TRUTH
     if (config?.is_premium_only) {
-      const { data: profile } = await adminClient
-        .from('profiles')
-        .select('is_premium')
-        .eq('id', user.id)
+      const { data: subscription } = await adminClient
+        .from('subscriptions')
+        .select('tier, status, superwall_expires_at, admin_expires_at')
+        .eq('user_id', user.id)
         .single();
 
-      if (!profile?.is_premium) {
+      // Determine if user has active premium access
+      const now = new Date();
+      const isActive = subscription && 
+        subscription.tier !== 'free' &&
+        subscription.status === 'active' &&
+        // Check Superwall expiration (if set)
+        (!subscription.superwall_expires_at || new Date(subscription.superwall_expires_at) > now) &&
+        // Check admin expiration (if set)
+        (!subscription.admin_expires_at || new Date(subscription.admin_expires_at) > now);
+
+      if (!isActive) {
+        console.log(`[ai-enhance] Premium check failed for user ${user.id}:`, {
+          tier: subscription?.tier || 'no subscription',
+          status: subscription?.status || 'unknown',
+        });
         return new Response(
           JSON.stringify({ error: 'Premium subscription required', code: 'PREMIUM_REQUIRED' }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      console.log(`[ai-enhance] Premium check passed for user ${user.id}: tier=${subscription.tier}`);
     }
 
     // Get background prompt based on input type

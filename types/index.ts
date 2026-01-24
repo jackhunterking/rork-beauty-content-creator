@@ -868,13 +868,112 @@ export type SubscriptionTier = 'free' | 'pro' | 'studio';
 
 /**
  * Source of subscription tier
- * - superwall: Paid subscription via Superwall
- * - complimentary: Admin-granted for influencers, partners, testers
+ * - superwall: Paid subscription via Superwall (synced via webhook)
+ * - admin: Admin-granted for influencers, partners, testers
+ * @deprecated 'complimentary' is now 'admin' in the subscriptions table
  */
-export type SubscriptionTierSource = 'superwall' | 'complimentary';
+export type SubscriptionTierSource = 'superwall' | 'complimentary' | 'admin';
+
+/**
+ * Subscription status for lifecycle tracking
+ */
+export type SubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'grace_period';
+
+// ============================================
+// Subscription Types (Single Source of Truth)
+// ============================================
+
+/**
+ * Subscription from the subscriptions table - THE SINGLE SOURCE OF TRUTH
+ * This table is synced via Superwall webhooks or admin grants
+ */
+export interface Subscription {
+  id: string;
+  userId: string;
+  tier: SubscriptionTier;
+  source: 'none' | 'superwall' | 'admin';
+  status: SubscriptionStatus;
+  // Superwall data
+  superwallProductId?: string;
+  superwallTransactionId?: string;
+  superwallOriginalTransactionId?: string;
+  superwallExpiresAt?: string;
+  superwallPurchasedAt?: string;
+  superwallEnvironment?: 'PRODUCTION' | 'SANDBOX';
+  // Admin grant data
+  adminGrantedBy?: string;
+  adminGrantedAt?: string;
+  adminExpiresAt?: string;
+  adminNotes?: string;
+  // Metadata
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Database row type for subscriptions (snake_case from Supabase)
+ */
+export interface SubscriptionRow {
+  id: string;
+  user_id: string;
+  tier: SubscriptionTier;
+  source: string;
+  status: string;
+  superwall_product_id: string | null;
+  superwall_transaction_id: string | null;
+  superwall_original_transaction_id: string | null;
+  superwall_expires_at: string | null;
+  superwall_purchased_at: string | null;
+  superwall_environment: string | null;
+  admin_granted_by: string | null;
+  admin_granted_at: string | null;
+  admin_expires_at: string | null;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Subscription history entry for audit trail
+ */
+export interface SubscriptionHistory {
+  id: string;
+  userId: string;
+  subscriptionId?: string;
+  eventType: string;
+  eventSource: 'superwall_webhook' | 'admin_action' | 'system';
+  tierBefore?: SubscriptionTier;
+  tierAfter?: SubscriptionTier;
+  statusBefore?: SubscriptionStatus;
+  statusAfter?: SubscriptionStatus;
+  rawPayload?: Record<string, unknown>;
+  createdAt: string;
+  createdBy?: string;
+}
+
+/**
+ * Database row type for subscription_history (snake_case from Supabase)
+ */
+export interface SubscriptionHistoryRow {
+  id: string;
+  user_id: string;
+  subscription_id: string | null;
+  event_type: string;
+  event_source: string;
+  tier_before: string | null;
+  tier_after: string | null;
+  status_before: string | null;
+  status_after: string | null;
+  raw_payload: Record<string, unknown> | null;
+  created_at: string;
+  created_by: string | null;
+}
 
 /**
  * User profile from Supabase profiles table
+ * 
+ * NOTE: Subscription data has been moved to the `subscriptions` table.
+ * Use the subscriptions table as the single source of truth for subscription status.
  */
 export interface UserProfile {
   id: string;
@@ -888,17 +987,24 @@ export interface UserProfile {
   industry?: string;
   goal?: string;
   onboardingCompletedAt?: string;
-  // Subscription tier (new tiered system)
+  // @deprecated - Subscription data moved to `subscriptions` table. These fields will be removed.
+  /** @deprecated Use subscriptions table instead */
   subscriptionTier?: SubscriptionTier;
+  /** @deprecated Use subscriptions table instead */
   subscriptionTierSource?: SubscriptionTierSource;
-  // @deprecated Use subscriptionTier instead - kept for backwards compatibility during migration
+  /** @deprecated Use subscriptions table instead */
   isComplimentaryPro?: boolean;
+  /** @deprecated Use subscriptions table instead */
   complimentaryProGrantedAt?: string;
+  /** @deprecated Use subscriptions table instead */
   complimentaryProNotes?: string;
 }
 
 /**
  * Database row type for profiles (snake_case from Supabase)
+ * 
+ * NOTE: Subscription fields are deprecated and will be removed.
+ * Use the `subscriptions` table as the single source of truth.
  */
 export interface ProfileRow {
   id: string;
@@ -912,12 +1018,18 @@ export interface ProfileRow {
   industry: string | null;
   goal: string | null;
   onboarding_completed_at: string | null;
-  // Subscription tier (new tiered system)
+  // @deprecated - Subscription data moved to `subscriptions` table. These fields will be removed.
+  /** @deprecated Use subscriptions table instead */
   subscription_tier: SubscriptionTier | null;
+  /** @deprecated Use subscriptions table instead */
   subscription_tier_source: SubscriptionTierSource | null;
-  // @deprecated Use subscription_tier instead - kept for backwards compatibility during migration
+  /** @deprecated Use subscriptions table instead */
   is_complimentary_pro: boolean | null;
+  /** @deprecated Use subscriptions table instead */
+  is_premium: boolean | null;
+  /** @deprecated Use subscriptions table instead */
   complimentary_pro_granted_at: string | null;
+  /** @deprecated Use subscriptions table instead */
   complimentary_pro_notes: string | null;
 }
 
