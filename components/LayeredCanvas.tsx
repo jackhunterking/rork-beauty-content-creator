@@ -34,6 +34,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Template, CapturedImages, TemplatedLayer, MediaAsset, ThemeLayer, isTextThemeLayer } from '@/types';
 import { useTemplateFonts } from '@/hooks/useTemplateFonts';
 import { getGradientPoints } from '@/constants/gradients';
+import { WatermarkOverlay } from './WatermarkOverlay';
 
 // ============================================
 // SVG Element Type Detection
@@ -436,6 +437,8 @@ interface LayeredCanvasProps {
   canvasWidth: number;
   canvasHeight: number;
   children?: React.ReactNode;
+  /** Whether to show watermark overlay (for free users) */
+  showWatermark?: boolean;
 }
 
 export function LayeredCanvas({
@@ -446,6 +449,7 @@ export function LayeredCanvas({
   canvasWidth,
   canvasHeight,
   children,
+  showWatermark = false,
 }: LayeredCanvasProps) {
   const scaleX = canvasWidth / template.canvasWidth;
   const scaleY = canvasHeight / template.canvasHeight;
@@ -889,6 +893,17 @@ export function LayeredCanvas({
     }}>
       {layers.map(renderLayer)}
       {children}
+      {/* Watermark Overlay - shown for free users to prevent screenshot bypass */}
+      <WatermarkOverlay
+        visible={showWatermark}
+        canvasWidth={canvasWidth}
+        canvasHeight={canvasHeight}
+        text="RESULTA"
+        opacity={0.15}
+        fontSize={Math.max(16, Math.min(22, canvasWidth / 16))}
+        rotation={-30}
+        spacing={Math.max(120, canvasWidth / 2.5)}
+      />
     </View>
   );
 }

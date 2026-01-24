@@ -19,6 +19,7 @@ import Colors from '@/constants/colors';
 import { withCacheBust } from '@/services/imageUtils';
 import { LayeredCanvas } from './LayeredCanvas';
 import { getGradientPoints } from '@/constants/gradients';
+import { WatermarkOverlay } from './WatermarkOverlay';
 // Image processing constants moved inline for clarity
 
 const CANVAS_PADDING = 20;
@@ -99,6 +100,8 @@ interface TemplateCanvasProps {
   useClientSideCompositing?: boolean;
   /** Children to render on top of the canvas (overlays) */
   children?: React.ReactNode;
+  /** Whether to show watermark overlay (for free users) */
+  showWatermark?: boolean;
 }
 
 /**
@@ -1130,6 +1133,7 @@ export function TemplateCanvas({
   capturedImages = {},
   useClientSideCompositing = false,
   children,
+  showWatermark = false,
 }: TemplateCanvasProps) {
   // Use reactive window dimensions to handle screen rotation and dynamic updates
   const { width: screenWidth } = useWindowDimensions();
@@ -1223,6 +1227,7 @@ export function TemplateCanvas({
             themeColor={themeColor}
             canvasWidth={displayWidth}
             canvasHeight={displayHeight}
+            showWatermark={showWatermark}
           >
             {children}
           </LayeredCanvas>
@@ -1301,6 +1306,21 @@ export function TemplateCanvas({
             initialRotation={cropMode.initialRotation}
             currentRotation={cropMode.rotation}
             onAdjustmentChange={cropMode.onAdjustmentChange}
+          />
+        )}
+
+        {/* Watermark Overlay - shown for free users to prevent screenshot bypass */}
+        {/* Only render here when NOT using LayeredCanvas (LayeredCanvas has its own watermark) */}
+        {!shouldUseLayeredCanvas && (
+          <WatermarkOverlay
+            visible={showWatermark}
+            canvasWidth={displayWidth}
+            canvasHeight={displayHeight}
+            text="RESULTA"
+            opacity={0.15}
+            fontSize={Math.max(16, Math.min(22, displayWidth / 16))}
+            rotation={-30}
+            spacing={Math.max(120, displayWidth / 2.5)}
           />
         )}
 

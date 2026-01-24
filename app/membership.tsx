@@ -26,7 +26,7 @@ import {
 import Constants from 'expo-constants';
 import React, { useMemo } from "react";
 import { useRouter } from "expo-router";
-import { useSuperwallEvents, usePlacement } from "expo-superwall";
+import { useSuperwallEvents } from "expo-superwall";
 import Colors from "@/constants/colors";
 import { useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useResponsive } from "@/hooks/useResponsive";
@@ -105,24 +105,9 @@ export default function MembershipScreen() {
     currentPlan,
     canDownload,
     canUseAIStudio,
-    requestProAccess,
-    requestStudioAccess,
+    requestMembership,
   } = useTieredSubscription();
   
-  // Placement hook for manage plan
-  const { registerPlacement, state: paywallState } = usePlacement({
-    onDismiss: (info, result) => {
-      console.log('[Membership] Paywall dismissed:', result);
-      if (result.type === 'purchased') {
-        // Refresh will happen automatically via Superwall
-        Alert.alert('Success!', 'Your subscription has been updated.');
-      }
-    },
-    onError: (error) => {
-      console.error('[Membership] Paywall error:', error);
-    },
-  });
-
   // Listen for custom paywall actions (like "downgrade_to_free" from Superwall)
   useSuperwallEvents({
     onCustomAction: (name) => {
@@ -133,35 +118,22 @@ export default function MembershipScreen() {
     },
   });
 
-  // Handle Upgrade to Pro
+  // Handle Upgrade to Pro - shows Membership paywall
   const handleUpgradeToPro = async () => {
-    await requestProAccess(() => {
-      console.log('[Membership] Pro access granted');
-    }, 'membership_upgrade');
+    console.log('[Membership] Opening Membership paywall for Pro upgrade');
+    await requestMembership();
   };
 
-  // Handle Upgrade to Studio
+  // Handle Upgrade to Studio - shows Membership paywall
   const handleUpgradeToStudio = async () => {
-    await requestStudioAccess(() => {
-      console.log('[Membership] Studio access granted');
-    }, 'membership_upgrade');
+    console.log('[Membership] Opening Membership paywall for Studio upgrade');
+    await requestMembership();
   };
 
-  // Handle Manage Plan - opens Superwall paywall for existing subscribers
+  // Handle Manage Plan - opens Membership paywall for plan changes
   const handleManagePlan = async () => {
-    console.log('[Membership] Opening membership_manage paywall');
-    
-    try {
-      await registerPlacement({
-        placement: 'membership_manage',
-        params: {
-          current_tier: tier,
-          current_plan: currentPlan || 'unknown',
-        },
-      });
-    } catch (error) {
-      console.error('[Membership] Error opening paywall:', error);
-    }
+    console.log('[Membership] Opening Membership paywall for plan management');
+    await requestMembership();
   };
 
   // Show downgrade confirmation dialog
@@ -437,7 +409,6 @@ export default function MembershipScreen() {
               <TouchableOpacity 
                 style={styles.actionButton}
                 onPress={handleManagePlan}
-                disabled={paywallState === 'presenting'}
                 activeOpacity={0.8}
               >
                 <View style={styles.actionButtonContent}>
@@ -449,11 +420,7 @@ export default function MembershipScreen() {
                     <Text style={styles.actionButtonSubtitle}>View available plans</Text>
                   </View>
                 </View>
-                {paywallState === 'presenting' ? (
-                  <ActivityIndicator size="small" color={Colors.light.accent} />
-                ) : (
-                  <ChevronLeft size={20} color={Colors.light.textTertiary} style={{ transform: [{ rotate: '180deg' }] }} />
-                )}
+                <ChevronLeft size={20} color={Colors.light.textTertiary} style={{ transform: [{ rotate: '180deg' }] }} />
               </TouchableOpacity>
 
               {/* Cancel Subscription Button */}

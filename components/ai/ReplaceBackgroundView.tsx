@@ -178,7 +178,7 @@ export default function ReplaceBackgroundView({
   getAbortSignal,
 }: ReplaceBackgroundViewProps) {
   // Tiered subscription for Studio-only AI features
-  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  const { canUseAIStudio, requestBGReplace, tier } = useTieredSubscription();
   
   // Input mode state
   const [activeTab, setActiveTab] = useState<BackgroundMode>('solid');
@@ -348,17 +348,14 @@ export default function ReplaceBackgroundView({
 
     // Check if user has Studio access
     if (!canUseAIStudio) {
-      console.log(`[ReplaceBackgroundView] User is ${tier} tier, showing Studio paywall`);
-      await requestStudioAccess(
-        () => performApply(),
-        'replace_background'
-      );
+      console.log(`[ReplaceBackgroundView] User is ${tier} tier, showing BG Replace paywall`);
+      await requestBGReplace();
       return;
     }
 
     // User has Studio access, proceed with apply
     await performApply();
-  }, [isPreparing, activeTab, canUseAIStudio, tier, requestStudioAccess, performApply]);
+  }, [isPreparing, activeTab, canUseAIStudio, tier, requestBGReplace, performApply]);
 
   // Handle color selection from preset
   const handleColorSelect = useCallback((color: string) => {

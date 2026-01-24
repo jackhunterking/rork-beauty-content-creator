@@ -130,7 +130,7 @@ export default function AutoQualityView({
   const [isPreparing, setIsPreparing] = useState(false);
   
   // Tiered subscription for Studio-only AI features
-  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  const { canUseAIStudio, requestAutoQuality, tier } = useTieredSubscription();
   
   // Ref for the hidden compositing view (used when backgroundInfo exists)
   const compositingViewRef = useRef<View>(null);
@@ -259,17 +259,14 @@ export default function AutoQualityView({
 
     // Check if user has Studio access
     if (!canUseAIStudio) {
-      console.log(`[AutoQualityView] User is ${tier} tier, showing Studio paywall`);
-      await requestStudioAccess(
-        () => performEnhancement(),
-        'auto_quality'
-      );
+      console.log(`[AutoQualityView] User is ${tier} tier, showing Auto Quality paywall`);
+      await requestAutoQuality();
       return;
     }
 
     // User has Studio access, proceed with enhancement
     await performEnhancement();
-  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestStudioAccess, performEnhancement]);
+  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestAutoQuality, performEnhancement]);
 
   return (
     <View style={styles.container}>

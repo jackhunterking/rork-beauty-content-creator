@@ -132,9 +132,11 @@ export default function PublishScreen() {
   
   // Tiered subscription for download/share paywall
   const { 
-    canDownload, 
+    canDownload,
+    canShare,
     isLoading: isSubscriptionLoading,
-    requestProAccess,
+    requestDownload,
+    requestShare,
     tier,
   } = useTieredSubscription();
   
@@ -379,35 +381,30 @@ export default function PublishScreen() {
       current_tier: tier,
     });
 
-    // If user can download (Pro or Studio), execute action immediately
-    if (canDownload) {
-      await executePlatformAction(platformId);
-      return;
-    }
-
-    // User is Free tier - show Pro paywall with their preview image
-    console.log(`[Publish] User is ${tier} tier, showing Pro paywall for ${featureRequested}`);
-    
-    // Upload preview to get cloud URL for dynamic paywall content
-    let cloudPreviewUrl = previewUri;
-    if (previewUri.startsWith('file://')) {
-      try {
-        console.log('[Publish] Uploading preview for paywall...');
-        cloudPreviewUrl = await uploadTempImage(previewUri, 'paywall-preview');
-        console.log('[Publish] Preview uploaded for paywall:', cloudPreviewUrl.substring(0, 60) + '...');
-      } catch (error) {
-        console.warn('[Publish] Failed to upload preview for paywall:', error);
-        // Continue with local URI as fallback (Superwall will use placeholder)
+    // Check tier based on action type
+    if (platformId === 'download') {
+      // Download requires Pro or Studio tier
+      if (canDownload) {
+        await executePlatformAction(platformId);
+        return;
       }
+      // User is Free tier - show Download paywall
+      console.log(`[Publish] User is ${tier} tier, showing Download paywall`);
+      await requestDownload();
+    } else {
+      // Share requires Pro or Studio tier
+      if (canShare) {
+        await executePlatformAction(platformId);
+        return;
+      }
+      // User is Free tier - show Share paywall
+      console.log(`[Publish] User is ${tier} tier, showing Share paywall`);
+      await requestShare();
     }
-    
-    // Show paywall - DO NOT pass callback, we verify access explicitly
-    // CRITICAL: Never trust Superwall callbacks for access control
-    await requestProAccess(undefined, featureRequested, cloudPreviewUrl);
     
     // After paywall flow, user must tap button again to verify they have access
     console.log(`[Publish] Paywall flow complete - user must tap again to verify access`);
-  }, [previewUri, canDownload, tier, requestProAccess]);
+  }, [previewUri, canDownload, canShare, tier, executePlatformAction, requestDownload, requestShare]);
 
   // Handle Done button - reset project and navigate to home
   const handleDone = useCallback(() => {

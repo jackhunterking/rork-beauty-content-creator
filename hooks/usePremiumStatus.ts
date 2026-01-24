@@ -61,10 +61,39 @@ export interface TieredSubscription {
   /** Detailed entitlements info from Superwall */
   entitlementsInfo: EntitlementsInfo | null;
   
-  /** Request Pro tier access (shows paywall if not Pro/Studio) */
+  // ============================================
+  // Feature-specific paywall triggers
+  // ============================================
+  
+  /** Show Download paywall (pro_download placement) */
+  requestDownload: () => Promise<void>;
+  
+  /** Show Share paywall (pro_share placement) */
+  requestShare: () => Promise<void>;
+  
+  /** Show Remove Watermark paywall (pro_watermark placement) */
+  requestRemoveWatermark: () => Promise<void>;
+  
+  /** Show Auto Quality paywall (studio_auto_quality placement) */
+  requestAutoQuality: () => Promise<void>;
+  
+  /** Show BG Remove paywall (studio_bg_remove placement) */
+  requestBGRemove: () => Promise<void>;
+  
+  /** Show BG Replace paywall (studio_bg_replace placement) */
+  requestBGReplace: () => Promise<void>;
+  
+  /** Show Membership paywall (membership_manage placement) */
+  requestMembership: () => Promise<void>;
+  
+  // ============================================
+  // Legacy helpers (for backwards compatibility)
+  // ============================================
+  
+  /** @deprecated Use feature-specific functions instead */
   requestProAccess: (onGranted?: () => void, featureRequested?: string, previewImageUrl?: string) => Promise<void>;
   
-  /** Request Studio tier access (shows paywall if not Studio) */
+  /** @deprecated Use feature-specific functions instead */
   requestStudioAccess: (onGranted?: () => void, featureRequested?: string, previewImageUrl?: string) => Promise<void>;
 }
 
@@ -181,7 +210,7 @@ function resolveTier(
  */
 export function useTieredSubscription(): TieredSubscription {
   const { subscriptionStatus, user: superwallUser } = useUser();
-  const { getEntitlements } = useSuperwall();
+  const { getEntitlements, setUserAttributes, registerPlacement: directRegisterPlacement } = useSuperwall();
   
   // Supabase tier state
   const [supabaseTier, setSupabaseTier] = useState<SubscriptionTier | undefined>(undefined);
@@ -190,8 +219,8 @@ export function useTieredSubscription(): TieredSubscription {
   // Entitlements state
   const [entitlementsInfo, setEntitlementsInfo] = useState<EntitlementsInfo | null>(null);
   
-  // Paywall placement hook
-  const { registerPlacement } = usePlacement({
+  // Paywall placement hook - used for callbacks only
+  const { registerPlacement: hookRegisterPlacement } = usePlacement({
     onPresent: (info) => {
       console.log('[Subscription] Paywall presented:', info.name);
       trackInitiatedCheckout(info.name);
@@ -218,10 +247,6 @@ export function useTieredSubscription(): TieredSubscription {
             .select('subscription_tier')
             .eq('id', user.id)
             .single();
-          
-          // #region agent log
-          console.log('🔴🔴🔴 [DEBUG-TIER] SUPABASE CHECK - email:', user.email, 'profileTier:', profile?.subscription_tier, 'error:', error?.message);
-          // #endregion
           
           if (!error && profile?.subscription_tier) {
             setSupabaseTier(profile.subscription_tier as SubscriptionTier);
@@ -279,50 +304,78 @@ export function useTieredSubscription(): TieredSubscription {
   // Resolve final tier
   const { tier, source } = resolveTier(activeEntitlements, supabaseTier);
 
-  // #region agent log
-  console.log('🔴🔴🔴 [DEBUG-TIER] RESOLVED - tier:', tier, 'source:', source, 'supabaseTier:', supabaseTier, 'superwallStatus:', subscriptionStatus?.status, 'entitlements:', activeEntitlements.map(e=>e.id), 'canDownload:', tier !== 'free');
-  // #endregion
-
   // Calculate loading state
   const superwallLoading = subscriptionStatus?.status === 'UNKNOWN' || subscriptionStatus === undefined;
   const isLoading = superwallLoading && isCheckingSupabase;
 
-  // Request Pro access helper
+  // ============================================
+  // Feature-specific paywall triggers
+  // ============================================
+  
+  /** Show Download paywall */
+  const requestDownload = useCallback(async () => {
+    await directRegisterPlacement('pro_download', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show Share paywall */
+  const requestShare = useCallback(async () => {
+    await directRegisterPlacement('pro_share', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show Remove Watermark paywall */
+  const requestRemoveWatermark = useCallback(async () => {
+    await directRegisterPlacement('pro_watermark', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show Auto Quality paywall */
+  const requestAutoQuality = useCallback(async () => {
+    await directRegisterPlacement('studio_auto_quality', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show BG Remove paywall */
+  const requestBGRemove = useCallback(async () => {
+    await directRegisterPlacement('studio_bg_remove', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show BG Replace paywall */
+  const requestBGReplace = useCallback(async () => {
+    await directRegisterPlacement('studio_bg_replace', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+  
+  /** Show Membership paywall */
+  const requestMembership = useCallback(async () => {
+    await directRegisterPlacement('membership_manage', { current_tier: tier });
+  }, [directRegisterPlacement, tier]);
+
+  // ============================================
+  // Legacy helpers (for backwards compatibility)
+  // ============================================
+  
+  /** @deprecated Use requestDownload, requestShare, or requestRemoveWatermark instead */
   const requestProAccess = useCallback(async (
     onGranted?: () => void,
     featureRequested?: string,
     previewImageUrl?: string
   ) => {
-    // #region agent log
-    console.log('🔴🔴🔴 [DEBUG-PAYWALL] Calling registerPlacement with placement: "pro_download"');
-    // #endregion
-    await registerPlacement({
-      placement: 'pro_download',
-      feature: onGranted,
-      params: {
-        feature_requested: featureRequested || 'download',
-        current_tier: tier,
-        preview_image_url: previewImageUrl || '',
-      } as PlacementParams,
-    });
-  }, [registerPlacement, tier]);
+    const params = {
+      feature_requested: featureRequested || 'download',
+      current_tier: tier,
+    } as PlacementParams;
+    await directRegisterPlacement('pro_download', params);
+  }, [directRegisterPlacement, tier]);
 
-  // Request Studio access helper
+  /** @deprecated Use requestAutoQuality, requestBGRemove, or requestBGReplace instead */
   const requestStudioAccess = useCallback(async (
     onGranted?: () => void,
     featureRequested?: string,
     previewImageUrl?: string
   ) => {
-    await registerPlacement({
-      placement: 'studio_ai_generate',
-      feature: onGranted,
-      params: {
-        feature_requested: featureRequested || 'ai_studio',
-        current_tier: tier,
-        preview_image_url: previewImageUrl || '',
-      } as PlacementParams,
-    });
-  }, [registerPlacement, tier]);
+    const params = {
+      feature_requested: featureRequested || 'ai_studio',
+      current_tier: tier,
+    } as PlacementParams;
+    await directRegisterPlacement('studio_ai_generate', params);
+  }, [directRegisterPlacement, tier]);
 
   return {
     tier,
@@ -339,7 +392,16 @@ export function useTieredSubscription(): TieredSubscription {
     entitlements: activeEntitlements,
     entitlementsInfo,
     
-    // Paywall helpers
+    // Feature-specific paywall triggers
+    requestDownload,
+    requestShare,
+    requestRemoveWatermark,
+    requestAutoQuality,
+    requestBGRemove,
+    requestBGReplace,
+    requestMembership,
+    
+    // Legacy helpers
     requestProAccess,
     requestStudioAccess,
   };

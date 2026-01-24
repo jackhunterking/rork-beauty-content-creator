@@ -108,7 +108,7 @@ export default function RemoveBackgroundView({
   const [isPreparing, setIsPreparing] = useState(false);
   
   // Tiered subscription for Studio-only AI features
-  const { canUseAIStudio, requestStudioAccess, tier } = useTieredSubscription();
+  const { canUseAIStudio, requestBGRemove, tier } = useTieredSubscription();
   
   const maxPreviewWidth = SCREEN_WIDTH - 48;
   const maxPreviewHeight = SCREEN_HEIGHT * 0.45;
@@ -154,17 +154,14 @@ export default function RemoveBackgroundView({
 
     // Check if user has Studio access
     if (!canUseAIStudio) {
-      console.log(`[RemoveBackgroundView] User is ${tier} tier, showing Studio paywall`);
-      await requestStudioAccess(
-        () => performRemoval(),
-        'remove_background'
-      );
+      console.log(`[RemoveBackgroundView] User is ${tier} tier, showing BG Remove paywall`);
+      await requestBGRemove();
       return;
     }
 
     // User has Studio access, proceed with removal
     await performRemoval();
-  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestStudioAccess, performRemoval]);
+  }, [isAlreadyEnhanced, isPreparing, canUseAIStudio, tier, requestBGRemove, performRemoval]);
 
   return (
     <View style={styles.container}>

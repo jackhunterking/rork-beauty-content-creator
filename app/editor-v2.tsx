@@ -29,12 +29,13 @@ import ViewShot from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
-import { Home, Save, Download, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react-native';
+import { Home, Save, Download, Share2, MoreHorizontal, Pencil, Trash2, X, Crown, Palette } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { getProjectDisplayName } from '@/utils/projectName';
 import RenameProjectModal from '@/components/RenameProjectModal';
 import { downloadAndSaveToGallery, saveToGallery } from '@/services/downloadService';
+import { shareImage } from '@/services/shareService';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import { TemplateCanvas } from '@/components/TemplateCanvas';
@@ -90,8 +91,19 @@ export default function EditorV2Screen() {
   const insets = useSafeAreaInsets();
   const { currentProject, setCapturedImage, resetProject, saveDraft, isSavingDraft, refreshDrafts, renameDraft, isRenamingDraft, deleteDraft } = useApp();
   
-  // Tiered subscription for download paywall and AI features
-  const { canDownload, canUseAIStudio, tier, requestProAccess, requestStudioAccess } = useTieredSubscription();
+  // Tiered subscription for download/share paywall and AI features
+  const { 
+    canDownload, 
+    canShare,
+    canUseAIStudio, 
+    tier, 
+    requestDownload,
+    requestShare,
+    requestRemoveWatermark,
+    // Legacy helpers for backward compatibility
+    requestProAccess, 
+    requestStudioAccess 
+  } = useTieredSubscription();
   
   // Backward compatibility: isPremium = any tier above free
   const isPremium = tier !== 'free';
@@ -176,6 +188,7 @@ export default function EditorV2Screen() {
 
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   
   // Project display name for header
   const projectDisplayName = useMemo(() => {
@@ -1817,10 +1830,6 @@ export default function EditorV2Screen() {
 
   // Handle download to gallery - checks subscription tier first
   const handleDownload = useCallback(async () => {
-    // #region agent log
-    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] ENTRY - canDownload:', canDownload, 'tier:', tier);
-    // #endregion
-    
     // Check if we have any photos to render
     const hasPhotos = Object.values(capturedImages).some(img => img !== null);
     if (!hasPhotos) {
@@ -1834,48 +1843,70 @@ export default function EditorV2Screen() {
       current_tier: tier,
     });
 
-    // #region agent log
-    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] BEFORE CHECK - canDownload:', canDownload, 'tier:', tier, 'willAllow:', canDownload === true);
-    // #endregion
-
     // If user has Pro or Studio tier, execute download immediately
     if (canDownload) {
-      // #region agent log
-      console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] ALLOWING DOWNLOAD - canDownload is TRUE');
-      // #endregion
       await executeDownload();
       return;
     }
 
-    // User is Free tier - show Pro paywall with preview image
-    console.log(`[EditorV2] User is ${tier} tier, showing Pro paywall for download`);
-    
-    // Capture preview for dynamic paywall content
-    let cloudPreviewUrl = '';
+    // User is Free tier - show Download paywall
+    console.log(`[EditorV2] User is ${tier} tier, showing Download paywall`);
+    await requestDownload();
+  }, [capturedImages, canDownload, tier, executeDownload, requestDownload]);
+
+  // Execute share action
+  const executeShare = useCallback(async () => {
+    setIsSharing(true);
     try {
       const capturedUri = await captureCanvasWithOverlays();
-      if (capturedUri) {
-        console.log('[EditorV2] Uploading preview for paywall...');
-        cloudPreviewUrl = await uploadTempImage(capturedUri, 'paywall-preview');
-        console.log('[EditorV2] Preview uploaded for paywall');
+      if (!capturedUri) {
+        throw new Error('Failed to capture image');
+      }
+      
+      const shareResult = await shareImage(capturedUri, {
+        mimeType: 'image/jpeg',
+        dialogTitle: 'Share your creation',
+      });
+      
+      if (!shareResult.success) {
+        throw new Error(shareResult.error || 'Share failed');
       }
     } catch (error) {
-      console.warn('[EditorV2] Failed to upload preview for paywall:', error);
+      console.error('[EditorV2] Share failed:', error);
+      Alert.alert(
+        'Share Failed',
+        error instanceof Error ? error.message : 'Something went wrong'
+      );
+    } finally {
+      setIsSharing(false);
     }
-    
-    // Show paywall - DO NOT pass callback, we verify access explicitly after
-    // #region agent log
-    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] Calling requestProAccess (no callback)');
-    // #endregion
-    await requestProAccess(undefined, 'download_from_editor', cloudPreviewUrl);
-    
-    // CRITICAL: After paywall, we do NOT auto-execute download
-    // User must tap download button again to verify they now have access
-    // This prevents any Superwall callback bugs from granting unauthorized access
-    // #region agent log
-    console.log('🔴🔴🔴 [DEBUG-DOWNLOAD] Paywall flow complete - user must tap download again to verify access');
-    // #endregion
-  }, [capturedImages, canDownload, tier, captureCanvasWithOverlays, requestProAccess]);
+  }, [captureCanvasWithOverlays]);
+
+  // Handle share - checks subscription tier first
+  const handleShare = useCallback(async () => {
+    // Check if we have any photos to share
+    const hasPhotos = Object.values(capturedImages).some(img => img !== null);
+    if (!hasPhotos) {
+      Alert.alert('No Photos', 'Please add at least one photo before sharing.');
+      return;
+    }
+
+    // Track the share attempt
+    captureEvent(POSTHOG_EVENTS.PREMIUM_FEATURE_ATTEMPTED, {
+      feature: 'share_from_editor',
+      current_tier: tier,
+    });
+
+    // If user has Pro or Studio tier, execute share immediately
+    if (canShare) {
+      await executeShare();
+      return;
+    }
+
+    // User is Free tier - show Share paywall
+    console.log(`[EditorV2] User is ${tier} tier, showing Share paywall`);
+    await requestShare();
+  }, [capturedImages, canShare, tier, executeShare, requestShare]);
 
   // Handle opening project actions bottom sheet
   const handleOpenProjectActions = useCallback(() => {
@@ -2046,6 +2077,22 @@ export default function EditorV2Screen() {
               )}
             </TouchableOpacity>
 
+            {/* Share Button (icon only) */}
+            <TouchableOpacity
+              style={[
+                styles.headerIconButton,
+                (capturedCount === 0 || isSharing) && styles.headerActionButtonDisabled,
+              ]}
+              onPress={handleShare}
+              disabled={capturedCount === 0 || isSharing}
+            >
+              {isSharing ? (
+                <ActivityIndicator size="small" color={Colors.light.accent} />
+              ) : (
+                <Share2 size={20} color={capturedCount > 0 ? Colors.light.accent : Colors.light.textTertiary} />
+              )}
+            </TouchableOpacity>
+
             {/* Download Button (icon only) - triggers on-demand API render */}
             <TouchableOpacity
               style={[
@@ -2072,6 +2119,20 @@ export default function EditorV2Screen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Upgrade CTA Banner - shown when watermark is visible (free users) */}
+        {!canDownload && (
+          <TouchableOpacity 
+            style={styles.upgradeBanner}
+            onPress={requestRemoveWatermark}
+            activeOpacity={0.8}
+          >
+            <Crown size={16} color={Colors.light.accent} />
+            <Text style={styles.upgradeBannerText}>
+              Upgrade to remove watermark
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Canvas Area */}
         <Pressable 
@@ -2128,6 +2189,7 @@ export default function EditorV2Screen() {
                 themeColor={selectedThemeColor}
                 capturedImages={capturedImages}
                 useClientSideCompositing={!!template?.frameOverlayUrl}
+                showWatermark={!canDownload}
               />
               
               {/* Overlay Layer - renders overlays on top of canvas (hidden during manipulation/crop) */}
@@ -2381,6 +2443,26 @@ export default function EditorV2Screen() {
                 Delete Project
               </Text>
             </TouchableOpacity>
+
+            {/* Dev: Paywall Preview - only visible in development */}
+            {__DEV__ && (
+              <>
+                <View style={styles.sheetDivider} />
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => {
+                    handleCloseProjectActions();
+                    router.push('/dev/paywall-preview');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Palette size={22} color={Colors.light.accent} />
+                  <Text style={[styles.actionText, { color: Colors.light.accent }]}>
+                    Paywall Preview (Dev)
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </BottomSheetView>
       </BottomSheet>
@@ -2480,6 +2562,25 @@ const styles = StyleSheet.create({
   },
   headerDownloadButton: {
     backgroundColor: Colors.light.accent,
+  },
+  upgradeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(201, 168, 124, 0.1)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 0, 246, 0.15)',
+  },
+  upgradeBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.light.accent,
   },
   canvasArea: {
     flex: 1,

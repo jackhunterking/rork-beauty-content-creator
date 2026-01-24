@@ -601,7 +601,10 @@ export default function RootLayout() {
         captureTouches: true,
       }}
     >
-      <SuperwallProvider apiKeys={SUPERWALL_API_KEYS}>
+      <SuperwallProvider 
+        apiKeys={SUPERWALL_API_KEYS}
+        options={__DEV__ ? { logging: { level: 'debug' } } : undefined}
+      >
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <AuthProvider>
