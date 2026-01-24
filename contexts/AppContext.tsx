@@ -419,10 +419,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
    * - If it's a new capture/upload (local file or different URL), reset enhancement tracking
    */
   const setCapturedImage = useCallback((layerId: string, media: MediaAsset | null) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:setCapturedImage',message:'setCapturedImage called',data:{layerId,hasMedia:!!media,hasBackgroundInfo:!!media?.backgroundInfo,backgroundInfoType:media?.backgroundInfo?.type,solidColor:media?.backgroundInfo?.solidColor},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
     setCurrentProject(prev => {
       const existingMedia = prev.capturedImages[layerId];
       
@@ -458,10 +454,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
           originalUri: media.uri,
         };
       }
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:setCapturedImage:afterUpdate',message:'updatedMedia created',data:{layerId,hasBackgroundInfo:!!updatedMedia.backgroundInfo,backgroundInfoType:updatedMedia.backgroundInfo?.type,solidColor:updatedMedia.backgroundInfo?.solidColor,isAIEnhancement:isFalAIOutputUrl(media.uri)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
       
       return {
         ...prev,
@@ -607,10 +599,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
           // Key insight: If backgroundInfo exists, the uri IS the transparent PNG
           const inferredTransparentUrl = backgroundInfo ? url : undefined;
           const inferredEnhancements = backgroundInfo ? ['background_replace'] as const : [];
-          
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'AppContext.tsx:loadDraft',message:'Restoring slot with inferred state',data:{layerId,hasBackgroundInfo:!!backgroundInfo,bgInfoType:backgroundInfo?.type,inferredTransparentUrl:inferredTransparentUrl?.substring(0,50),inferredEnhancements},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'load-bg-info'})}).catch(()=>{});
-          // #endregion
           
           capturedImages[layerId] = {
             uri: url,

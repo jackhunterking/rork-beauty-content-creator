@@ -309,17 +309,18 @@ export default function ReplaceBackgroundView({
         // Return the transparent PNG - the comparison view and editor will handle
         // displaying it over the selected background color
         // Note: We pass the selected color/gradient info for the comparison view
+        const bgInfo = {
+          type: activeTab,
+          solidColor: activeTab === 'solid' ? selectedColor : undefined,
+          gradient: activeTab === 'gradient' ? selectedGradient : undefined,
+        };
         onProgress({
           status: 'completed',
           message: 'Background replaced!',
           progress: 100,
           outputUrl: transparentPngUrl,
           // Pass background info for the comparison view to use
-          backgroundInfo: {
-            type: activeTab,
-            solidColor: activeTab === 'solid' ? selectedColor : undefined,
-            gradient: activeTab === 'gradient' ? selectedGradient : undefined,
-          },
+          backgroundInfo: bgInfo,
         });
       }
     } catch (error) {

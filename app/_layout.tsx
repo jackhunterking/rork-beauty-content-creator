@@ -9,6 +9,7 @@ import { PostHogProvider } from "posthog-react-native";
 import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { FontProvider } from "@/contexts/FontContext";
+import { EditorProvider } from "@/domains/editor";
 import AnimatedSplash from "@/components/AnimatedSplash";
 import ForceUpdateScreen from "@/components/ForceUpdateScreen";
 import { useForceUpdate } from "@/hooks/useForceUpdate";
@@ -490,19 +491,21 @@ function RootLayoutInner() {
   return (
     <FontProvider>
       <AppProvider>
-        {/* Bridge to connect PostHogProvider client to service layer */}
-        <PostHogBridge />
-        <RootLayoutNav />
-        {showAnimatedSplash && (
-          <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
-        )}
-        {/* Onboarding flow handler - runs after splash and force update check */}
-        {!onboardingComplete && forceUpdateChecked && (
-          <OnboardingFlowHandler 
-            splashComplete={splashComplete}
-            onOnboardingComplete={handleOnboardingComplete}
-          />
-        )}
+        <EditorProvider>
+          {/* Bridge to connect PostHogProvider client to service layer */}
+          <PostHogBridge />
+          <RootLayoutNav />
+          {showAnimatedSplash && (
+            <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
+          )}
+          {/* Onboarding flow handler - runs after splash and force update check */}
+          {!onboardingComplete && forceUpdateChecked && (
+            <OnboardingFlowHandler 
+              splashComplete={splashComplete}
+              onOnboardingComplete={handleOnboardingComplete}
+            />
+          )}
+        </EditorProvider>
       </AppProvider>
     </FontProvider>
   );

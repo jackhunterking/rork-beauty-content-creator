@@ -68,10 +68,6 @@ export default function AISuccessOverlay({
   onRevert,
   backgroundInfo,
 }: AISuccessOverlayProps) {
-  console.log('[AISuccessOverlay] Feature:', featureKey);
-  console.log('[AISuccessOverlay] Original URI:', originalUri?.substring(0, 80) + '...');
-  console.log('[AISuccessOverlay] Enhanced URI:', enhancedUri?.substring(0, 80) + '...');
-  
   const labels = FEATURE_LABELS[featureKey] || FEATURE_LABELS.auto_quality;
   
   // Slider position (0-1, 0.5 = middle)
@@ -141,7 +137,17 @@ export default function AISuccessOverlay({
           
           {/* Enhanced (Before) - clipped on top */}
           <Animated.View style={[styles.enhancedClip, enhancedClipStyle]}>
-            {/* Background color/gradient for transparent PNG */}
+            {/* Background for transparent PNG - MUST mask the original image behind */}
+            {/* For background_remove: use white background when no backgroundInfo is provided */}
+            {featureKey === 'background_remove' && !backgroundInfo && (
+              <View 
+                style={[
+                  styles.comparisonImage, 
+                  { width: COMPARISON_WIDTH, backgroundColor: '#FFFFFF' }
+                ]} 
+              />
+            )}
+            {/* Background color/gradient for transparent PNG (when user has selected one) */}
             {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
               <View 
                 style={[

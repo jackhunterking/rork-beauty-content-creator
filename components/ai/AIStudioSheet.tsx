@@ -4,6 +4,10 @@
  * Main container for AI enhancement features.
  * Large detent bottom sheet (90% of screen height).
  * Contains navigation state for feature-specific views.
+ * 
+ * REFACTORED: Uses unified AIResult pattern to prevent state sync issues.
+ * Instead of separate enhancedImageUri and backgroundInfo states,
+ * we now use a single pendingResult that contains all AI output data.
  */
 
 import React, { useState, useCallback, useRef } from 'react';
@@ -24,6 +28,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Colors from '@/constants/colors';
 import type { AIFeatureKey, BackgroundPreset, Slot, MediaAsset } from '@/types';
 import { AIProcessingProgress } from '@/services/aiService';
+import type { AIResult, BackgroundInfo } from '@/domains/editor/types';
 
 import AIStudioHomeView from './AIStudioHomeView';
 import ImageSlotCarousel from './ImageSlotCarousel';
@@ -57,8 +62,8 @@ export interface AIStudioSheetProps {
   /** Currently selected slot ID (if any) */
   selectedSlotId: string | null;
   isPremium: boolean;
-  /** Called when AI enhancement is applied - includes slotId, enhanced URI, feature key, and optional background info */
-  onApply: (slotId: string, enhancedUri: string, featureKey: AIFeatureKey, backgroundInfo?: AIProcessingProgress['backgroundInfo']) => void;
+  /** Called when AI enhancement is applied - includes complete AIResult */
+  onApply: (slotId: string, result: AIResult) => void;
   onSkip: () => void;
   onUpgrade?: () => void;
   /** Callback when user wants to add an image (navigates to capture) */
@@ -150,10 +155,13 @@ export default function AIStudioSheet({
   
   // Processing state
   const [progress, setProgress] = useState<AIProcessingProgress | null>(null);
-  const [enhancedImageUri, setEnhancedImageUri] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Background info for solid/gradient replacement (to display in comparison view)
-  const [backgroundInfo, setBackgroundInfo] = useState<AIProcessingProgress['backgroundInfo'] | null>(null);
+  
+  // REFACTORED: Single pendingResult contains ALL AI output data bundled together
+  // This prevents the race condition where separate state variables could get out of sync
+  const [pendingResult, setPendingResult] = useState<AIResult | null>(null);
+  // Track if we've already received a completed result (to ignore duplicate callbacks)
+  const hasReceivedResultRef = useRef(false);
   
   // Toast state for "already applied" feedback
   const [toastVisible, setToastVisible] = useState(false);
@@ -187,36 +195,49 @@ export default function AIStudioSheet({
   const handleBack = useCallback(() => {
     setCurrentView('home');
     setSelectedFeature(null);
-    setEnhancedImageUri(null);
+    setPendingResult(null);
     setErrorMessage(null);
     setProgress(null);
-    setBackgroundInfo(null);
+    hasReceivedResultRef.current = false;
   }, []);
   
   // Handle processing progress
+  // REFACTORED: Only process the FIRST completed result, ignore duplicates
+  // This prevents the race condition where webhook + polling both fire
   const handleProgress = useCallback((p: AIProcessingProgress) => {
     setProgress(p);
     
     if (p.status === 'completed' && p.outputUrl) {
-      console.log('[AIStudioSheet] Received enhanced URL:', p.outputUrl);
-      setEnhancedImageUri(p.outputUrl);
-      // Store background info for transparent PNG display in comparison view
-      if (p.backgroundInfo) {
-        console.log('[AIStudioSheet] Background info received:', p.backgroundInfo.type);
-        setBackgroundInfo(p.backgroundInfo);
-      } else {
-        setBackgroundInfo(null);
+      // CRITICAL: Ignore duplicate completed callbacks
+      if (hasReceivedResultRef.current) {
+        console.log('[AIStudioSheet] Ignoring duplicate completed callback');
+        return;
       }
+      hasReceivedResultRef.current = true;
+      
+      console.log('[AIStudioSheet] Received enhanced URL:', p.outputUrl);
+      
+      // Create complete AIResult with all data bundled together
+      const result: AIResult = {
+        uri: p.outputUrl,
+        featureKey: selectedFeature || 'auto_quality',
+        transparentPngUrl: p.backgroundInfo ? p.outputUrl : undefined,
+        backgroundInfo: p.backgroundInfo,
+      };
+      
+      setPendingResult(result);
       setCurrentView('success');
     } else if (p.status === 'failed') {
       setErrorMessage(p.error || 'Enhancement failed');
       setCurrentView('error');
     }
-  }, []);
+  }, [selectedFeature]);
   
   // Start processing
   const handleStartProcessing = useCallback(() => {
     abortControllerRef.current = new AbortController();
+    hasReceivedResultRef.current = false; // Reset for new processing
+    setPendingResult(null);
     setCurrentView('processing');
     setProgress({
       status: 'submitting',
@@ -231,21 +252,21 @@ export default function AIStudioSheet({
     handleBack();
   }, [handleBack]);
   
-  // Apply enhanced image
+  // Apply enhanced image - now passes complete AIResult
   const handleApplyEnhanced = useCallback(() => {
-    if (enhancedImageUri && internalSelectedSlotId && selectedFeature) {
-      onApply(internalSelectedSlotId, enhancedImageUri, selectedFeature, backgroundInfo || undefined);
+    if (pendingResult && internalSelectedSlotId) {
+      onApply(internalSelectedSlotId, pendingResult);
       bottomSheetRef.current?.dismiss();
     }
-  }, [enhancedImageUri, internalSelectedSlotId, selectedFeature, backgroundInfo, onApply, bottomSheetRef]);
+  }, [pendingResult, internalSelectedSlotId, onApply, bottomSheetRef]);
   
   // Try another enhancement
   const handleTryAnother = useCallback(() => {
-    setEnhancedImageUri(null);
+    setPendingResult(null);
     setCurrentView('home');
     setSelectedFeature(null);
     setProgress(null);
-    setBackgroundInfo(null);
+    hasReceivedResultRef.current = false;
   }, []);
   
   // Retry after error
@@ -367,22 +388,18 @@ export default function AIStudioSheet({
         );
         
       case 'success':
+        // REFACTORED: Use pendingResult which contains all bundled data
         // For Auto Quality: use existing backgroundInfo from the image (user's current perceived state)
-        // For Replace Background: use the new backgroundInfo from the API response
-        const successBackgroundInfo = selectedFeature === 'auto_quality' 
+        // For Replace Background: use the new backgroundInfo from the pending result
+        const successBackgroundInfo = pendingResult?.featureKey === 'auto_quality' 
           ? selectedImage?.backgroundInfo 
-          : backgroundInfo;
-        
-        console.log('[AIStudioSheet] Success view - feature:', selectedFeature);
-        console.log('[AIStudioSheet] Success view - selectedImage?.backgroundInfo:', selectedImage?.backgroundInfo);
-        console.log('[AIStudioSheet] Success view - backgroundInfo state:', backgroundInfo);
-        console.log('[AIStudioSheet] Success view - successBackgroundInfo:', successBackgroundInfo);
+          : pendingResult?.backgroundInfo;
         
         return (
           <AISuccessOverlay
             originalUri={imageUriForAI}
-            enhancedUri={enhancedImageUri!}
-            featureKey={selectedFeature || 'auto_quality'}
+            enhancedUri={pendingResult?.uri || ''}
+            featureKey={pendingResult?.featureKey || 'auto_quality'}
             onKeepEnhanced={handleApplyEnhanced}
             onRevert={handleTryAnother}
             backgroundInfo={successBackgroundInfo || undefined}

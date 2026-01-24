@@ -55,6 +55,7 @@ import { enhanceImageWithPolling, AIProcessingProgress, AIProcessingStatus } fro
 import { AIStudioSheet, AIProcessingOverlay, AISuccessOverlay, AIErrorView, AIAlreadyAppliedToast } from '@/components/ai';
 import { BottomSheetModal, BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import type { AIFeatureKey } from '@/types';
+import type { AIResult } from '@/domains/editor/types';
 import {
   SelectionState,
   DEFAULT_SELECTION,
@@ -84,7 +85,7 @@ import {
 } from '@/components/overlays';
 import { saveOverlays, loadOverlays } from '@/services/overlayPersistenceService';
 import { saveLocalPreviewFile, createDraftDirectories } from '@/services/localStorageService';
-import { cleanupTempFiles, trackTempFile } from '@/services/tempCleanupService';
+import { cleanupTempFiles, trackTempFile, untrackTempFile } from '@/services/tempCleanupService';
 
 export default function EditorV2Screen() {
   const router = useRouter();
@@ -435,6 +436,71 @@ export default function EditorV2Screen() {
     
     loadDraftOverlays();
   }, [currentProject.draftId]);
+
+  // Ref to track if we've already regenerated the preview for this draft
+  const hasRegeneratedPreviewRef = useRef<string | null>(null);
+
+  // Regenerate missing preview for existing drafts
+  // This repairs old drafts that were saved before preview capture was implemented
+  useEffect(() => {
+    const regenerateMissingPreview = async () => {
+      // Only run for existing drafts (have a draftId)
+      if (!currentProject.draftId) return;
+      
+      // Skip if we already regenerated for this draft
+      if (hasRegeneratedPreviewRef.current === currentProject.draftId) return;
+      
+      // Only run if draft has images but no local preview
+      if (capturedCount === 0) return;
+      
+      // Check if local preview already exists
+      const { getLocalPreviewPath } = await import('@/services/localStorageService');
+      const existingPreview = await getLocalPreviewPath(currentProject.draftId);
+      
+      if (existingPreview) {
+        hasRegeneratedPreviewRef.current = currentProject.draftId;
+        return;
+      }
+      
+      // Wait for the canvas to be fully rendered (give it time to load images)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Check viewShotRef is available
+      if (!viewShotRef.current) {
+        console.warn('[EditorV2] ViewShot ref not ready for preview regeneration');
+        return;
+      }
+      
+      try {
+        console.log('[EditorV2] Regenerating missing preview for draft:', currentProject.draftId);
+        
+        // Capture the canvas
+        const uri = await viewShotRef.current.capture();
+        if (!uri) {
+          console.warn('[EditorV2] Preview capture returned null during regeneration');
+          return;
+        }
+        
+        // Save to permanent location
+        await createDraftDirectories(currentProject.draftId);
+        const savedPath = await saveLocalPreviewFile(currentProject.draftId, uri, 'default');
+        
+        if (savedPath) {
+          console.log('[EditorV2] Successfully regenerated preview:', savedPath);
+          // Clear image cache so library shows the new preview
+          await ExpoImage.clearMemoryCache();
+        }
+        
+        hasRegeneratedPreviewRef.current = currentProject.draftId;
+      } catch (error) {
+        console.error('[EditorV2] Failed to regenerate preview:', error);
+        // Mark as attempted to avoid retry loops
+        hasRegeneratedPreviewRef.current = currentProject.draftId;
+      }
+    };
+    
+    regenerateMissingPreview();
+  }, [currentProject.draftId, capturedCount]);
 
   // Capture initial state when template first loads
   useEffect(() => {
@@ -1664,10 +1730,6 @@ export default function EditorV2Screen() {
       console.log('[EditorV2] Saving adjustments:', capturedImageAdjustments);
       console.log('[EditorV2] Saving backgroundInfo:', capturedImageBackgroundInfo);
 
-      // #region agent log
-      fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:handleSaveDraft',message:'Saving draft with backgroundInfo',data:{slotIds:Object.keys(capturedImageBackgroundInfo),backgroundInfoCount:Object.keys(capturedImageBackgroundInfo).length,sampleBgInfo:Object.values(capturedImageBackgroundInfo)[0]},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'save-bg-info'})}).catch(()=>{});
-      // #endregion
-
       // STEP 3: Save the draft to get/confirm the draft ID
       // NOTE: renderedPreviewUrl is null since we use client-side rendering now
       const savedDraft = await saveDraft({
@@ -1807,6 +1869,11 @@ export default function EditorV2Screen() {
         throw new Error('Failed to capture canvas. Please try again.');
       }
       
+      // IMPORTANT: Untrack the file BEFORE saving to gallery
+      // This prevents the background cleanup from deleting the file when the 
+      // photo library permission dialog causes the app to go to background
+      untrackTempFile(capturedUri);
+      
       console.log('[EditorV2] Canvas captured, saving to gallery...');
       
       // Save the captured local image directly to gallery (no download needed)
@@ -1814,6 +1881,8 @@ export default function EditorV2Screen() {
       
       if (downloadResult.success) {
         Alert.alert('Saved!', 'Image saved to your photo library.');
+        // Re-track for cleanup after successful save
+        trackTempFile(capturedUri);
       } else {
         throw new Error(downloadResult.error || 'Download failed');
       }
@@ -1863,10 +1932,18 @@ export default function EditorV2Screen() {
         throw new Error('Failed to capture image');
       }
       
+      // IMPORTANT: Untrack the file BEFORE sharing
+      // This prevents the background cleanup from deleting the file when the 
+      // share dialog causes the app to go to background
+      untrackTempFile(capturedUri);
+      
       const shareResult = await shareImage(capturedUri, {
         mimeType: 'image/jpeg',
         dialogTitle: 'Share your creation',
       });
+      
+      // Re-track for cleanup after share completes
+      trackTempFile(capturedUri);
       
       if (!shareResult.success) {
         throw new Error(shareResult.error || 'Share failed');
@@ -2305,10 +2382,16 @@ export default function EditorV2Screen() {
         isPremium={isPremium}
         initialView={aiSheetInitialView}
         navTrigger={aiNavTrigger}
-        onApply={(slotId, enhancedUri, featureKey, backgroundInfo) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7246/ingest/96b6634d-47b8-4197-a801-c2723e77a437',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'editor-v2.tsx:onApply',message:'AI onApply called',data:{slotId,featureKey,hasBackgroundInfo:!!backgroundInfo,backgroundInfoType:backgroundInfo?.type,solidColor:backgroundInfo?.solidColor},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
+        onApply={(slotId, result) => {
+          // REFACTORED: Now receives complete AIResult object with all data bundled
+          const { uri: enhancedUri, featureKey, backgroundInfo, transparentPngUrl: resultTransparentPng } = result;
+          
+          console.log('[Editor] AI result applied:', {
+            slotId,
+            featureKey,
+            hasBackgroundInfo: !!backgroundInfo,
+            backgroundType: backgroundInfo?.type,
+          });
           
           // Update the captured image with the enhanced version
           // Reset adjustments to default - enhanced image replaces at full size
@@ -2324,7 +2407,7 @@ export default function EditorV2Screen() {
             // Cache it so color changes don't require re-running birefnet
             const transparentPngUrl = (featureKey === 'background_replace' && backgroundInfo)
               ? enhancedUri
-              : existingImage.transparentPngUrl;
+              : (resultTransparentPng ?? existingImage.transparentPngUrl);
             
             setCapturedImage(slotId, {
               ...existingImage,
