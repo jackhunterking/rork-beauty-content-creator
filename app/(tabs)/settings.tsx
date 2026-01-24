@@ -34,7 +34,8 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
-import { usePremiumStatus, usePremiumFeature, useRestorePurchases } from "@/hooks/usePremiumStatus";
+import { getTierDisplayInfo, getTierMemberLabel, isPaidTier } from "@/constants/tiers";
+import { usePremiumStatus, usePremiumFeature, useRestorePurchases, useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { submitFeedback } from "@/services/feedbackService";
 import { 
@@ -74,6 +75,11 @@ export default function SettingsScreen() {
     isLoading: isSubscriptionLoading,
     subscriptionDetails,
   } = usePremiumStatus();
+  
+  // Get tiered subscription info for accurate tier display
+  const { tier, source } = useTieredSubscription();
+  const tierInfo = getTierDisplayInfo(tier, source);
+  
   const { requestPremiumAccess, paywallState } = usePremiumFeature();
   // Restore purchases only needed for free users
   const { 
@@ -103,7 +109,7 @@ export default function SettingsScreen() {
         const kit = await loadBrandKit();
         setBrandKit(kit);
       } catch (error) {
-        console.error('[Settings] Failed to load brand kit:', error);
+        // Failed to load brand kit
       } finally {
         setIsLoadingBrandKit(false);
       }
@@ -120,7 +126,7 @@ export default function SettingsScreen() {
       const kit = await syncFromCloud();
       setBrandKit(kit);
     } catch (error) {
-      console.error('[Settings] Failed to sync brand kit:', error);
+      // Failed to sync brand kit
     } finally {
       setIsSyncingBrandKit(false);
     }
@@ -154,7 +160,6 @@ export default function SettingsScreen() {
         }
       }
     } catch (error) {
-      console.error('[Settings] Logo upload error:', error);
       Alert.alert('Error', 'Failed to save logo. Please try again.');
     } finally {
       setIsUploadingLogo(false);
@@ -181,7 +186,6 @@ export default function SettingsScreen() {
               setBrandKit(updatedKit);
               Alert.alert('Success', 'Logo removed successfully.');
             } catch (error) {
-              console.error('[Settings] Failed to remove logo:', error);
               Alert.alert('Error', 'Failed to remove logo. Please try again.');
             }
           },
@@ -193,7 +197,7 @@ export default function SettingsScreen() {
   // Handle Upgrade to Pro button press
   const handleUpgradeToPro = async () => {
     await requestPremiumAccess('settings_upgrade', () => {
-      console.log('[Settings] User upgraded to pro!');
+      // User upgraded to pro
     });
   };
 
@@ -368,15 +372,15 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Subscription</Text>
             <View style={styles.card}>
               {isSubscribed ? (
-                // Simplified Pro member view with single "Manage Membership" button
+                // Show actual tier (Pro or Studio) with correct colors
                 <>
                   <View style={styles.subscriptionActive}>
-                    <View style={styles.subscriptionIcon}>
-                      <Crown size={24} color={Colors.light.accent} />
+                    <View style={[styles.subscriptionIcon, { backgroundColor: tierInfo.backgroundColor }]}>
+                      <tierInfo.icon size={24} color={tierInfo.color} />
                     </View>
                     <View style={styles.subscriptionInfo}>
-                      <Text style={styles.subscriptionStatus}>Pro Member</Text>
-                      <Text style={styles.subscriptionDetail}>All features unlocked</Text>
+                      <Text style={styles.subscriptionStatus}>{getTierMemberLabel(tier)}</Text>
+                      <Text style={styles.subscriptionDetail}>{tierInfo.description}</Text>
                     </View>
                     <View style={styles.activeBadge}>
                       <Check size={14} color={Colors.light.success} />
@@ -384,9 +388,9 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                   
-                  {/* Single "Manage Membership" button */}
+                  {/* Single "Manage Membership" button - uses tier color */}
                   <TouchableOpacity 
-                    style={styles.manageMembershipButton}
+                    style={[styles.manageMembershipButton, { backgroundColor: tierInfo.color }]}
                     onPress={() => router.push('/membership')}
                     activeOpacity={0.8}
                   >
@@ -480,9 +484,6 @@ export default function SettingsScreen() {
                       )}
                     </View>
                     <View style={styles.profileInfo}>
-                      <Text style={styles.profileName}>
-                        {user.displayName || user.businessName || 'Creator'}
-                      </Text>
                       <Text style={styles.profileEmail}>{user.email}</Text>
                     </View>
                   </View>
@@ -880,7 +881,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.light.accent,
+    // backgroundColor set dynamically based on tier
     marginHorizontal: 16,
     marginBottom: 16,
     paddingVertical: 14,
@@ -1024,17 +1025,12 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     flex: 1,
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '600' as const,
-    color: Colors.light.text,
-    letterSpacing: -0.3,
+    justifyContent: 'center',
   },
   profileEmail: {
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
+    fontSize: 16,
+    fontWeight: '500' as const,
+    color: Colors.light.text,
   },
   
   // Settings row styles

@@ -665,6 +665,8 @@ export interface Draft {
   overlays?: Overlay[];
   // User-customized background layer colors (layerId -> fill color)
   backgroundOverrides?: Record<string, string>;
+  // User-customized canvas background color (hex color)
+  canvasBackgroundColor?: string | null;
   // User-customized theme color for theme layers (hex color, e.g., "#FF00F6")
   themeColor?: string | null;
 }
@@ -704,6 +706,8 @@ export interface DraftRow {
   background_overrides: Record<string, string> | null;
   // User-customized theme color for theme layers (hex color)
   theme_color: string | null;
+  // User-customized canvas background color (hex color)
+  canvas_background_color: string | null;
 }
 
 // ============================================

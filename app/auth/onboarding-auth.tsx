@@ -88,29 +88,12 @@ export default function OnboardingAuthScreen() {
       // Get pending survey data before saving
       const surveyData = await getPendingSurveyData();
       
-      // Log survey data status for debugging
-      console.log('[OnboardingAuth] Completing onboarding for user:', userId);
-      console.log('[OnboardingAuth] Survey data status:', {
-        exists: surveyData !== null,
-        industry: surveyData?.industry || 'NOT CAPTURED',
-        goal: surveyData?.goal || 'NOT CAPTURED',
-      });
-      
-      // Warn if survey data is missing - this helps identify issues
-      if (!surveyData || (!surveyData.industry && !surveyData.goal)) {
-        console.warn('[OnboardingAuth] ⚠️ No survey data captured! User completed auth without survey responses.');
-        console.warn('[OnboardingAuth] This may indicate Superwall events were not properly captured.');
-      }
-      
       // Save pending survey data to Supabase profile
       const result = await saveOnboardingDataToProfile(userId, surveyData || undefined);
       
       if (!result.success) {
-        console.warn('[OnboardingAuth] Failed to save survey data:', result.error);
         // Still mark as complete even if survey data save fails
         await markOnboardingComplete(userId);
-      } else {
-        console.log('[OnboardingAuth] ✓ Survey data saved to Supabase successfully');
       }
 
       // Set Superwall user attributes for analytics & audience filtering
@@ -130,19 +113,13 @@ export default function OnboardingAuthScreen() {
             goal: surveyData.goal,
           }),
         });
-        
-        console.log('[OnboardingAuth] ✓ Superwall user attributes set');
       } catch (superwallError) {
-        // Non-critical: log but don't block navigation
-        console.warn('[OnboardingAuth] Failed to set Superwall attributes:', superwallError);
+        // Non-critical: don't block navigation
       }
 
-      console.log('[OnboardingAuth] ✓ Onboarding complete, navigating to main app');
-      
       // Navigate to main app, replacing the auth stack
       router.replace('/(tabs)');
     } catch (error) {
-      console.error('[OnboardingAuth] Error completing onboarding:', error);
       // Still try to proceed
       router.replace('/(tabs)');
     }

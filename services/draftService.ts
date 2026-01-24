@@ -44,8 +44,9 @@ function isCloudStorageUrl(uri: string | null | undefined): boolean {
 
 /**
  * Convert database row (snake_case) to Draft type (camelCase)
+ * Exported for use by realtime hooks to ensure consistent mapping
  */
-function mapRowToDraft(row: DraftRow): Draft {
+export function mapRowToDraft(row: DraftRow): Draft {
   return {
     id: row.id,
     userId: row.user_id,
@@ -71,6 +72,8 @@ function mapRowToDraft(row: DraftRow): Draft {
     backgroundOverrides: row.background_overrides || undefined,
     // User-customized theme color for theme layers
     themeColor: row.theme_color || undefined,
+    // User-customized canvas background color
+    canvasBackgroundColor: row.canvas_background_color || undefined,
   };
 }
 
@@ -239,6 +242,7 @@ export async function updateDraft(
     projectName?: string | null;
     backgroundOverrides?: Record<string, string> | null;
     themeColor?: string | null;
+    canvasBackgroundColor?: string | null;
   }
 ): Promise<Draft> {
   // Ensure user is authenticated (RLS will handle authorization)
@@ -277,6 +281,9 @@ export async function updateDraft(
   }
   if (updates.themeColor !== undefined) {
     updateData.theme_color = updates.themeColor;
+  }
+  if (updates.canvasBackgroundColor !== undefined) {
+    updateData.canvas_background_color = updates.canvasBackgroundColor;
   }
 
   const { data, error } = await supabase
@@ -329,7 +336,8 @@ export async function saveDraftWithImages(
       colors: [string, string];
       direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
     };
-  }> | null
+  }> | null,
+  canvasBackgroundColor?: string | null
 ): Promise<Draft> {
   try {
     let draft: Draft;
@@ -403,6 +411,7 @@ export async function saveDraftWithImages(
       projectName: projectName !== undefined ? projectName : draft.projectName,
       backgroundOverrides: backgroundOverrides !== undefined ? backgroundOverrides : draft.backgroundOverrides,
       themeColor: themeColor !== undefined ? themeColor : draft.themeColor,
+      canvasBackgroundColor: canvasBackgroundColor !== undefined ? canvasBackgroundColor : draft.canvasBackgroundColor,
     });
 
     // Return draft with localPreviewPath appended (client-side only, not in DB)

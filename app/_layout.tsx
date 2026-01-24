@@ -10,6 +10,8 @@ import { AppProvider } from "@/contexts/AppContext";
 import { AuthProvider, useAuthContext } from "@/contexts/AuthContext";
 import { FontProvider } from "@/contexts/FontContext";
 import { EditorProvider } from "@/domains/editor";
+import { TemplateProvider } from "@/domains/templates";
+import { ProjectProvider } from "@/domains/projects";
 import AnimatedSplash from "@/components/AnimatedSplash";
 import ForceUpdateScreen from "@/components/ForceUpdateScreen";
 import { useForceUpdate } from "@/hooks/useForceUpdate";
@@ -72,7 +74,6 @@ async function checkNetworkConnectivity(): Promise<boolean> {
   } catch (error) {
     clearTimeout(timeoutId);
     // AbortError means timeout, other errors mean network issues
-    console.log('[Network] Connectivity check failed:', error);
     return false;
   }
 }
@@ -171,9 +172,8 @@ function OnboardingFlowHandler({
   
   // Get Superwall paywall trigger for manual presentation
   const { registerPlacement } = usePlacement({
-    onPresent: (info) => console.log('[Onboarding] Manual paywall presented:', info.name),
+    onPresent: (info) => {},
     onDismiss: (info, result) => {
-      console.log('[Onboarding] Manual paywall dismissed:', result);
       // Navigate to auth after manual paywall dismisses
       if (!hasNavigatedToAuth.current) {
         hasNavigatedToAuth.current = true;
@@ -181,7 +181,6 @@ function OnboardingFlowHandler({
       }
     },
     onSkip: (reason) => {
-      console.log('[Onboarding] Manual paywall skipped:', reason);
       // If skipped, still go to auth
       if (!hasNavigatedToAuth.current) {
         hasNavigatedToAuth.current = true;
@@ -189,7 +188,6 @@ function OnboardingFlowHandler({
       }
     },
     onError: (error) => {
-      console.error('[Onboarding] Manual paywall error:', error);
       // On error, go to auth
       if (!hasNavigatedToAuth.current) {
         hasNavigatedToAuth.current = true;
@@ -202,7 +200,6 @@ function OnboardingFlowHandler({
   // This ensures they'll see fresh onboarding on every app open until they sign up
   useEffect(() => {
     if (splashComplete && !isAuthenticated) {
-      console.log('[Onboarding] Clearing stale local data for non-authenticated user');
       clearPendingSurveyData();
     }
   }, [splashComplete, isAuthenticated]);
@@ -215,7 +212,6 @@ function OnboardingFlowHandler({
   useSuperwallEvents({
     // Called when paywall is presented - for logging/analytics only
     onPaywallPresent: (info) => {
-      console.log('[Superwall] Paywall presented:', info.name);
       // Forward to PostHog for unified analytics
       captureEvent(POSTHOG_EVENTS.PAYWALL_PRESENTED, {
         paywall_name: info.name,
@@ -228,7 +224,6 @@ function OnboardingFlowHandler({
     // DO NOT navigate here - this fires for ALL paywalls (feature-gating + onboarding)
     // Navigation for onboarding is handled by usePlacement.onDismiss above
     onPaywallDismiss: (info, result) => {
-      console.log('[Superwall] Paywall dismissed:', info.name, 'Result:', result);
       // Forward to PostHog for unified analytics
       captureEvent(POSTHOG_EVENTS.PAYWALL_DISMISSED, {
         paywall_name: info.name,
@@ -240,7 +235,6 @@ function OnboardingFlowHandler({
     
     // Called when paywall is skipped (user already completed onboarding or has subscription)
     onPaywallSkip: (reason) => {
-      console.log('[Superwall] Paywall skipped:', reason);
       // Forward to PostHog for unified analytics
       captureEvent(POSTHOG_EVENTS.PAYWALL_SKIPPED, {
         skip_reason: reason,
@@ -254,7 +248,6 @@ function OnboardingFlowHandler({
     // Called on error - for logging only
     // DO NOT navigate here - this fires for ALL paywalls
     onPaywallError: (error) => {
-      console.error('[Superwall] Paywall error:', error);
       // Forward to PostHog for unified analytics
       captureEvent(POSTHOG_EVENTS.PAYWALL_ERROR, {
         error: String(error),
@@ -265,7 +258,6 @@ function OnboardingFlowHandler({
     // Capture all Superwall events including survey responses - for analytics
     onSuperwallEvent: async (eventInfo) => {
       const eventName = eventInfo.event?.event || eventInfo.event;
-      console.log('[Superwall] Event:', eventName);
       
       // Forward ALL Superwall events to PostHog for comprehensive tracking
       // This includes transaction events, subscription events, etc.
@@ -282,9 +274,8 @@ function OnboardingFlowHandler({
         try {
           const surveyData = parseSuperWallSurveyData(eventInfo.params || {});
           await storePendingSurveyData(surveyData);
-          console.log('[Superwall] Captured survey data:', surveyData);
         } catch (error) {
-          console.error('[Superwall] Error storing survey data:', error);
+          // Error storing survey data
         }
       }
     },
@@ -300,10 +291,8 @@ function OnboardingFlowHandler({
       setOnboardingComplete(completed);
       
       if (completed) {
-        console.log('[Onboarding] User already completed onboarding (verified from Supabase)');
         onOnboardingComplete();
       } else {
-        console.log('[Onboarding] User needs onboarding');
         // app_install will trigger automatically on first install
         // For returning users who didn't sign up, we'll manually trigger below
       }
@@ -327,14 +316,12 @@ function OnboardingFlowHandler({
       const hasSurveyData = await hasPendingSurveyData();
       
       if (!hasSurveyData) {
-        console.log('[Onboarding] No survey data found, manually triggering onboarding paywall');
         hasTriggeredManualPaywall.current = true;
         
         // Check network connectivity before Superwall operations
         // This prevents connection refused errors when offline
         const isConnected = await checkNetworkConnectivity();
         if (!isConnected) {
-          console.log('[Onboarding] No network connection, skipping paywall and going to auth');
           if (!hasNavigatedToAuth.current) {
             hasNavigatedToAuth.current = true;
             router.replace('/auth/onboarding-auth');
@@ -347,7 +334,6 @@ function OnboardingFlowHandler({
         try {
           await registerPlacement({ placement: 'app_install' });
         } catch (error) {
-          console.error('[Onboarding] Error presenting paywall:', error);
           // If paywall fails, still redirect to auth
           if (!hasNavigatedToAuth.current) {
             hasNavigatedToAuth.current = true;
@@ -356,7 +342,6 @@ function OnboardingFlowHandler({
         }
       } else {
         // Has survey data but not authenticated - go directly to auth
-        console.log('[Onboarding] Survey data exists, redirecting to auth');
         if (!hasNavigatedToAuth.current) {
           hasNavigatedToAuth.current = true;
           router.replace('/auth/onboarding-auth');
@@ -429,11 +414,10 @@ function RootLayoutInner() {
         appStateRef.current === 'active' &&
         nextAppState.match(/inactive|background/)
       ) {
-        console.log('[App] Backgrounding - cleaning up temp files');
         try {
           await cleanupTempFiles();
         } catch (error) {
-          console.warn('[App] Temp cleanup failed:', error);
+          // Temp cleanup failed
         }
       }
       
@@ -442,9 +426,8 @@ function RootLayoutInner() {
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
-        console.log('[App] Returning to foreground - cleaning old temp files');
         // Clean files older than 10 minutes
-        cleanupOldTempFiles(10 * 60 * 1000).catch(console.warn);
+        cleanupOldTempFiles(10 * 60 * 1000).catch(() => {});
       }
       
       appStateRef.current = nextAppState;
@@ -490,23 +473,27 @@ function RootLayoutInner() {
 
   return (
     <FontProvider>
-      <AppProvider>
-        <EditorProvider>
-          {/* Bridge to connect PostHogProvider client to service layer */}
-          <PostHogBridge />
-          <RootLayoutNav />
-          {showAnimatedSplash && (
-            <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
-          )}
-          {/* Onboarding flow handler - runs after splash and force update check */}
-          {!onboardingComplete && forceUpdateChecked && (
-            <OnboardingFlowHandler 
-              splashComplete={splashComplete}
-              onOnboardingComplete={handleOnboardingComplete}
-            />
-          )}
-        </EditorProvider>
-      </AppProvider>
+      <TemplateProvider>
+        <ProjectProvider>
+          <AppProvider>
+            <EditorProvider>
+              {/* Bridge to connect PostHogProvider client to service layer */}
+              <PostHogBridge />
+              <RootLayoutNav />
+              {showAnimatedSplash && (
+                <AnimatedSplash onAnimationEnd={handleSplashAnimationEnd} />
+              )}
+              {/* Onboarding flow handler - runs after splash and force update check */}
+              {!onboardingComplete && forceUpdateChecked && (
+                <OnboardingFlowHandler 
+                  splashComplete={splashComplete}
+                  onOnboardingComplete={handleOnboardingComplete}
+                />
+              )}
+            </EditorProvider>
+          </AppProvider>
+        </ProjectProvider>
+      </TemplateProvider>
     </FontProvider>
   );
 }
@@ -530,10 +517,7 @@ export default function RootLayout() {
           // Step 1: Request ATT permission first (shows native iOS dialog)
           // This will show the ATT prompt if status is 'not-determined'
           // If already determined, it returns the cached status without showing dialog
-          console.log('[ATT] Requesting App Tracking Transparency permission...');
           const { canTrack, status } = await requestATTPermission();
-          
-          console.log('[ATT] Permission result:', { status, canTrack });
           
           // Step 2: Initialize Facebook SDK with ATT result
           // The SDK will enable/disable IDFA collection based on user's choice
@@ -543,9 +527,8 @@ export default function RootLayout() {
           await initializeFacebookSDK(true);
         }
       } catch (error) {
-        console.error('[Tracking] Failed to initialize:', error);
         // On error, initialize Facebook SDK without tracking (privacy-first)
-        initializeFacebookSDK(false).catch(console.error);
+        initializeFacebookSDK(false).catch(() => {});
       }
     };
     

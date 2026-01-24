@@ -320,20 +320,37 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', user.id)
         .single();
 
+      // Valid statuses where user still has premium access:
+      // - 'active': Currently paying subscriber
+      // - 'cancelled': User cancelled but still has access until expiration date
+      // - 'grace_period': Payment failed but user is in grace period (still has access)
+      const VALID_PREMIUM_STATUSES = ['active', 'cancelled', 'grace_period'];
+
       // Determine if user has active premium access
       const now = new Date();
+      
+      // Check expiration dates
+      const superwallExpired = subscription?.superwall_expires_at 
+        ? new Date(subscription.superwall_expires_at) < now 
+        : false;
+      const adminExpired = subscription?.admin_expires_at 
+        ? new Date(subscription.admin_expires_at) < now 
+        : false;
+      
       const isActive = subscription && 
         subscription.tier !== 'free' &&
-        subscription.status === 'active' &&
-        // Check Superwall expiration (if set)
-        (!subscription.superwall_expires_at || new Date(subscription.superwall_expires_at) > now) &&
-        // Check admin expiration (if set)
-        (!subscription.admin_expires_at || new Date(subscription.admin_expires_at) > now);
+        VALID_PREMIUM_STATUSES.includes(subscription.status) &&
+        !superwallExpired &&
+        !adminExpired;
 
       if (!isActive) {
         console.log(`[ai-enhance] Premium check failed for user ${user.id}:`, {
           tier: subscription?.tier || 'no subscription',
           status: subscription?.status || 'unknown',
+          superwallExpired,
+          adminExpired,
+          superwall_expires_at: subscription?.superwall_expires_at,
+          admin_expires_at: subscription?.admin_expires_at,
         });
         return new Response(
           JSON.stringify({ error: 'Premium subscription required', code: 'PREMIUM_REQUIRED' }),
@@ -341,7 +358,7 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      console.log(`[ai-enhance] Premium check passed for user ${user.id}: tier=${subscription.tier}`);
+      console.log(`[ai-enhance] Premium check passed for user ${user.id}: tier=${subscription.tier}, status=${subscription.status}`);
     }
 
     // Get background prompt based on input type

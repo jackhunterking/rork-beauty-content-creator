@@ -56,8 +56,10 @@ interface AISuccessOverlayProps {
   featureKey: AIFeatureKey;
   onKeepEnhanced: () => void;
   onRevert: () => void;
-  /** Background info for displaying transparent PNG over color/gradient */
-  backgroundInfo?: BackgroundInfo;
+  /** Background info for displaying the NEW state (what user is applying) */
+  newBackgroundInfo?: BackgroundInfo;
+  /** Background info for displaying the PREVIOUS state (what user currently has) */
+  previousBackgroundInfo?: BackgroundInfo;
 }
 
 export default function AISuccessOverlay({
@@ -66,7 +68,8 @@ export default function AISuccessOverlay({
   featureKey,
   onKeepEnhanced,
   onRevert,
-  backgroundInfo,
+  newBackgroundInfo,
+  previousBackgroundInfo,
 }: AISuccessOverlayProps) {
   const labels = FEATURE_LABELS[featureKey] || FEATURE_LABELS.auto_quality;
   
@@ -113,21 +116,25 @@ export default function AISuccessOverlay({
       {/* Before/After Comparison */}
       <GestureDetector gesture={panGesture}>
         <View style={styles.comparisonContainer}>
-          {/* Original (After) - full width behind */}
-          {/* Background color/gradient for transparent PNG (shows user's perceived "original") */}
-          {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+          {/* ====== ORIGINAL SIDE (right) - What user currently has ====== */}
+          {/* Background for ORIGINAL: use previousBackgroundInfo, or white if transparent/none */}
+          {previousBackgroundInfo?.type === 'solid' && previousBackgroundInfo.solidColor ? (
             <View 
-              style={[styles.comparisonImage, { backgroundColor: backgroundInfo.solidColor, position: 'absolute' }]} 
+              style={[styles.comparisonImage, { backgroundColor: previousBackgroundInfo.solidColor, position: 'absolute' }]} 
             />
-          )}
-          {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+          ) : previousBackgroundInfo?.type === 'gradient' && previousBackgroundInfo.gradient ? (
             <LinearGradient
-              colors={backgroundInfo.gradient.colors}
-              {...getGradientPoints(backgroundInfo.gradient.direction)}
+              colors={previousBackgroundInfo.gradient.colors}
+              {...getGradientPoints(previousBackgroundInfo.gradient.direction)}
               style={[styles.comparisonImage, { position: 'absolute' }]}
             />
-          )}
-          {/* The original image (may be transparent PNG) on top of background */}
+          ) : (featureKey === 'background_replace' || featureKey === 'background_remove') ? (
+            // For background features with no previous bg: show white (user has transparent PNG)
+            <View 
+              style={[styles.comparisonImage, { backgroundColor: '#FFFFFF', position: 'absolute' }]} 
+            />
+          ) : null}
+          {/* The original image on top of its background */}
           <ExpoImage
             source={{ uri: originalUri }}
             style={styles.comparisonImage}
@@ -135,11 +142,11 @@ export default function AISuccessOverlay({
             cachePolicy="none"
           />
           
-          {/* Enhanced (Before) - clipped on top */}
+          {/* ====== ENHANCED SIDE (left) - What user will get ====== */}
           <Animated.View style={[styles.enhancedClip, enhancedClipStyle]}>
-            {/* Background for transparent PNG - MUST mask the original image behind */}
-            {/* For background_remove: use white background when no backgroundInfo is provided */}
-            {featureKey === 'background_remove' && !backgroundInfo && (
+            {/* Background for ENHANCED: use newBackgroundInfo */}
+            {/* For background_remove: always use white (result is transparent PNG on white) */}
+            {featureKey === 'background_remove' && (
               <View 
                 style={[
                   styles.comparisonImage, 
@@ -147,19 +154,19 @@ export default function AISuccessOverlay({
                 ]} 
               />
             )}
-            {/* Background color/gradient for transparent PNG (when user has selected one) */}
-            {backgroundInfo?.type === 'solid' && backgroundInfo.solidColor && (
+            {/* For background_replace: use the NEW selected color/gradient */}
+            {featureKey === 'background_replace' && newBackgroundInfo?.type === 'solid' && newBackgroundInfo.solidColor && (
               <View 
                 style={[
                   styles.comparisonImage, 
-                  { width: COMPARISON_WIDTH, backgroundColor: backgroundInfo.solidColor }
+                  { width: COMPARISON_WIDTH, backgroundColor: newBackgroundInfo.solidColor }
                 ]} 
               />
             )}
-            {backgroundInfo?.type === 'gradient' && backgroundInfo.gradient && (
+            {featureKey === 'background_replace' && newBackgroundInfo?.type === 'gradient' && newBackgroundInfo.gradient && (
               <LinearGradient
-                colors={backgroundInfo.gradient.colors}
-                {...getGradientPoints(backgroundInfo.gradient.direction)}
+                colors={newBackgroundInfo.gradient.colors}
+                {...getGradientPoints(newBackgroundInfo.gradient.direction)}
                 style={[styles.comparisonImage, { width: COMPARISON_WIDTH }]}
               />
             )}

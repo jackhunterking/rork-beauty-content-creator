@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Draft, DraftRow } from '@/types';
-import { fetchDrafts as fetchDraftsFromService } from '@/services/draftService';
+import { fetchDrafts as fetchDraftsFromService, mapRowToDraft as mapRowToDraftFromService } from '@/services/draftService';
 import { getLocalPreviewPath } from '@/services/localStorageService';
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
@@ -50,24 +50,8 @@ function useDebouncedCallback<T extends (...args: any[]) => any>(
   );
 }
 
-/**
- * Convert database row (snake_case) to Draft type (camelCase)
- */
-function mapRowToDraft(row: DraftRow): Draft {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    templateId: row.template_id,
-    projectName: row.project_name || undefined,
-    beforeImageUrl: row.before_image_url,
-    afterImageUrl: row.after_image_url,
-    capturedImageUrls: row.captured_image_urls || undefined,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    renderedPreviewUrl: row.rendered_preview_url || undefined,
-    wasRenderedAsPremium: row.was_rendered_as_premium ?? undefined,
-  };
-}
+// Use the shared mapper from draftService to ensure all fields are included
+const mapRowToDraft = mapRowToDraftFromService;
 
 /**
  * Hook that provides real-time drafts from Supabase.
@@ -193,57 +177,69 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
     // Initial fetch
     fetchInitialDrafts();
 
-    // Use a unique channel name to avoid conflicts during rapid remounts
-    const channelName = `drafts-realtime-${Date.now()}`;
-    
-    // Create real-time channel for drafts table
-    // Note: RLS policies ensure users only receive events for their own drafts
-    const channel = supabase
-      .channel(channelName)
-      .on<DraftRow>(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'drafts',
-        },
-        handleInsert
-      )
-      .on<DraftRow>(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'drafts',
-        },
-        handleUpdate
-      )
-      .on<DraftRow>(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'drafts',
-        },
-        handleDelete
-      )
-      .subscribe((status, err) => {
-        if (!mountedRef.current) return;
-        
-        if (status === 'SUBSCRIBED') {
-          console.log('[RealtimeDrafts] ✓ Subscription active for drafts table');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[RealtimeDrafts] ✗ Channel error:', err?.message || 'Connection issue');
-          if (err?.message) {
-            setError(new Error('Real-time subscription failed'));
-          }
-        } else if (status === 'TIMED_OUT') {
-          console.error('[RealtimeDrafts] ✗ Subscription timed out');
-          setError(new Error('Real-time subscription timed out'));
-        }
-      });
+    let channel: RealtimeChannel | null = null;
 
-    channelRef.current = channel;
+    // Set up subscription after ensuring auth session is ready
+    const setupSubscription = async () => {
+      // Wait for auth session to be fully loaded
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session || !mountedRef.current) {
+        console.log('[RealtimeDrafts] No session available, skipping realtime subscription');
+        return;
+      }
+
+      // Use a unique channel name to avoid conflicts during rapid remounts
+      const channelName = `drafts-realtime-${Date.now()}`;
+      
+      // Create real-time channel for drafts table using a single wildcard subscription
+      // This is more reliable than multiple separate subscriptions
+      // Note: RLS policies ensure users only receive events for their own drafts
+      channel = supabase
+        .channel(channelName)
+        .on<DraftRow>(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'drafts',
+          },
+          (payload) => {
+            if (!mountedRef.current) return;
+            
+            // Route to appropriate handler based on event type
+            switch (payload.eventType) {
+              case 'INSERT':
+                handleInsert(payload);
+                break;
+              case 'UPDATE':
+                handleUpdate(payload);
+                break;
+              case 'DELETE':
+                handleDelete(payload);
+                break;
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          if (!mountedRef.current) return;
+          
+          if (status === 'SUBSCRIBED') {
+            console.log('[RealtimeDrafts] ✓ Subscription active for drafts table');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.log('[RealtimeDrafts] Channel status:', status, err?.message);
+            // Don't set error state - the initial fetch still works and users won't notice
+          } else if (status === 'TIMED_OUT') {
+            console.log('[RealtimeDrafts] Subscription timed out, using polling');
+          } else {
+            console.log('[RealtimeDrafts] Channel status:', status);
+          }
+        });
+
+      channelRef.current = channel;
+    };
+
+    setupSubscription();
 
     // Cleanup subscription on unmount
     return () => {

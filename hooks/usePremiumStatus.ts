@@ -222,17 +222,15 @@ export function useTieredSubscription(): TieredSubscription {
   // Paywall placement hook - used for callbacks only
   const { registerPlacement: hookRegisterPlacement } = usePlacement({
     onPresent: (info) => {
-      console.log('[Subscription] Paywall presented:', info.name);
       trackInitiatedCheckout(info.name);
     },
     onDismiss: (info, result) => {
-      console.log('[Subscription] Paywall dismissed:', result);
       if (result.type === 'purchased') {
         trackSubscribe(info.name || 'subscription', 0, 'USD');
       }
     },
-    onSkip: (reason) => console.log('[Subscription] Paywall skipped:', reason),
-    onError: (error) => console.error('[Subscription] Paywall error:', error),
+    onSkip: (reason) => {},
+    onError: (error) => {},
   });
 
   // Check Supabase subscriptions table - THE SINGLE SOURCE OF TRUTH
@@ -262,12 +260,8 @@ export function useTieredSubscription(): TieredSubscription {
             
             if (isActive && subscription.tier !== 'free') {
               setSupabaseTier(subscription.tier as SubscriptionTier);
-              console.log(`[Subscription] Supabase tier: ${subscription.tier} (source: ${subscription.source})`);
             } else {
               setSupabaseTier('free');
-              if (subscription.tier !== 'free') {
-                console.log(`[Subscription] Subscription not active: status=${subscription.status}, expired=${isExpired}`);
-              }
             }
           } else {
             // No subscription record found - default to free
@@ -277,7 +271,6 @@ export function useTieredSubscription(): TieredSubscription {
           setSupabaseTier('free');
         }
       } catch (error) {
-        console.error('[Subscription] Failed to check Supabase tier:', error);
         setSupabaseTier('free');
       } finally {
         setIsCheckingSupabase(false);
@@ -304,9 +297,8 @@ export function useTieredSubscription(): TieredSubscription {
         try {
           const info = await getEntitlements();
           setEntitlementsInfo(info);
-          console.log('[Subscription] Fetched entitlements:', info);
         } catch (error) {
-          console.error('[Subscription] Failed to fetch entitlements:', error);
+          // Failed to fetch entitlements
         }
       } else {
         setEntitlementsInfo(null);
@@ -340,7 +332,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] pro_download error:', error);
+      // pro_download error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -352,7 +344,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] pro_share error:', error);
+      // pro_share error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -364,7 +356,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] pro_watermark error:', error);
+      // pro_watermark error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -376,7 +368,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] studio_auto_quality error:', error);
+      // studio_auto_quality error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -388,7 +380,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] studio_bg_remove error:', error);
+      // studio_bg_remove error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -400,7 +392,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] studio_bg_replace error:', error);
+      // studio_bg_replace error
     }
   }, [hookRegisterPlacement, tier]);
   
@@ -412,7 +404,7 @@ export function useTieredSubscription(): TieredSubscription {
         params: { current_tier: tier },
       });
     } catch (error) {
-      console.error('[Subscription] membership_manage error:', error);
+      // membership_manage error
     }
   }, [hookRegisterPlacement, tier]);
 
@@ -435,7 +427,7 @@ export function useTieredSubscription(): TieredSubscription {
         } as PlacementParams,
       });
     } catch (error) {
-      console.error('[Subscription] pro_download (legacy) error:', error);
+      // pro_download (legacy) error
     }
   }, [hookRegisterPlacement, tier]);
 
@@ -454,7 +446,7 @@ export function useTieredSubscription(): TieredSubscription {
         } as PlacementParams,
       });
     } catch (error) {
-      console.error('[Subscription] studio_ai_generate (legacy) error:', error);
+      // studio_ai_generate (legacy) error
     }
   }, [hookRegisterPlacement, tier]);
 
@@ -556,17 +548,14 @@ export function useRestorePurchases() {
   
   const { registerPlacement } = usePlacement({
     onSkip: (reason) => {
-      console.log('[Restore] Skipped (user may already be subscribed):', reason);
       setRestoreSuccess(true);
     },
     onDismiss: (info, result) => {
-      console.log('[Restore] Dismissed:', result);
       if (result.type === 'restored' || result.type === 'purchased') {
         setRestoreSuccess(true);
       }
     },
     onError: (error) => {
-      console.error('[Restore] Error:', error);
       setRestoreError(error);
     },
   });
@@ -580,7 +569,6 @@ export function useRestorePurchases() {
       await registerPlacement({
         placement: 'restore_purchases',
         feature: () => {
-          console.log('[Restore] Subscription verified');
           setRestoreSuccess(true);
         },
       });

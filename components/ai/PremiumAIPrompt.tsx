@@ -105,7 +105,7 @@ export default function PremiumAIPrompt({
           activeOpacity={0.8}
         >
           <Ionicons name="star" size={20} color="#FFFFFF" />
-          <Text style={styles.upgradeButtonText}>Upgrade to Pro</Text>
+          <Text style={styles.upgradeButtonText}>Upgrade to Studio</Text>
         </TouchableOpacity>
         
         <TouchableOpacity

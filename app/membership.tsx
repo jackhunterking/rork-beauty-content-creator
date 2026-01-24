@@ -14,51 +14,16 @@ import {
   ChevronLeft,
   ExternalLink,
   Repeat,
-  AlertCircle,
-  HelpCircle,
   Gift,
   Sparkles,
 } from "lucide-react-native";
-import Constants from 'expo-constants';
 import React, { useMemo } from "react";
 import { useRouter } from "expo-router";
 import Colors from "@/constants/colors";
+import { getTierDisplayInfo, TIER_COLORS } from "@/constants/tiers";
 import { useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useResponsive } from "@/hooks/useResponsive";
-import type { SubscriptionTier } from "@/types";
-
-/**
- * Detect if running in development/sandbox mode
- */
-const isDevelopmentMode = (): boolean => {
-  return __DEV__ || Constants.appOwnership === 'expo';
-};
-
-/**
- * Get tier display info (simplified - no features list needed)
- */
-const getTierInfo = (tier: SubscriptionTier, source: string) => {
-  switch (tier) {
-    case 'studio':
-      return {
-        name: source === 'complimentary' ? 'Complimentary Studio' : 'Studio',
-        icon: Sparkles,
-        color: '#9333EA', // Purple
-      };
-    case 'pro':
-      return {
-        name: source === 'complimentary' ? 'Complimentary Pro' : 'Pro',
-        icon: Crown,
-        color: Colors.light.accent,
-      };
-    default:
-      return {
-        name: 'Free',
-        icon: null,
-        color: Colors.light.textSecondary,
-      };
-  }
-};
+import type { SubscriptionTier, SubscriptionTierSource } from "@/types";
 
 /**
  * Membership Management Screen
@@ -85,7 +50,6 @@ export default function MembershipScreen() {
 
   // Handle Change Plan - opens Superwall's membership_manage campaign
   const handleChangePlan = async () => {
-    console.log('[Membership] Opening Superwall membership_manage campaign');
     await requestMembership();
   };
 
@@ -130,26 +94,8 @@ export default function MembershipScreen() {
     );
   };
 
-  // Show help for sandbox/development mode
-  const handleSandboxHelp = () => {
-    Alert.alert(
-      'Development Mode',
-      'You\'re running in development/sandbox mode.\n\n' +
-      '📱 Sandbox Limitations:\n' +
-      '• Subscriptions auto-renew quickly (monthly = 5 min)\n' +
-      '• They expire after ~6 renewals\n' +
-      '• "Cancel Subscription" may not show sandbox purchases\n\n' +
-      '🔧 To test without subscription:\n' +
-      '1. Go to Settings > App Store\n' +
-      '2. Sign out of your Apple ID\n' +
-      '3. Sign in with a different sandbox account\n\n' +
-      '💡 Production builds don\'t have these limitations.',
-      [{ text: 'Got it' }]
-    );
-  };
-
-  // Get tier display info
-  const tierInfo = getTierInfo(tier, source);
+  // Get tier display info from centralized config
+  const tierInfo = getTierDisplayInfo(tier, source as SubscriptionTierSource | 'none');
   const isComplimentary = source === 'complimentary';
   const isPaid = source === 'superwall';
 
@@ -288,27 +234,12 @@ export default function MembershipScreen() {
 
           {/* Complimentary Info */}
           {isComplimentary && (
-            <View style={styles.complimentaryInfo}>
-              <Gift size={20} color={Colors.light.accent} />
+            <View style={[styles.complimentaryInfo, { backgroundColor: tierInfo.backgroundColor }]}>
+              <Gift size={20} color={tierInfo.color} />
               <Text style={styles.complimentaryInfoText}>
-                Your {tier === 'studio' ? 'Studio' : 'Pro'} access was granted by an administrator and doesn't require a subscription. Contact support if you have any questions.
+                Your {tierInfo.shortName} access was granted by an administrator and doesn't require a subscription. Contact support if you have any questions.
               </Text>
             </View>
-          )}
-
-          {/* Sandbox Warning - Development mode only */}
-          {isDevelopmentMode() && isPaid && (
-            <TouchableOpacity 
-              style={styles.sandboxWarning}
-              onPress={handleSandboxHelp}
-              activeOpacity={0.7}
-            >
-              <AlertCircle size={16} color="#F57C00" />
-              <Text style={styles.sandboxWarningText}>
-                Development Mode - Tap for sandbox testing info
-              </Text>
-              <HelpCircle size={16} color={Colors.light.textTertiary} />
-            </TouchableOpacity>
           )}
 
           {/* Bottom spacing */}
@@ -466,7 +397,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    backgroundColor: 'rgba(201, 168, 124, 0.15)',
+    // backgroundColor set dynamically based on tier
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
@@ -476,22 +407,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.text,
     lineHeight: 20,
-  },
-
-  // Sandbox Warning
-  sandboxWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FFE082',
-  },
-  sandboxWarningText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#F57C00',
   },
 });

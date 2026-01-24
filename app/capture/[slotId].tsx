@@ -77,13 +77,6 @@ export default function CaptureSlotScreen() {
     };
   }) => {
     if (slotId) {
-      console.log('[CaptureSlot] Setting captured image for slot:', slotId, {
-        uri: media.uri.substring(0, 50) + '...',
-        width: media.width,
-        height: media.height,
-        adjustments: media.adjustments,
-      });
-      
       // Create media asset with adjustments
       const mediaAsset: MediaAsset = {
         uri: media.uri,

@@ -16,7 +16,7 @@ export default {
   expo: {
     name: "Resulta",
     slug: "resulta",
-    version: "1.7",
+    version: "1.8",
     orientation: "portrait",
     icon: "./assets/images/resultalogo.png",
     scheme: "resulta",

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Template, SavedAsset, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
+import { Template, BrandKit, ContentType, MediaAsset, Draft, TemplateFormat, CapturedImages, SlotStates, SlotState, PortfolioItem } from '@/types';
 import { toggleTemplateFavourite } from '@/services/templateService';
 import { deleteDraft as deleteDraftService, saveDraftWithImages, duplicateDraft as duplicateDraftService, renameDraft as renameDraftService } from '@/services/draftService';
 import { fetchPortfolioItems, createPortfolioItem, deletePortfolioItem as deletePortfolioItemService } from '@/services/portfolioService';
@@ -15,7 +15,6 @@ import { getDefaultFormat } from '@/constants/formats';
 import { cleanupCapturedImages, getCurrentSessionId, resetSession, generateSessionId } from '@/services/tempUploadService';
 
 const STORAGE_KEYS = {
-  LEGACY_PORTFOLIO: 'resulta_work',
   BRAND_KIT: 'resulta_brand_kit',
 };
 
@@ -42,7 +41,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   
   // Local state for optimistic updates
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [legacyPortfolio, setLegacyPortfolio] = useState<SavedAsset[]>([]);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [brandKit, setBrandKit] = useState<BrandKit>({
     applyLogoAutomatically: false,
@@ -65,8 +63,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     contentType: ContentType;
     template: Template | null;
     capturedImages: CapturedImages;
-    beforeMedia: MediaAsset | null;
-    afterMedia: MediaAsset | null;
     draftId: string | null;
     cachedPreviewUrl: string | null;
     wasRenderedAsPremium: boolean | null;
@@ -74,12 +70,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     projectName: string | null;
     backgroundOverrides: Record<string, string>;
     themeColor: string | null;
+    canvasBackgroundColor: string | null;
   }>({
     contentType: 'single',
     template: null,
     capturedImages: {},
-    beforeMedia: null,
-    afterMedia: null,
     draftId: null,
     cachedPreviewUrl: null,
     wasRenderedAsPremium: null,
@@ -87,6 +82,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     projectName: null,
     backgroundOverrides: {},
     themeColor: null,
+    canvasBackgroundColor: null,
   });
 
   // Initialize local storage on app start
@@ -99,14 +95,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setTemplates(realtimeTemplates);
   }, [realtimeTemplates]);
 
-  // Legacy portfolio query (kept for backwards compatibility)
-  const legacyPortfolioQuery = useQuery({
-    queryKey: ['legacyPortfolio'],
-    queryFn: async () => {
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.LEGACY_PORTFOLIO);
-      return stored ? (JSON.parse(stored) as SavedAsset[]) : [];
-    },
-  });
 
   const brandKitQuery = useQuery({
     queryKey: ['brandKit'],
@@ -135,10 +123,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (legacyPortfolioQuery.data) setLegacyPortfolio(legacyPortfolioQuery.data);
-  }, [legacyPortfolioQuery.data]);
-
-  useEffect(() => {
     if (brandKitQuery.data) setBrandKit(brandKitQuery.data);
   }, [brandKitQuery.data]);
 
@@ -162,31 +146,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       setTemplates(prev => optimisticUpdateTemplate(prev, templateId, { isFavourite: !newFavouriteState }));
     }
   }, [templates]);
-
-  // Legacy save to portfolio mutation (kept for backwards compatibility)
-  const saveToLegacyPortfolioMutation = useMutation({
-    mutationFn: async (asset: SavedAsset) => {
-      const updated = [asset, ...legacyPortfolio];
-      await AsyncStorage.setItem(STORAGE_KEYS.LEGACY_PORTFOLIO, JSON.stringify(updated));
-      return updated;
-    },
-    onSuccess: (data) => {
-      setLegacyPortfolio(data);
-      queryClient.invalidateQueries({ queryKey: ['legacyPortfolio'] });
-    },
-  });
-
-  const deleteFromLegacyPortfolioMutation = useMutation({
-    mutationFn: async (assetId: string) => {
-      const updated = legacyPortfolio.filter(a => a.id !== assetId);
-      await AsyncStorage.setItem(STORAGE_KEYS.LEGACY_PORTFOLIO, JSON.stringify(updated));
-      return updated;
-    },
-    onSuccess: (data) => {
-      setLegacyPortfolio(data);
-      queryClient.invalidateQueries({ queryKey: ['legacyPortfolio'] });
-    },
-  });
 
   const updateBrandKitMutation = useMutation({
     mutationFn: async (updates: Partial<BrandKit>) => {
@@ -216,6 +175,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       capturedImageAdjustments,
       themeColor,
       capturedImageBackgroundInfo,
+      canvasBackgroundColor,
     }: { 
       templateId: string; 
       beforeImageUri: string | null; 
@@ -238,6 +198,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
         };
       }> | null;
+      canvasBackgroundColor?: string | null;
     }) => {
       return saveDraftWithImages(
         templateId, 
@@ -252,7 +213,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         backgroundOverrides,
         capturedImageAdjustments,
         themeColor,
-        capturedImageBackgroundInfo
+        capturedImageBackgroundInfo,
+        canvasBackgroundColor
       );
     },
     onSuccess: (savedDraft) => {
@@ -266,6 +228,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         projectName: savedDraft.projectName || null,
         backgroundOverrides: savedDraft.backgroundOverrides || {},
         themeColor: savedDraft.themeColor || null,
+        canvasBackgroundColor: savedDraft.canvasBackgroundColor || null,
       }));
       // Note: No manual cache updates needed - useRealtimeDrafts will receive
       // the INSERT/UPDATE event from Supabase and update automatically
@@ -377,8 +340,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       ...prev, 
       template,
       capturedImages: {},
-      beforeMedia: null,
-      afterMedia: null,
       draftId: null,
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
@@ -498,22 +459,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     setComposedPreviewUri(null);
   }, [currentProject.template]);
 
-  // Legacy: set before media
-  const setBeforeMedia = useCallback((media: MediaAsset | null) => {
-    setCurrentProject(prev => ({ ...prev, beforeMedia: media }));
-    if (media) {
-      setCapturedImage('slot-before', media);
-    }
-  }, [setCapturedImage]);
-
-  // Legacy: set after media
-  const setAfterMedia = useCallback((media: MediaAsset | null) => {
-    setCurrentProject(prev => ({ ...prev, afterMedia: media }));
-    if (media) {
-      setCapturedImage('slot-after', media);
-    }
-  }, [setCapturedImage]);
-
   const resetProject = useCallback((wasSaved: boolean = false) => {
     // If project was NOT saved, cleanup any temp-uploads from this session
     // This prevents orphaned files in Supabase storage
@@ -536,8 +481,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       contentType: 'single',
       template: null,
       capturedImages: {},
-      beforeMedia: null,
-      afterMedia: null,
       draftId: null,
       cachedPreviewUrl: null,
       wasRenderedAsPremium: null,
@@ -545,6 +488,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       projectName: null,
       backgroundOverrides: {},
       themeColor: null,
+      canvasBackgroundColor: null,
     });
     setSlotStatesMap({});
     setComposedPreviewUri(null);
@@ -552,7 +496,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Load a draft into the current project
   const loadDraft = useCallback((draft: Draft, template: Template) => {
-    console.log('[AppContext] Loading draft:', draft.id, 'with adjustments:', draft.capturedImageAdjustments);
     const slots = extractSlots(template);
     
     const capturedImages: CapturedImages = {};
@@ -616,19 +559,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       }
     }
     
-    // Derive beforeMedia and afterMedia from the loaded capturedImages
-    const beforeMedia = beforeSlot && capturedImages[beforeSlot.layerId] ? {
-      uri: capturedImages[beforeSlot.layerId].uri,
-      width: beforeSlot.width,
-      height: beforeSlot.height,
-    } : null;
-    
-    const afterMedia = afterSlot && capturedImages[afterSlot.layerId] ? {
-      uri: capturedImages[afterSlot.layerId].uri,
-      width: afterSlot.width,
-      height: afterSlot.height,
-    } : null;
-    
     setSlotStatesMap(slotStates);
     setComposedPreviewUri(null);
     
@@ -636,8 +566,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       contentType: 'single',
       template,
       capturedImages,
-      beforeMedia,
-      afterMedia,
       draftId: draft.id,
       cachedPreviewUrl: draft.renderedPreviewUrl || null,
       wasRenderedAsPremium: draft.wasRenderedAsPremium ?? null,
@@ -645,6 +573,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       projectName: draft.projectName || null,
       backgroundOverrides: draft.backgroundOverrides || {},
       themeColor: draft.themeColor || null,
+      canvasBackgroundColor: draft.canvasBackgroundColor || null,
     });
   }, []);
 
@@ -666,10 +595,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     templatesError,
     refetchTemplates,
     
-    // Legacy portfolio state (kept for backwards compatibility)
-    legacyPortfolio,
-    
-    // Portfolio state (new)
+    // Portfolio state
     portfolio,
     isPortfolioLoading: portfolioQuery.isLoading,
     
@@ -681,7 +607,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     brandKit,
     currentProject,
     selectedFormat,
-    isLoading: isTemplatesLoading || legacyPortfolioQuery.isLoading,
+    isLoading: isTemplatesLoading,
     
     // Slot state management
     slotStates,
@@ -693,8 +619,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Actions
     toggleFavourite,
-    saveToLegacyPortfolio: (asset: SavedAsset) => saveToLegacyPortfolioMutation.mutate(asset),
-    deleteFromLegacyPortfolio: (id: string) => deleteFromLegacyPortfolioMutation.mutate(id),
     updateBrandKit: (updates: Partial<BrandKit>) => updateBrandKitMutation.mutate(updates),
     setContentType,
     setFormat,
@@ -706,9 +630,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     clearCapturedImage,
     resetCapturedImages,
     
-    // Legacy actions
-    setBeforeMedia,
-    setAfterMedia,
     resetProject,
     
     // Draft actions
@@ -723,6 +644,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       localPreviewPath?: string | null;
       projectName?: string | null;
       backgroundOverrides?: Record<string, string> | null;
+      capturedImageAdjustments?: Record<string, { scale: number; translateX: number; translateY: number; rotation: number }> | null;
       themeColor?: string | null;
       capturedImageBackgroundInfo?: Record<string, {
         type: 'solid' | 'gradient' | 'transparent';
@@ -733,6 +655,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
           direction: 'vertical' | 'horizontal' | 'diagonal-tl' | 'diagonal-tr';
         };
       }> | null;
+      canvasBackgroundColor?: string | null;
     }) => saveDraftMutation.mutateAsync(params),
     deleteDraft: (draftId: string) => deleteDraftMutation.mutateAsync(draftId),
     duplicateDraft: (draftId: string) => duplicateDraftMutation.mutateAsync(draftId),

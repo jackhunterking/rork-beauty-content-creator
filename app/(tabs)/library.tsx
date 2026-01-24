@@ -28,6 +28,8 @@ import {
   Pencil,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useProjects } from '@/domains/projects';
+import { useTemplates } from '@/domains/templates';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, TemplateFormat } from '@/types';
 import { getDraftPreviewUri } from '@/services/imageUtils';
@@ -60,10 +62,10 @@ const formatFilters = getAllFormats().map(config => ({
 export default function ProjectsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  
+  // Project context for drafts and mutations
   const { 
     drafts,
-    templates,
-    loadDraft,
     isDraftsLoading,
     refreshDrafts,
     duplicateDraft,
@@ -71,7 +73,13 @@ export default function ProjectsScreen() {
     renameDraft,
     isDuplicatingDraft,
     isRenamingDraft,
-  } = useApp();
+  } = useProjects();
+  
+  // Templates context for template data
+  const { templates } = useTemplates();
+  
+  // AppContext for loading draft (editor-v2 still reads from AppContext)
+  const { loadDraft } = useApp();
 
   // Responsive configuration
   const responsive = useResponsive();
@@ -119,6 +127,7 @@ export default function ProjectsScreen() {
     const template = getTemplateForDraft(draft.templateId);
     if (!template) return;
     
+    // Load draft into AppContext (editor-v2 reads from AppContext)
     loadDraft(draft, template);
     router.push('/editor-v2');
   }, [getTemplateForDraft, loadDraft, router]);
@@ -160,7 +169,6 @@ export default function ProjectsScreen() {
       setIsRenameModalVisible(false);
       setDraftToRename(null);
     } catch (error) {
-      console.error('Failed to rename project:', error);
       Alert.alert('Error', 'Failed to rename project. Please try again.');
     }
   }, [draftToRename, renameDraft]);
@@ -184,7 +192,7 @@ export default function ProjectsScreen() {
       const template = getTemplateForDraft(newDraft.templateId);
       
       if (template) {
-        // Load the duplicated draft directly and navigate to editor
+        // Load the duplicated draft into AppContext and navigate to editor
         loadDraft(newDraft, template);
         router.push('/editor-v2');
       } else {
@@ -192,7 +200,6 @@ export default function ProjectsScreen() {
         Alert.alert('Error', 'Could not find template for duplicated project.');
       }
     } catch (error) {
-      console.error('Failed to duplicate draft:', error);
       Alert.alert('Error', 'Failed to duplicate project. Please try again.');
     }
   }, [selectedDraft, handleCloseActionSheet, duplicateDraft, getTemplateForDraft, loadDraft, router]);
@@ -215,7 +222,6 @@ export default function ProjectsScreen() {
             try {
               await deleteDraft(selectedDraft.id);
             } catch (error) {
-              console.error('Failed to delete draft:', error);
               Alert.alert('Error', 'Failed to delete project. Please try again.');
             }
           }

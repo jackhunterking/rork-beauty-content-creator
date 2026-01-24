@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { Star, Square, RectangleVertical, RectangleHorizontal } from "lucide-react-native";
 import React, { useCallback, useState, useMemo } from "react";
 import Colors from "@/constants/colors";
+import { useTemplates } from "@/domains/templates";
 import { useApp } from "@/contexts/AppContext";
 import { Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/services/imageCacheService";
@@ -38,11 +39,13 @@ export default function CreateScreen() {
     filteredTemplates, 
     setFormat, 
     selectedFormat, 
-    selectTemplate, 
     toggleFavourite, 
     isLoading, 
     refetchTemplates,
-  } = useApp();
+  } = useTemplates();
+  
+  // Use AppContext for selectTemplate since editor-v2 still reads from AppContext
+  const { selectTemplate } = useApp();
 
   // Responsive configuration for iPad/iPhone
   const responsive = useResponsive();
@@ -78,7 +81,7 @@ export default function CreateScreen() {
       await clearAllImageCache();
       await refetchTemplates();
     } catch (error) {
-      console.error('Failed to refresh templates:', error);
+      // Error refreshing templates
     } finally {
       setIsRefreshing(false);
     }

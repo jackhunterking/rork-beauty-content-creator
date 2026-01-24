@@ -29,9 +29,11 @@ import ViewShot from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
-import { Home, Save, Download, Share2, MoreHorizontal, Pencil, Trash2, X, Crown, Palette } from 'lucide-react-native';
+import { Home, Save, Download, Share2, MoreHorizontal, Pencil, Trash2, X, Crown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { useProjects } from '@/domains/projects';
+import { useDraftData } from '@/hooks/useDraftData';
 import { getProjectDisplayName } from '@/utils/projectName';
 import RenameProjectModal from '@/components/RenameProjectModal';
 import { downloadAndSaveToGallery, saveToGallery } from '@/services/downloadService';
@@ -90,7 +92,22 @@ import { cleanupTempFiles, trackTempFile, untrackTempFile } from '@/services/tem
 export default function EditorV2Screen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { currentProject, setCapturedImage, resetProject, saveDraft, isSavingDraft, refreshDrafts, renameDraft, isRenamingDraft, deleteDraft } = useApp();
+  // Project state from AppContext (will be migrated to EditorContext in future)
+  const { currentProject, setCapturedImage, resetProject } = useApp();
+  
+  // Project mutations from ProjectContext
+  const { 
+    saveDraft, 
+    isSavingDraft, 
+    refreshDrafts, 
+    renameDraft, 
+    isRenamingDraft, 
+    deleteDraft 
+  } = useProjects();
+  
+  // Fetch draft data DIRECTLY from Supabase for a single source of truth
+  // This bypasses the realtime list cache which may have stale/incomplete data
+  const { draft: freshDraft, isLoading: isDraftLoading } = useDraftData(currentProject.draftId);
   
   // Tiered subscription for download/share paywall and AI features
   const { 
@@ -341,7 +358,6 @@ export default function EditorV2Screen() {
     
     // When loading a draft with a cached preview, use it instead of re-rendering
     if (currentProject.draftId && cachedPreviewUrl) {
-      console.log('[EditorV2] Using cached preview URL from draft:', cachedPreviewUrl.substring(0, 50));
       setRenderedPreviewUri(cachedPreviewUrl);
       // Important: Initialize prevCapturedImagesRef so change detection doesn't trigger re-render
       const initialPrevImages: Record<string, { uri: string; adjustments?: any } | null> = {};
@@ -359,20 +375,30 @@ export default function EditorV2Screen() {
     }
   }, [currentProject.draftId, currentProject.cachedPreviewUrl, template, capturedImages]);
 
-  // Sync backgroundOverrides when draft is loaded
+  // Sync backgroundOverrides when draft is loaded from Supabase
+  // Uses freshDraft for direct access to saved data
   useEffect(() => {
-    if (currentProject.draftId && currentProject.backgroundOverrides) {
-      setBackgroundOverrides(currentProject.backgroundOverrides);
+    if (freshDraft?.backgroundOverrides && Object.keys(freshDraft.backgroundOverrides).length > 0) {
+      setBackgroundOverrides(freshDraft.backgroundOverrides);
     }
-  }, [currentProject.draftId, currentProject.backgroundOverrides]);
+  }, [freshDraft?.backgroundOverrides]);
 
-  // Sync theme color when draft is loaded (similar to backgroundOverrides sync)
-  // This ensures saved theme color from draft overrides the template default
+  // Sync theme color when draft is loaded from Supabase
+  // Uses freshDraft for direct access to saved data
   useEffect(() => {
-    if (currentProject.draftId && currentProject.themeColor) {
-      setSelectedThemeColor(currentProject.themeColor);
+    if (freshDraft?.themeColor) {
+      setSelectedThemeColor(freshDraft.themeColor);
     }
-  }, [currentProject.draftId, currentProject.themeColor]);
+  }, [freshDraft?.themeColor]);
+  
+  // Sync canvas background color when draft is loaded from Supabase
+  // Uses freshDraft (direct Supabase fetch) instead of currentProject (from realtime cache)
+  // This ensures we always get the latest saved value
+  useEffect(() => {
+    if (freshDraft?.canvasBackgroundColor) {
+      setSelectedBackgroundColor(freshDraft.canvasBackgroundColor);
+    }
+  }, [freshDraft?.canvasBackgroundColor]);
 
   // Reset colors to template defaults when template changes (for NEW projects only)
   // Skip reset if we're loading an existing draft with saved customizations
@@ -398,22 +424,17 @@ export default function EditorV2Screen() {
           initialOverlaysRef.current = [];
           hasSetInitialOverlaysRef.current = true;
           lastLoadedDraftIdRef.current = null;
-          console.log('[EditorV2] No draft ID, cleared overlays');
         }
         return;
       }
       
       // Skip if we already loaded this draft's overlays
       if (lastLoadedDraftIdRef.current === currentProject.draftId && hasSetInitialOverlaysRef.current) {
-        console.log('[EditorV2] Overlays already loaded for draft:', currentProject.draftId);
         return;
       }
       
-      console.log('[EditorV2] Loading overlays for draft:', currentProject.draftId);
-      
       try {
         const savedOverlays = await loadOverlays(currentProject.draftId);
-        console.log(`[EditorV2] Loaded ${savedOverlays.length} overlays from draft`);
         
         // Always set overlays (even if empty) to ensure clean state
         setOverlays(savedOverlays);
@@ -423,9 +444,7 @@ export default function EditorV2Screen() {
         hasSetInitialOverlaysRef.current = true;
         lastLoadedDraftIdRef.current = currentProject.draftId;
         
-        console.log(`[EditorV2] Captured initial overlay state: ${savedOverlays.length} overlays`);
       } catch (error) {
-        console.error('[EditorV2] Failed to load overlays:', error);
         // Set empty initial state on error
         setOverlays([]);
         initialOverlaysRef.current = [];
@@ -467,17 +486,13 @@ export default function EditorV2Screen() {
       
       // Check viewShotRef is available
       if (!viewShotRef.current) {
-        console.warn('[EditorV2] ViewShot ref not ready for preview regeneration');
         return;
       }
       
       try {
-        console.log('[EditorV2] Regenerating missing preview for draft:', currentProject.draftId);
-        
         // Capture the canvas
         const uri = await viewShotRef.current.capture();
         if (!uri) {
-          console.warn('[EditorV2] Preview capture returned null during regeneration');
           return;
         }
         
@@ -486,14 +501,12 @@ export default function EditorV2Screen() {
         const savedPath = await saveLocalPreviewFile(currentProject.draftId, uri, 'default');
         
         if (savedPath) {
-          console.log('[EditorV2] Successfully regenerated preview:', savedPath);
           // Clear image cache so library shows the new preview
           await ExpoImage.clearMemoryCache();
         }
         
         hasRegeneratedPreviewRef.current = currentProject.draftId;
       } catch (error) {
-        console.error('[EditorV2] Failed to regenerate preview:', error);
         // Mark as attempted to avoid retry loops
         hasRegeneratedPreviewRef.current = currentProject.draftId;
       }
@@ -522,7 +535,6 @@ export default function EditorV2Screen() {
       hasSetInitialOverlaysRef.current = true;
     }
     
-    console.log('[EditorV2] Captured initial state:', Object.keys(initialState).length, 'images,', overlays.length, 'overlays');
   }, [template, capturedImages, overlays, currentProject.draftId]);
 
   // Check if user has made any changes since opening
@@ -581,7 +593,6 @@ export default function EditorV2Screen() {
 
   // Handler for when preview image loads
   const handlePreviewImageLoad = useCallback(() => {
-    console.log('[EditorV2] Preview image loaded');
     isPreviewImageLoadedRef.current = true;
     setIsPreviewImageLoaded(true);
   }, []);
@@ -685,8 +696,6 @@ export default function EditorV2Screen() {
       const imageUrl = image.uri;
 
       // Call the AI enhancement service with progress callbacks
-      console.log('[Editor] Calling AI enhance with:', { featureKey, imageUrl: imageUrl.substring(0, 50), slotId, presetId });
-      
       const result = await enhanceImageWithPolling(
         {
           featureKey,
@@ -719,8 +728,6 @@ export default function EditorV2Screen() {
       });
 
     } catch (error: any) {
-      console.error('[Editor] AI enhancement error:', error);
-      
       if (error.message === 'Cancelled') {
         // User cancelled - just close overlay
         setIsAIProcessing(false);
@@ -899,16 +906,10 @@ export default function EditorV2Screen() {
   // Handle canvas background color change - CLIENT-SIDE ONLY (no API calls)
   // Uses LayeredCanvas with transparent frame overlay PNG
   const handleCanvasBackgroundColorChange = useCallback((color: string) => {
-    console.log('[EditorV2] BG color change:', { color, canUseClientSide: canUseClientSideCompositing });
     setSelectedBackgroundColor(color);
     
     // Background color changes work instantly via LayeredCanvas
     // Frame overlay PNG has transparent background - color shows through
-    if (canUseClientSideCompositing) {
-      console.log('[EditorV2] ✓ Using LayeredCanvas for instant BG change (no API call)');
-    } else {
-      console.log('[EditorV2] ⚠️ Template does not support background changes (no frameOverlayUrl)');
-    }
   }, [canUseClientSideCompositing]);
 
   // Handle theme color change - CLIENT-SIDE ONLY (no API calls)
@@ -1019,7 +1020,6 @@ export default function EditorV2Screen() {
       logoPanelRef.current?.openSizeEditor();
     }, 100);
     
-    console.log('[EditorV2] Added logo overlay from panel:', newOverlay.id);
   }, []);
 
   // Handle logo panel close
@@ -1308,7 +1308,6 @@ export default function EditorV2Screen() {
     if (selectedOverlayId === id) {
       setSelectedOverlayId(null);
     }
-    console.log('[EditorV2] Deleted overlay:', id);
   }, [selectedOverlayId]);
 
   // Delete selected overlay (from style sheet)
@@ -1451,8 +1450,6 @@ export default function EditorV2Screen() {
       rotation: pendingManipulationAdjustments.rotation,
     };
     
-    console.log('[EditorV2] Saving manipulation adjustments for slot:', selection.id, finalAdjustments);
-    
     setCapturedImage(selection.id, {
       ...currentImage,
       adjustments: finalAdjustments,
@@ -1554,14 +1551,12 @@ export default function EditorV2Screen() {
   // Returns the captured file path (in cache directory)
   const captureCanvasWithOverlays = useCallback(async (): Promise<string | null> => {
     if (!viewShotRef.current) {
-      console.warn('[EditorV2] ViewShot ref not available');
       return null;
     }
     
     // LayeredCanvas renders photos client-side with template frame
     // We need at least one photo to have something meaningful to capture
     if (capturedCount === 0) {
-      console.warn('[EditorV2] No photos to capture');
       return null;
     }
     
@@ -1582,8 +1577,6 @@ export default function EditorV2Screen() {
         setPendingManipulationAdjustments(null);
       }
       
-      console.log('[EditorV2] Preparing to capture canvas with overlays...', { wasOverlaySelected, wasSlotSelected });
-      
       // Brief wait for React to re-render without selection UI
       // This ensures the selection grid and manipulation overlays are hidden
       if (hadAnySelection) {
@@ -1591,12 +1584,9 @@ export default function EditorV2Screen() {
         await new Promise(resolve => setTimeout(resolve, 150));
       }
       
-      console.log('[EditorV2] Capturing canvas now...');
-      
       const uri = await viewShotRef.current.capture();
       
       if (!uri) {
-        console.warn('[EditorV2] ViewShot capture returned null');
         return null;
       }
       
@@ -1612,10 +1602,8 @@ export default function EditorV2Screen() {
       // Track the copied file for cleanup as well
       trackTempFile(destUri);
       
-      console.log('[EditorV2] Captured canvas with overlays to cache:', destUri);
       return destUri;
     } catch (error) {
-      console.error('[EditorV2] Failed to capture canvas:', error);
       return null;
     }
   }, [capturedCount, selectedOverlayId, selection.id]);
@@ -1661,7 +1649,6 @@ export default function EditorV2Screen() {
         if (hasNonDefaultAdjustments && adjustments) {
           // Apply adjustments and crop to exact slot size BEFORE saving
           try {
-            console.log(`[EditorV2] Applying adjustments for ${slotId} before save:`, adjustments);
             const processed = await applyAdjustmentsAndCrop(
               media.uri,
               media.width,
@@ -1671,9 +1658,7 @@ export default function EditorV2Screen() {
               adjustments
             );
             capturedImageUris[slotId] = processed.uri;
-            console.log(`[EditorV2] Processed image for ${slotId}:`, processed.uri.substring(0, 50));
           } catch (adjustError) {
-            console.warn(`[EditorV2] Failed to apply adjustments for ${slotId}, using original:`, adjustError);
             capturedImageUris[slotId] = media.uri;
           }
         } else {
@@ -1682,21 +1667,14 @@ export default function EditorV2Screen() {
         }
       }
 
-      console.log('[EditorV2] Saving draft with slots:', Object.keys(capturedImageUris), 'overlays:', overlays.length);
-
       // STEP 1: Capture the canvas FIRST (before any state changes)
       // LayeredCanvas renders photos client-side with template frame, so we capture the composed view
       // This ensures the thumbnail shows the full template composition, not just a raw photo
       let capturedPreviewPath: string | null = null;
       if (capturedCount > 0) {
-        console.log('[EditorV2] Step 1: Capturing canvas with composed view BEFORE save...');
         capturedPreviewPath = await captureCanvasWithOverlays();
         
-        if (capturedPreviewPath) {
-          console.log('[EditorV2] Preview captured to temp location:', capturedPreviewPath);
-        } else {
-          console.warn('[EditorV2] Failed to capture preview with overlays');
-        }
+        // Preview captured to temp location
       }
 
       // STEP 2: Build adjustments and backgroundInfo maps from capturedImages
@@ -1727,11 +1705,10 @@ export default function EditorV2Screen() {
         }
       }
       
-      console.log('[EditorV2] Saving adjustments:', capturedImageAdjustments);
-      console.log('[EditorV2] Saving backgroundInfo:', capturedImageBackgroundInfo);
-
       // STEP 3: Save the draft to get/confirm the draft ID
       // NOTE: renderedPreviewUrl is null since we use client-side rendering now
+      const canvasBgToSave = selectedBackgroundColor !== '#FFFFFF' ? selectedBackgroundColor : null;
+      
       const savedDraft = await saveDraft({
         templateId: template.id,
         beforeImageUri: null,
@@ -1744,12 +1721,10 @@ export default function EditorV2Screen() {
         capturedImageAdjustments: Object.keys(capturedImageAdjustments).length > 0 ? capturedImageAdjustments : null,
         themeColor: selectedThemeColor || null,
         capturedImageBackgroundInfo: Object.keys(capturedImageBackgroundInfo).length > 0 ? capturedImageBackgroundInfo : null,
+        canvasBackgroundColor: canvasBgToSave,
       });
 
-      console.log('[EditorV2] Draft saved:', savedDraft?.id);
-      
       if (!savedDraft?.id) {
-        console.error('[EditorV2] Draft save returned null');
         router.replace('/(tabs)/library');
         return;
       }
@@ -1759,31 +1734,25 @@ export default function EditorV2Screen() {
       // but don't need a second saveDraft() call - that was causing ~430ms unnecessary delay
       let finalPreviewPath: string | null = null;
       if (capturedPreviewPath) {
-        console.log('[EditorV2] Step 3: Saving captured preview to draft renders directory:', savedDraft.id);
         await createDraftDirectories(savedDraft.id);
         const permanentPath = await saveLocalPreviewFile(savedDraft.id, capturedPreviewPath, 'default');
         if (permanentPath) {
           finalPreviewPath = permanentPath;
-          console.log('[EditorV2] Preview with overlays saved to:', permanentPath);
           
           // Clear expo-image cache to ensure the drafts screen shows the fresh preview
           // This is necessary because the file path doesn't change, only the content
           try {
             await ExpoImage.clearMemoryCache();
-            console.log('[EditorV2] Cleared expo-image memory cache');
           } catch (cacheError) {
-            console.warn('[EditorV2] Failed to clear image cache:', cacheError);
+            // Cache clear failed, non-critical
           }
         }
       }
 
       // STEP 4: Save overlays to local storage
       try {
-        console.log('[EditorV2] Saving overlays for draft:', savedDraft.id, 'count:', overlays.length);
         await saveOverlays(savedDraft.id, overlays);
-        console.log(`[EditorV2] Successfully saved ${overlays.length} overlays with draft`);
       } catch (overlayError) {
-        console.error('[EditorV2] Failed to save overlays:', overlayError);
         // Non-critical, continue navigation
       }
       
@@ -1798,14 +1767,12 @@ export default function EditorV2Screen() {
       // Ensure drafts list is refreshed with fresh data BEFORE navigation
       // This guarantees the timestamp will be up-to-date when the screen renders
       await refreshDrafts();
-      console.log('[EditorV2] Projects refreshed before navigation');
       
       router.replace('/(tabs)/library');
     } catch (error) {
-      console.error('[EditorV2] Failed to save draft:', error);
       Alert.alert('Error', 'Failed to save draft. Please try again.');
     }
-  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts, backgroundOverrides, selectedThemeColor]);
+  }, [template, capturedCount, capturedImages, slots, saveDraft, currentProject.draftId, isPremium, overlays, router, captureCanvasWithOverlays, refreshDrafts, backgroundOverrides, selectedThemeColor, selectedBackgroundColor]);
 
   // Handle back/close with unsaved changes check
   // Navigation destination depends on context:
@@ -1859,8 +1826,6 @@ export default function EditorV2Screen() {
     setIsDownloading(true);
 
     try {
-      console.log('[EditorV2] Starting download using ViewShot capture...');
-      
       // Capture exactly what's displayed on screen - the single source of truth
       // This includes: photos with adjustments, frame overlay, background color, overlays
       const capturedUri = await captureCanvasWithOverlays();
@@ -1874,8 +1839,6 @@ export default function EditorV2Screen() {
       // photo library permission dialog causes the app to go to background
       untrackTempFile(capturedUri);
       
-      console.log('[EditorV2] Canvas captured, saving to gallery...');
-      
       // Save the captured local image directly to gallery (no download needed)
       const downloadResult = await saveToGallery(capturedUri);
       
@@ -1887,7 +1850,6 @@ export default function EditorV2Screen() {
         throw new Error(downloadResult.error || 'Download failed');
       }
     } catch (error) {
-      console.error('[EditorV2] Download failed:', error);
       Alert.alert(
         'Download Failed',
         error instanceof Error ? error.message : 'Something went wrong'
@@ -1919,7 +1881,6 @@ export default function EditorV2Screen() {
     }
 
     // User is Free tier - show Download paywall
-    console.log(`[EditorV2] User is ${tier} tier, showing Download paywall`);
     await requestDownload();
   }, [capturedImages, canDownload, tier, executeDownload, requestDownload]);
 
@@ -1949,7 +1910,6 @@ export default function EditorV2Screen() {
         throw new Error(shareResult.error || 'Share failed');
       }
     } catch (error) {
-      console.error('[EditorV2] Share failed:', error);
       Alert.alert(
         'Share Failed',
         error instanceof Error ? error.message : 'Something went wrong'
@@ -1981,7 +1941,6 @@ export default function EditorV2Screen() {
     }
 
     // User is Free tier - show Share paywall
-    console.log(`[EditorV2] User is ${tier} tier, showing Share paywall`);
     await requestShare();
   }, [capturedImages, canShare, tier, executeShare, requestShare]);
 
@@ -2010,7 +1969,6 @@ export default function EditorV2Screen() {
       try {
         await renameDraft(currentProject.draftId, newName);
       } catch (error) {
-        console.error('[EditorV2] Failed to rename project:', error);
         Alert.alert('Error', 'Failed to rename project. Please try again.');
         return;
       }
@@ -2040,7 +1998,7 @@ export default function EditorV2Screen() {
               try {
                 await deleteDraft(currentProject.draftId);
               } catch (error) {
-                console.error('[EditorV2] Failed to delete project:', error);
+                // Delete failed
               }
             }
             // Navigate back to projects after delete
@@ -2091,11 +2049,8 @@ export default function EditorV2Screen() {
   // Cleans up temp files and memory cache to prevent accumulation
   useEffect(() => {
     return () => {
-      console.log('[EditorV2] Cleanup on unmount');
       // Clean up any pending temp files from ViewShot captures and image processing
-      cleanupTempFiles().catch(err => {
-        console.warn('[EditorV2] Cleanup error:', err);
-      });
+      cleanupTempFiles().catch(() => {});
       // Clear memory cache for images (disk cache persists for reuse)
       ExpoImage.clearMemoryCache().catch(() => {});
     };
@@ -2379,19 +2334,13 @@ export default function EditorV2Screen() {
         slots={slots}
         capturedImages={capturedImages}
         selectedSlotId={selection.type === 'slot' ? selection.id : null}
-        isPremium={isPremium}
+        tier={tier}
         initialView={aiSheetInitialView}
         navTrigger={aiNavTrigger}
         onApply={(slotId, result) => {
           // REFACTORED: Now receives complete AIResult object with all data bundled
           const { uri: enhancedUri, featureKey, backgroundInfo, transparentPngUrl: resultTransparentPng } = result;
           
-          console.log('[Editor] AI result applied:', {
-            slotId,
-            featureKey,
-            hasBackgroundInfo: !!backgroundInfo,
-            backgroundType: backgroundInfo?.type,
-          });
           
           // Update the captured image with the enhanced version
           // Reset adjustments to default - enhanced image replaces at full size
@@ -2403,11 +2352,13 @@ export default function EditorV2Screen() {
               ? existingEnhancements
               : [...existingEnhancements, featureKey];
             
-            // For background replacement, the enhancedUri IS the transparent PNG
-            // Cache it so color changes don't require re-running birefnet
-            const transparentPngUrl = (featureKey === 'background_replace' && backgroundInfo)
-              ? enhancedUri
-              : (resultTransparentPng ?? existingImage.transparentPngUrl);
+            // For background features (replace OR remove), the enhancedUri IS the transparent PNG
+            // ALWAYS cache it so later color changes don't require re-running birefnet
+            // Note: transparentPngUrl comes from AIResult, or we use enhancedUri directly for background features
+            const isBackgroundFeature = featureKey === 'background_replace' || featureKey === 'background_remove';
+            const transparentPngUrl = isBackgroundFeature
+              ? (resultTransparentPng ?? enhancedUri)  // For background features, prefer explicit PNG, fallback to enhancedUri
+              : (resultTransparentPng ?? existingImage.transparentPngUrl);  // For other features, preserve existing
             
             setCapturedImage(slotId, {
               ...existingImage,
@@ -2526,26 +2477,6 @@ export default function EditorV2Screen() {
                 Delete Project
               </Text>
             </TouchableOpacity>
-
-            {/* Dev: Paywall Preview - only visible in development */}
-            {__DEV__ && (
-              <>
-                <View style={styles.sheetDivider} />
-                <TouchableOpacity
-                  style={styles.actionItem}
-                  onPress={() => {
-                    handleCloseProjectActions();
-                    router.push('/dev/paywall-preview');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Palette size={22} color={Colors.light.accent} />
-                  <Text style={[styles.actionText, { color: Colors.light.accent }]}>
-                    Paywall Preview (Dev)
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
           </View>
         </BottomSheetView>
       </BottomSheet>

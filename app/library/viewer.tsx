@@ -14,14 +14,14 @@ import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { Share2, Trash2, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { useApp } from '@/contexts/AppContext';
+import { useProjects } from '@/domains/projects';
 import { getFormatLabel } from '@/constants/formats';
 import { useResponsive } from '@/hooks/useResponsive';
 
 export default function PortfolioViewerScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { portfolio, deleteFromPortfolio } = useApp();
+  const { portfolio, deleteFromPortfolio } = useProjects();
   
   // Responsive configuration
   const responsive = useResponsive();
@@ -50,7 +50,7 @@ export default function PortfolioViewerScreen() {
         });
       }
     } catch (error) {
-      console.log('Share error:', error);
+      // Share failed silently
     }
   }, [item]);
 

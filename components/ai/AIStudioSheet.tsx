@@ -26,9 +26,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import Colors from '@/constants/colors';
-import type { AIFeatureKey, BackgroundPreset, Slot, MediaAsset } from '@/types';
+import type { AIFeatureKey, BackgroundPreset, Slot, MediaAsset, SubscriptionTier } from '@/types';
 import { AIProcessingProgress } from '@/services/aiService';
 import type { AIResult, BackgroundInfo } from '@/domains/editor/types';
+import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 
 import AIStudioHomeView from './AIStudioHomeView';
 import ImageSlotCarousel from './ImageSlotCarousel';
@@ -61,11 +62,11 @@ export interface AIStudioSheetProps {
   capturedImages: Record<string, MediaAsset | null>;
   /** Currently selected slot ID (if any) */
   selectedSlotId: string | null;
-  isPremium: boolean;
+  /** User's subscription tier - used to determine if they can access AI features */
+  tier: SubscriptionTier;
   /** Called when AI enhancement is applied - includes complete AIResult */
   onApply: (slotId: string, result: AIResult) => void;
   onSkip: () => void;
-  onUpgrade?: () => void;
   /** Callback when user wants to add an image (navigates to capture) */
   onAddImage?: () => void;
   /** Initial view to navigate to when sheet opens (defaults to 'home') */
@@ -83,10 +84,9 @@ export default function AIStudioSheet({
   slots,
   capturedImages,
   selectedSlotId: externalSelectedSlotId,
-  isPremium,
+  tier,
   onApply,
   onSkip,
-  onUpgrade,
   onAddImage,
   initialView = 'home',
   navTrigger = 0,
@@ -94,6 +94,14 @@ export default function AIStudioSheet({
   originalImagesForAI = {},
 }: AIStudioSheetProps) {
   const insets = useSafeAreaInsets();
+  
+  // Get paywall trigger from subscription hook
+  const { requestStudioAccess } = useTieredSubscription();
+  
+  // Handle upgrade button press - triggers Studio paywall
+  const handleUpgrade = useCallback(async () => {
+    await requestStudioAccess(undefined, 'ai_studio');
+  }, [requestStudioAccess]);
   
   // Internal selected slot state (initialized from external, can change within sheet)
   const [internalSelectedSlotId, setInternalSelectedSlotId] = useState<string | null>(externalSelectedSlotId);
@@ -202,26 +210,39 @@ export default function AIStudioSheet({
   }, []);
   
   // Handle processing progress
-  // REFACTORED: Only process the FIRST completed result, ignore duplicates
-  // This prevents the race condition where webhook + polling both fire
+  // REFACTORED: Accept completed results, but PREFER ones with backgroundInfo
+  // For background_replace: aiService returns URL first (no backgroundInfo), then 
+  // ReplaceBackgroundView returns the complete result with backgroundInfo
   const handleProgress = useCallback((p: AIProcessingProgress) => {
     setProgress(p);
     
     if (p.status === 'completed' && p.outputUrl) {
-      // CRITICAL: Ignore duplicate completed callbacks
+      // For background_replace feature: 
+      // - aiService webhook fires first with URL but NO backgroundInfo
+      // - ReplaceBackgroundView then calls with URL AND backgroundInfo
+      // We should PREFER the one with backgroundInfo
       if (hasReceivedResultRef.current) {
-        console.log('[AIStudioSheet] Ignoring duplicate completed callback');
-        return;
+        // Already received a result - check if new one has MORE data
+        if (p.backgroundInfo && selectedFeature === 'background_replace') {
+          // This is the REAL result from ReplaceBackgroundView with the color info
+          // Accept it to update the result with backgroundInfo
+        } else {
+          // Ignore duplicate completed callbacks (e.g., from polling fallback)
+          return;
+        }
       }
       hasReceivedResultRef.current = true;
       
-      console.log('[AIStudioSheet] Received enhanced URL:', p.outputUrl);
-      
       // Create complete AIResult with all data bundled together
+      // For background_replace AND background_remove: the output IS the transparent PNG, always cache it
+      // This allows later color changes without re-running the birefnet API
+      const isBackgroundFeature = selectedFeature === 'background_replace' || selectedFeature === 'background_remove';
       const result: AIResult = {
         uri: p.outputUrl,
         featureKey: selectedFeature || 'auto_quality',
-        transparentPngUrl: p.backgroundInfo ? p.outputUrl : undefined,
+        // CRITICAL: For background features, the outputUrl IS the transparent PNG - ALWAYS cache it
+        // This allows color changes without re-running the birefnet API
+        transparentPngUrl: isBackgroundFeature ? p.outputUrl : undefined,
         backgroundInfo: p.backgroundInfo,
       };
       
@@ -305,16 +326,17 @@ export default function AIStudioSheet({
   
   // Render current view
   const renderContent = () => {
-    // TODO: Re-enable premium check when Superwall is integrated
-    // For development, bypass premium check
-    // if (!isPremium) {
-    //   return (
-    //     <PremiumAIPrompt
-    //       onUpgrade={onUpgrade || (() => {})}
-    //       onClose={handleSkip}
-    //     />
-    //   );
-    // }
+    // Show premium prompt only for FREE users
+    // Pro users should see AI features (with Studio paywall when they try to use them)
+    // Studio users have full access
+    if (tier === 'free') {
+      return (
+        <PremiumAIPrompt
+          onUpgrade={handleUpgrade}
+          onClose={handleSkip}
+        />
+      );
+    }
     
     switch (currentView) {
       case 'home':
@@ -366,7 +388,6 @@ export default function AIStudioSheet({
           <ReplaceBackgroundView
             imageUri={imageUri}
             imageSize={imageSize}
-            isPremium={isPremium}
             isAlreadyEnhanced={aiEnhancementsApplied.includes('background_replace')}
             transparentPngUrl={selectedImage?.transparentPngUrl}
             currentBackgroundInfo={selectedImage?.backgroundInfo}
@@ -390,10 +411,11 @@ export default function AIStudioSheet({
       case 'success':
         // REFACTORED: Use pendingResult which contains all bundled data
         // For Auto Quality: use existing backgroundInfo from the image (user's current perceived state)
-        // For Replace Background: use the new backgroundInfo from the pending result
-        const successBackgroundInfo = pendingResult?.featureKey === 'auto_quality' 
-          ? selectedImage?.backgroundInfo 
-          : pendingResult?.backgroundInfo;
+        // For the comparison view:
+        // - previousBackgroundInfo: what the user CURRENTLY has (their existing background state)
+        // - newBackgroundInfo: what the user WILL GET after applying (the new color/gradient)
+        const previousBackgroundInfo = selectedImage?.backgroundInfo;
+        const newBackgroundInfo = pendingResult?.backgroundInfo;
         
         return (
           <AISuccessOverlay
@@ -402,7 +424,8 @@ export default function AIStudioSheet({
             featureKey={pendingResult?.featureKey || 'auto_quality'}
             onKeepEnhanced={handleApplyEnhanced}
             onRevert={handleTryAnother}
-            backgroundInfo={successBackgroundInfo || undefined}
+            previousBackgroundInfo={previousBackgroundInfo}
+            newBackgroundInfo={newBackgroundInfo}
           />
         );
         

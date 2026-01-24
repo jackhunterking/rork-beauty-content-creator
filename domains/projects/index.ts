@@ -1,11 +1,14 @@
 /**
  * Projects Domain
  * 
- * Exports all project-related types and services.
+ * Exports all project-related types, services, and context.
  */
 
 // Types
 export * from './types';
+
+// Context
+export { ProjectProvider, useProjects } from './ProjectContext';
 
 // Service
 export {

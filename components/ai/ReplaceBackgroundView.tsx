@@ -149,7 +149,6 @@ async function prepareImageForAI(
 interface ReplaceBackgroundViewProps {
   imageUri: string;
   imageSize: { width: number; height: number };
-  isPremium: boolean;
   isAlreadyEnhanced?: boolean;
   /** Cached transparent PNG URL from previous birefnet run - skip birefnet if available */
   transparentPngUrl?: string;
@@ -168,7 +167,6 @@ interface ReplaceBackgroundViewProps {
 export default function ReplaceBackgroundView({
   imageUri,
   imageSize,
-  isPremium,
   isAlreadyEnhanced = false,
   transparentPngUrl: cachedTransparentPngUrl,
   currentBackgroundInfo,
