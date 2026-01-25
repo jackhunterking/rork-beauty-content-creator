@@ -90,20 +90,7 @@
       <!-- Main Form -->
       <form id="mainForm" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 space-y-5">
         
-        <!-- Existing Template Selector (hidden by default) -->
-        <div id="existingTemplateSection" class="hidden">
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Select Template
-          </label>
-          <select 
-            id="existing_template" 
-            class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary transition"
-          >
-            <option value="">Loading...</option>
-          </select>
-        </div>
-
-        <!-- Templated ID -->
+        <!-- Templated ID (always visible) -->
         <div id="templatedIdSection">
           <label for="templated_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Templated ID <span class="text-red-500">*</span>
@@ -115,25 +102,34 @@
             placeholder="e.g., e56ddb13-f39d-4b4b-a2aa-1586c5e17273"
             class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary transition"
           >
-          <p class="mt-1 text-xs text-gray-500">From Templated.io URL or API</p>
+          <p id="templatedIdHint" class="mt-1 text-xs text-gray-500">From Templated.io URL or API</p>
+          <!-- Existing template info (shown when found in update mode) -->
+          <div id="existingTemplateInfo" class="hidden mt-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+            <p class="text-sm text-blue-700 dark:text-blue-300">
+              <span class="font-medium">Found:</span> <span id="existingTemplateName"></span>
+            </p>
+            <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              Canvas: <span id="existingTemplateSize"></span>
+            </p>
+          </div>
         </div>
 
         <!-- Template Name -->
-        <div>
+        <div id="nameSection">
           <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Template Name <span class="text-red-500">*</span>
+            Template Name <span id="nameRequired" class="text-red-500">*</span>
+            <span id="nameOptionalHint" class="hidden text-xs text-gray-500 font-normal ml-2">(optional - leave blank to keep existing)</span>
           </label>
           <input 
             type="text" 
             id="name" 
-            required
             placeholder="e.g., Story-BeforeAfter-Beige"
             class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-primary transition"
           >
         </div>
 
-        <!-- Canvas Size -->
-        <div>
+        <!-- Canvas Size (hidden in update mode) -->
+        <div id="canvasSizeSection">
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Canvas Size <span class="text-red-500">*</span>
           </label>
@@ -162,7 +158,10 @@
           <div class="flex items-center gap-3 mb-3">
             <input type="color" id="default_bg_color" value="#FFFFFF" class="w-10 h-10 rounded border-2 border-gray-300 cursor-pointer">
             <div class="flex-1">
-              <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Background Color</label>
+              <label class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                Background Color
+                <span class="text-green-600 text-xs ml-1">(auto-fetched from Templated.io if left as #FFFFFF)</span>
+              </label>
               <input type="text" id="default_bg_color_hex" value="#FFFFFF" placeholder="#FFFFFF" class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono">
             </div>
           </div>
@@ -176,7 +175,10 @@
             </div>
           </div>
           
-          <p class="text-xs text-gray-500 mt-2">These colors show when user first opens the template. They can change them in the app.</p>
+          <p class="text-xs text-gray-500 mt-2">
+            <strong>Background:</strong> Leave as #FFFFFF to auto-fetch from Templated.io. Set a custom value to override.
+            <br><strong>Theme:</strong> Applied to layers with "theme-" prefix. Users can change both colors in the app.
+          </p>
         </div>
 
         <!-- Active Toggle -->
@@ -268,6 +270,7 @@
 
     let currentMode = 'new';
     let selectedTemplateId = null;
+    let existingTemplateData = null;
 
     // ============================================
     // Authentication
@@ -296,7 +299,6 @@
     function showMainContent() {
       document.getElementById('authOverlay').classList.add('hidden');
       document.getElementById('mainContent').classList.remove('hidden');
-      loadExistingTemplates();
     }
 
     // Mode toggle
@@ -304,8 +306,11 @@
       currentMode = mode;
       const newBtn = document.getElementById('modeNewBtn');
       const existingBtn = document.getElementById('modeExistingBtn');
-      const existingSection = document.getElementById('existingTemplateSection');
-      const templatedIdSection = document.getElementById('templatedIdSection');
+      const canvasSizeSection = document.getElementById('canvasSizeSection');
+      const nameRequired = document.getElementById('nameRequired');
+      const nameOptionalHint = document.getElementById('nameOptionalHint');
+      const templatedIdHint = document.getElementById('templatedIdHint');
+      const existingTemplateInfo = document.getElementById('existingTemplateInfo');
       const btnText = document.getElementById('btnText');
       
       if (mode === 'new') {
@@ -313,8 +318,11 @@
         newBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
         existingBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
         existingBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
-        existingSection.classList.add('hidden');
-        templatedIdSection.classList.remove('hidden');
+        canvasSizeSection.classList.remove('hidden');
+        nameRequired.classList.remove('hidden');
+        nameOptionalHint.classList.add('hidden');
+        templatedIdHint.textContent = 'From Templated.io URL or API';
+        existingTemplateInfo.classList.add('hidden');
         btnText.textContent = 'Sync & Generate';
         clearForm();
       } else {
@@ -322,10 +330,18 @@
         existingBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
         newBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
         newBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
-        existingSection.classList.remove('hidden');
-        templatedIdSection.classList.add('hidden');
+        canvasSizeSection.classList.add('hidden');
+        nameRequired.classList.add('hidden');
+        nameOptionalHint.classList.remove('hidden');
+        templatedIdHint.textContent = 'Enter Templated.io ID to find and update an existing template';
+        existingTemplateInfo.classList.add('hidden');
         btnText.textContent = 'Update & Regenerate';
-        loadExistingTemplates();
+        clearForm();
+        // Lookup existing template if templated_id already has a value
+        const currentTemplatedId = document.getElementById('templated_id').value.trim();
+        if (currentTemplatedId) {
+          lookupTemplateByTemplatedId(currentTemplatedId);
+        }
       }
     }
 
@@ -333,54 +349,81 @@
     function clearForm() {
       document.getElementById('templated_id').value = '';
       document.getElementById('name').value = '';
+      document.getElementById('name').placeholder = 'e.g., Story-BeforeAfter-Beige';
+      document.getElementById('canvas_width').value = 1080;
+      document.getElementById('canvas_height').value = 1350;
       document.getElementById('default_bg_color').value = '#FFFFFF';
       document.getElementById('default_bg_color_hex').value = '#FFFFFF';
       document.getElementById('default_theme_color').value = '#303030';
       document.getElementById('default_theme_color_hex').value = '#303030';
+      document.getElementById('is_active').checked = true;
       selectedTemplateId = null;
+      existingTemplateData = null;
       document.getElementById('fontStatus').classList.add('hidden');
+      document.getElementById('existingTemplateInfo').classList.add('hidden');
+      updatePresetButtons();
     }
 
-    // Load existing templates
-    async function loadExistingTemplates() {
-      const select = document.getElementById('existing_template');
+    // Lookup template by Templated ID
+    let lookupTimeout = null;
+    async function lookupTemplateByTemplatedId(templatedId) {
+      if (!templatedId || currentMode !== 'existing') return;
+      
+      const existingTemplateInfo = document.getElementById('existingTemplateInfo');
+      const existingTemplateName = document.getElementById('existingTemplateName');
+      const existingTemplateSize = document.getElementById('existingTemplateSize');
+      
       try {
         const { data, error } = await supabaseClient
           .from('templates')
           .select('id, templated_id, name, canvas_width, canvas_height, default_background_color, default_theme_color, is_active')
-          .order('name', { ascending: true });
+          .eq('templated_id', templatedId)
+          .single();
         
-        if (error) throw error;
+        if (error || !data) {
+          existingTemplateInfo.classList.add('hidden');
+          selectedTemplateId = null;
+          existingTemplateData = null;
+          return;
+        }
         
-        select.innerHTML = '<option value="">-- Select a template --</option>' + 
-          data.map(t => `<option value="${t.id}" data-templated-id="${t.templated_id}" data-name="${escapeHtml(t.name)}" data-width="${t.canvas_width}" data-height="${t.canvas_height}" data-bg="${t.default_background_color || '#FFFFFF'}" data-theme="${t.default_theme_color || ''}" data-active="${t.is_active}">${escapeHtml(t.name)}</option>`).join('');
+        // Found template - populate form
+        selectedTemplateId = data.id;
+        existingTemplateData = data;
+        
+        // Show template info
+        existingTemplateName.textContent = data.name;
+        existingTemplateSize.textContent = `${data.canvas_width}×${data.canvas_height}`;
+        existingTemplateInfo.classList.remove('hidden');
+        
+        // Pre-fill form with existing values (user can optionally change them)
+        document.getElementById('name').value = ''; // Leave blank so user can keep existing
+        document.getElementById('name').placeholder = data.name; // Show current name as placeholder
+        document.getElementById('canvas_width').value = data.canvas_width || 1080;
+        document.getElementById('canvas_height').value = data.canvas_height || 1350;
+        document.getElementById('default_bg_color').value = data.default_background_color || '#FFFFFF';
+        document.getElementById('default_bg_color_hex').value = data.default_background_color || '#FFFFFF';
+        document.getElementById('default_theme_color').value = data.default_theme_color || '#303030';
+        document.getElementById('default_theme_color_hex').value = data.default_theme_color || '';
+        document.getElementById('is_active').checked = data.is_active;
+        
       } catch (err) {
-        console.error('Error loading templates:', err);
-        select.innerHTML = '<option value="">Error loading</option>';
+        console.error('Error looking up template:', err);
+        existingTemplateInfo.classList.add('hidden');
+        selectedTemplateId = null;
+        existingTemplateData = null;
       }
     }
 
-    // Handle existing template selection
-    document.getElementById('existing_template').addEventListener('change', (e) => {
-      const option = e.target.options[e.target.selectedIndex];
-      if (!option.value) {
-        clearForm();
-        return;
-      }
+    // Handle templated_id input change (for update mode lookup)
+    document.getElementById('templated_id').addEventListener('input', (e) => {
+      if (currentMode !== 'existing') return;
       
-      selectedTemplateId = option.value;
-      document.getElementById('templated_id').value = option.dataset.templatedId || '';
-      document.getElementById('name').value = option.dataset.name || '';
-      document.getElementById('canvas_width').value = option.dataset.width || 1080;
-      document.getElementById('canvas_height').value = option.dataset.height || 1350;
-      document.getElementById('default_bg_color').value = option.dataset.bg || '#FFFFFF';
-      document.getElementById('default_bg_color_hex').value = option.dataset.bg || '#FFFFFF';
-      document.getElementById('default_theme_color').value = option.dataset.theme || '#303030';
-      document.getElementById('default_theme_color_hex').value = option.dataset.theme || '';
-      document.getElementById('is_active').checked = option.dataset.active === 'true';
-      
-      // Update preset button states
-      updatePresetButtons();
+      // Debounce lookup
+      clearTimeout(lookupTimeout);
+      lookupTimeout = setTimeout(() => {
+        lookupTemplateByTemplatedId(e.target.value.trim());
+      }, 500);
     });
 
     // Canvas size presets
@@ -515,7 +558,7 @@
       document.getElementById('fontStatus').classList.add('hidden');
       
       const templatedId = document.getElementById('templated_id').value.trim();
-      const name = document.getElementById('name').value.trim();
+      const nameInput = document.getElementById('name').value.trim();
       const canvasWidth = parseInt(document.getElementById('canvas_width').value);
       const canvasHeight = parseInt(document.getElementById('canvas_height').value);
       const isActive = document.getElementById('is_active').checked;
@@ -526,8 +569,19 @@
       const defaultBgColor = /^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF';
       const defaultThemeColor = /^#[0-9A-Fa-f]{6}$/.test(themeColorHex) ? themeColorHex.toUpperCase() : null;
       
-      if (!name) {
+      // Validate based on mode
+      if (!templatedId) {
+        showStatus('Please enter a Templated ID', false);
+        return;
+      }
+      
+      if (currentMode === 'new' && !nameInput) {
         showStatus('Please enter a template name', false);
+        return;
+      }
+      
+      if (currentMode === 'existing' && !selectedTemplateId) {
+        showStatus('Template not found. Please enter a valid Templated ID that exists in the database.', false);
         return;
       }
       
@@ -535,15 +589,13 @@
       
       try {
         let templateId = selectedTemplateId;
+        // For update mode: use existing name if not provided
+        const name = currentMode === 'existing' && !nameInput && existingTemplateData 
+          ? existingTemplateData.name 
+          : nameInput;
         
         if (currentMode === 'new') {
           // New template: call webhook to sync
-          if (!templatedId) {
-            showStatus('Please enter a Templated ID', false);
-            setLoading(false);
-            return;
-          }
-          
           const syncResponse = await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -577,19 +629,25 @@
             templateId = data?.id;
           }
         } else {
-          // Existing template: update in database
+          // Existing template: update in database (do NOT update canvas size)
           setLoading(true, 'Updating database...');
+          
+          // Build update object - exclude canvas size for resyncing
+          const updateData = {
+            is_active: isActive,
+            default_background_color: defaultBgColor,
+            default_theme_color: defaultThemeColor,
+            updated_at: new Date().toISOString()
+          };
+          
+          // Only update name if a new one was provided
+          if (nameInput) {
+            updateData.name = nameInput;
+          }
+          
           const { error: updateError } = await supabaseClient
             .from('templates')
-            .update({
-              name: name,
-              canvas_width: canvasWidth,
-              canvas_height: canvasHeight,
-              is_active: isActive,
-              default_background_color: defaultBgColor,
-              default_theme_color: defaultThemeColor,
-              updated_at: new Date().toISOString()
-            })
+            .update(updateData)
             .eq('id', templateId);
           
           if (updateError) throw updateError;
@@ -659,7 +717,26 @@
           if (fontCount > 0) {
             msg += ` ${fontCount} font(s) registered.`;
           }
-          msg += ` Default BG: ${defaultBgColor}${defaultThemeColor ? `, Theme: ${defaultThemeColor}` : ''}.`;
+          
+          // Show background color info
+          const bgInfo = overlayResult.backgroundColor;
+          if (bgInfo) {
+            if (bgInfo.wasAutoFetched) {
+              msg += ` 🎨 BG auto-fetched from Templated.io: ${bgInfo.value}`;
+              // Update the form to show the fetched color
+              document.getElementById('default_bg_color').value = bgInfo.value;
+              document.getElementById('default_bg_color_hex').value = bgInfo.value;
+            } else {
+              msg += ` BG: ${bgInfo.value} (manual)`;
+            }
+          } else {
+            msg += ` Default BG: ${defaultBgColor}`;
+          }
+          
+          if (defaultThemeColor) {
+            msg += `, Theme: ${defaultThemeColor}`;
+          }
+          msg += '.';
           msg += thumbnailMsg;
           
           showStatus(msg, true, { overlay: overlayResult, thumbnail: thumbnailResult });
@@ -670,9 +747,12 @@
             document.getElementById('name').value = '';
           }
           
-          // Refresh existing templates dropdown
+          // Clear update mode state
           if (currentMode === 'existing') {
-            await loadExistingTemplates();
+            document.getElementById('templated_id').value = '';
+            document.getElementById('existingTemplateInfo').classList.add('hidden');
+            selectedTemplateId = null;
+            existingTemplateData = null;
           }
           
         } else {

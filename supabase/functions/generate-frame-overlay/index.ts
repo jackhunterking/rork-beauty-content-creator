@@ -38,6 +38,87 @@ interface FrameOverlayRequest {
   templateId?: string;
 }
 
+// ============================================================
+// BACKGROUND COLOR EXTRACTION FROM TEMPLATED.IO API
+// ============================================================
+
+/**
+ * Convert RGB/RGBA color string to hex format
+ * Handles: rgb(r, g, b), rgba(r, g, b, a), and hex strings
+ */
+function colorToHex(color: string | null | undefined): string | null {
+  if (!color) return null;
+  
+  // Already hex format
+  if (color.startsWith('#')) {
+    // Normalize to uppercase 6-character hex
+    const hex = color.toUpperCase();
+    if (hex.length === 4) {
+      // #RGB -> #RRGGBB
+      return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+    }
+    return hex;
+  }
+  
+  // RGB format: rgb(r, g, b) - e.g., "rgb(48, 48, 48)"
+  const rgbMatch = color.match(/rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+  if (rgbMatch) {
+    const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0');
+    const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0');
+    const b = parseInt(rgbMatch[3]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`.toUpperCase();
+  }
+  
+  // RGBA format: rgba(r, g, b, a)
+  const rgbaMatch = color.match(/rgba\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\d.]+\s*\)/i);
+  if (rgbaMatch) {
+    const r = parseInt(rgbaMatch[1]).toString(16).padStart(2, '0');
+    const g = parseInt(rgbaMatch[2]).toString(16).padStart(2, '0');
+    const b = parseInt(rgbaMatch[3]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`.toUpperCase();
+  }
+  
+  return null;
+}
+
+/**
+ * Fetch background color from Templated.io template metadata API
+ * Endpoint: GET https://api.templated.io/v1/template/{templatedId}
+ * Returns the 'background' field (e.g., "rgb(48, 48, 48)")
+ */
+async function fetchTemplateBackground(templatedId: string, apiKey: string): Promise<string | null> {
+  try {
+    const templateUrl = `https://api.templated.io/v1/template/${templatedId}`;
+    console.log(`[generate-frame-overlay] Fetching template background from API: ${templateUrl}`);
+    
+    const response = await fetch(templateUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      // Templated.io returns 'background' field in template metadata
+      if (data.background) {
+        const hex = colorToHex(data.background);
+        if (hex) {
+          console.log(`[generate-frame-overlay] ✅ Found background from Templated.io API: ${data.background} → ${hex}`);
+          return hex;
+        }
+      }
+      console.log(`[generate-frame-overlay] Template has no background field or it's empty`);
+    } else {
+      console.log(`[generate-frame-overlay] Failed to fetch template metadata: ${response.status}`);
+    }
+  } catch (err) {
+    console.log(`[generate-frame-overlay] Error fetching template metadata: ${(err as Error).message}`);
+  }
+  return null;
+}
+
 /** Level 1: Raw layer from Templated.io API */
 interface RawLayer {
   layer: string;
@@ -407,7 +488,7 @@ Deno.serve(async (req: Request) => {
     console.log(`[generate-frame-overlay] Fetching template: ${templateId}`);
     const { data: template, error: fetchError } = await adminClient
       .from('templates')
-      .select('id, templated_id, layers_json')
+      .select('id, templated_id, layers_json, default_background_color')
       .eq('id', templateId)
       .single();
 
@@ -455,6 +536,22 @@ Deno.serve(async (req: Request) => {
       }
     } catch (err) {
       console.log(`[generate-frame-overlay] Using database layers (API fetch failed)`);
+    }
+
+    // ============================================================
+    // STEP 2.5: Fetch Background Color from Templated.io API
+    // ============================================================
+    // Only auto-fetch if the current value is null or #FFFFFF (default)
+    // If admin set a custom color, we preserve it
+    const currentBgColor = template.default_background_color;
+    const isDefaultOrEmpty = !currentBgColor || currentBgColor === '#FFFFFF';
+    let fetchedBackgroundColor: string | null = null;
+    
+    if (isDefaultOrEmpty) {
+      console.log(`[generate-frame-overlay] Background is default/empty (${currentBgColor || 'null'}), fetching from Templated.io...`);
+      fetchedBackgroundColor = await fetchTemplateBackground(templatedId, templatedApiKey);
+    } else {
+      console.log(`[generate-frame-overlay] Using manually set background color: ${currentBgColor}`);
     }
 
     // ============================================================
@@ -658,15 +755,25 @@ Deno.serve(async (req: Request) => {
     // STEP 8: Update Template in Database
     // ============================================================
     console.log(`[generate-frame-overlay] Updating template in database`);
+    
+    // Build update payload
+    const updatePayload: Record<string, unknown> = {
+      frame_overlay_url: finalOverlayUrl,
+      theme_layers: themeLayerOutputs,
+      vector_layers: vectorLayerOutputs,
+      layers_json: rawLayers,
+      updated_at: new Date().toISOString(),
+    };
+    
+    // Add background color if fetched from API (only when current is default/empty)
+    if (fetchedBackgroundColor && isDefaultOrEmpty) {
+      updatePayload.default_background_color = fetchedBackgroundColor;
+      console.log(`[generate-frame-overlay] Saving auto-fetched background color: ${fetchedBackgroundColor}`);
+    }
+    
     const { error: updateError } = await adminClient
       .from('templates')
-      .update({
-        frame_overlay_url: finalOverlayUrl,
-        theme_layers: themeLayerOutputs,
-        vector_layers: vectorLayerOutputs,
-        layers_json: rawLayers,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', templateId);
 
     if (updateError) {
@@ -686,6 +793,11 @@ Deno.serve(async (req: Request) => {
     const googleFonts = fontResults.filter(f => f.source === 'google').map(f => f.font);
     const customFontsNeedingUpload = fontResults.filter(f => f.source === 'supabase' && f.isNew).map(f => f.font);
     
+    // Determine final background color for response
+    const finalBackgroundColor = (fetchedBackgroundColor && isDefaultOrEmpty) 
+      ? fetchedBackgroundColor 
+      : (currentBgColor || '#FFFFFF');
+    
     return new Response(
       JSON.stringify({
         success: true,
@@ -704,6 +816,12 @@ Deno.serve(async (req: Request) => {
           googleFonts,
           customFontsNeedingUpload,
           allFonts: fontResults,
+        },
+        // Background color info
+        backgroundColor: {
+          value: finalBackgroundColor,
+          source: (fetchedBackgroundColor && isDefaultOrEmpty) ? 'templated.io' : 'manual',
+          wasAutoFetched: Boolean(fetchedBackgroundColor && isDefaultOrEmpty),
         },
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -1224,6 +1224,7 @@ export function TemplateCanvas({
             template={template}
             capturedImages={capturedImages}
             backgroundColor={backgroundColor}
+            defaultBackgroundColor={template.defaultBackgroundColor}
             themeColor={themeColor}
             canvasWidth={displayWidth}
             canvasHeight={displayHeight}

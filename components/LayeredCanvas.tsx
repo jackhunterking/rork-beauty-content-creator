@@ -14,6 +14,7 @@
  * Layer Handling:
  * - slot-* prefix → render user's photo with adjustments
  * - theme-* prefix → apply themeColor to dark colors (fill/stroke for shapes, text color for text)
+ * - background-* prefix → replaceable background layers (render original or solid color based on user selection)
  * - type: "shape" with html → detect SVG element type (rect, ellipse, circle, path) and render appropriately
  * - type: "vector" with html → parse and render SVG path with proper stroke support
  * - type: "text" → render text with font styling
@@ -243,6 +244,7 @@ function parsePathAttributes(html: string): PathAttributes | null {
 
 /**
  * SmartImage - Handles both PNG/JPG and SVG images
+ * Uses contentFit="contain" to fit image within container
  */
 function SmartImage({ uri, style }: { uri: string; style: ViewStyle }) {
   const [useSvg, setUseSvg] = useState(false);
@@ -261,6 +263,21 @@ function SmartImage({ uri, style }: { uri: string; style: ViewStyle }) {
       style={style}
       contentFit="contain"
       onError={() => setUseSvg(true)}
+    />
+  );
+}
+
+/**
+ * BackgroundImage - Renders background layer images with cover fit
+ * Uses contentFit="cover" to fill the entire container (may crop edges)
+ * Used for background-* prefixed layers
+ */
+function BackgroundImage({ uri, style }: { uri: string; style: ViewStyle }) {
+  return (
+    <Image
+      source={{ uri }}
+      style={style}
+      contentFit="cover"
     />
   );
 }
@@ -433,6 +450,8 @@ interface LayeredCanvasProps {
   template: Template;
   capturedImages: CapturedImages;
   backgroundColor: string;
+  /** Template's original default background color - used to detect if user selected a custom color */
+  defaultBackgroundColor?: string;
   themeColor?: string;
   canvasWidth: number;
   canvasHeight: number;
@@ -445,6 +464,7 @@ export function LayeredCanvas({
   template,
   capturedImages,
   backgroundColor,
+  defaultBackgroundColor,
   themeColor,
   canvasWidth,
   canvasHeight,
@@ -487,6 +507,7 @@ export function LayeredCanvas({
     const name = (layer.layer || '').toLowerCase();
     const isSlot = name.startsWith('slot-');
     const isTheme = name.startsWith('theme-');
+    const isBackground = name.startsWith('background-');
     
     // Skip hidden layers
     if (layer.hide === true) return null;
@@ -524,6 +545,66 @@ export function LayeredCanvas({
       }
       // Empty slot placeholder
       return <View key={layer.layer} style={[style, { backgroundColor: layer.fill || '#E5E5E5' }]} />;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // BACKGROUND LAYERS: Replaceable background textures/patterns
+    // If user selected a custom background color (different from template default),
+    // render solid color. Otherwise render the original layer.
+    // ═══════════════════════════════════════════════════════════════════
+    if (isBackground) {
+      // Check if user has selected a custom background color
+      // (different from the template's default background color)
+      const hasCustomBackgroundColor = backgroundColor && 
+        defaultBackgroundColor && 
+        backgroundColor.toUpperCase() !== defaultBackgroundColor.toUpperCase();
+      
+      if (hasCustomBackgroundColor) {
+        // User selected a custom color - render solid color rectangle
+        const borderRadius = parseBorderRadius(layer.border_radius);
+        return (
+          <View 
+            key={layer.layer} 
+            style={[style, { 
+              backgroundColor,
+              borderRadius: borderRadius * uniformScale,
+            }]} 
+          />
+        );
+      }
+      
+      // No custom color - render original layer
+      // For images, use BackgroundImage with cover fit
+      if (layer.image_url) {
+        return <BackgroundImage key={layer.layer} uri={layer.image_url} style={style} />;
+      }
+      
+      // For shapes with fill, render as colored rectangle
+      if (layer.fill) {
+        const borderRadius = parseBorderRadius(layer.border_radius);
+        return (
+          <View 
+            key={layer.layer} 
+            style={[style, { 
+              backgroundColor: layer.fill,
+              borderRadius: borderRadius * uniformScale,
+            }]} 
+          />
+        );
+      }
+      
+      // For shapes with HTML (SVG), render normally
+      if (layer.type === 'shape' && layer.html) {
+        const svgHtml = cleanSvgHtml(layer.html);
+        return (
+          <View key={layer.layer} style={style}>
+            <SvgXml xml={svgHtml} width="100%" height="100%" />
+          </View>
+        );
+      }
+      
+      // Fallback: transparent view
+      return <View key={layer.layer} style={style} />;
     }
 
     // ═══════════════════════════════════════════════════════════════════
