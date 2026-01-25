@@ -205,14 +205,17 @@
           <label for="is_active" class="text-sm text-gray-700 dark:text-gray-300">Active (visible in app)</label>
         </div>
 
-        <!-- Skip Thumbnail Toggle (faster sync) -->
-        <div class="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-4">
+        <!-- Skip Thumbnail Toggle (faster sync) - only for new templates -->
+        <div id="fastSyncSection" class="flex items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-4">
           <input type="checkbox" id="skip_thumbnail" checked class="w-5 h-5 rounded border-gray-300 text-purple-500 focus:ring-purple-500">
           <label for="skip_thumbnail" class="text-sm text-gray-700 dark:text-gray-300">
             <span class="font-medium">Fast sync</span> 
             <span class="text-xs text-gray-500">(use Templated.io preview, skip thumbnail generation)</span>
           </label>
         </div>
+        <p id="updateThumbnailNote" class="hidden text-xs text-green-600 border-t border-gray-200 dark:border-gray-700 pt-4">
+          ✅ Thumbnail will be regenerated automatically when updating
+        </p>
 
         <!-- Submit Button -->
         <button 
@@ -330,6 +333,8 @@
       const nameOptionalHint = document.getElementById('nameOptionalHint');
       const templatedIdHint = document.getElementById('templatedIdHint');
       const existingTemplateInfo = document.getElementById('existingTemplateInfo');
+      const fastSyncSection = document.getElementById('fastSyncSection');
+      const updateThumbnailNote = document.getElementById('updateThumbnailNote');
       const btnText = document.getElementById('btnText');
       
       if (mode === 'new') {
@@ -342,6 +347,8 @@
         nameOptionalHint.classList.add('hidden');
         templatedIdHint.textContent = 'From Templated.io URL or API';
         existingTemplateInfo.classList.add('hidden');
+        fastSyncSection.classList.remove('hidden');
+        updateThumbnailNote.classList.add('hidden');
         btnText.textContent = 'Sync & Generate';
         clearForm();
       } else {
@@ -354,6 +361,8 @@
         nameOptionalHint.classList.remove('hidden');
         templatedIdHint.textContent = 'Enter Templated.io ID to find and update an existing template';
         existingTemplateInfo.classList.add('hidden');
+        fastSyncSection.classList.add('hidden');
+        updateThumbnailNote.classList.remove('hidden');
         btnText.textContent = 'Update & Regenerate';
         clearForm();
         // Lookup existing template if templated_id already has a value
@@ -736,8 +745,11 @@
           let thumbnailMsg = '';
           let thumbnailResult = null;
           
-          // Only generate thumbnail if not skipping (fast sync uses Templated.io's preview)
-          if (!skipThumbnail) {
+          // For updates: always regenerate thumbnail
+          // For new templates: respect the fast sync setting
+          const shouldGenerateThumbnail = currentMode === 'existing' || !skipThumbnail;
+          
+          if (shouldGenerateThumbnail) {
             setLoading(true, 'Generating thumbnail...');
             const thumbnailResponse = await fetch(THUMBNAIL_FUNCTION_URL, {
               method: 'POST',
@@ -753,7 +765,7 @@
             if (!thumbnailResponse.ok || !thumbnailResult.success) {
               thumbnailMsg = ` Thumbnail generation failed: ${thumbnailResult.error || 'Unknown error'}.`;
             } else {
-              thumbnailMsg = ' Thumbnail generated with default colors.';
+              thumbnailMsg = ' Thumbnail updated.';
             }
           } else {
             thumbnailMsg = ' Using Templated.io preview (fast sync).';
