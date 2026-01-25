@@ -152,17 +152,36 @@
 
         <!-- Default Colors Section -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-5">
-          <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">🎨 Default Colors</p>
+          <p class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">🎨 Background & Colors</p>
           
-          <!-- Background Color -->
-          <div class="flex items-center gap-3 mb-3">
-            <input type="color" id="default_bg_color" value="#FFFFFF" class="w-10 h-10 rounded border-2 border-gray-300 cursor-pointer">
-            <div class="flex-1">
-              <label class="text-xs font-medium text-gray-600 dark:text-gray-400">
-                Background Color
-                <span class="text-green-600 text-xs ml-1">(auto-fetched from Templated.io if left as #FFFFFF)</span>
-              </label>
-              <input type="text" id="default_bg_color_hex" value="#FFFFFF" placeholder="#FFFFFF" class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono">
+          <!-- Background Type Selector -->
+          <div class="mb-4">
+            <label class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2 block">Background Type</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button type="button" onclick="setBackgroundType('original')" id="bgTypeOriginal" class="bg-type-btn py-2 px-3 rounded-lg border-2 border-primary bg-primary/10 text-primary font-medium text-sm flex items-center justify-center gap-2">
+                🖼️ Original
+                <span class="text-xs opacity-75 block">(Image/Texture)</span>
+              </button>
+              <button type="button" onclick="setBackgroundType('color')" id="bgTypeColor" class="bg-type-btn py-2 px-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 font-medium text-sm flex items-center justify-center gap-2">
+                🎨 Solid Color
+              </button>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">
+              <strong>Original:</strong> Keep image/texture background from Templated.io
+            </p>
+          </div>
+          
+          <!-- Background Color (shown only when solid color is selected) -->
+          <div id="bgColorSection" class="hidden mb-3">
+            <div class="flex items-center gap-3">
+              <input type="color" id="default_bg_color" value="#FFFFFF" class="w-10 h-10 rounded border-2 border-gray-300 cursor-pointer">
+              <div class="flex-1">
+                <label class="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  Background Color
+                  <span class="text-green-600 text-xs ml-1">(auto-fetched from Templated.io if left as #FFFFFF)</span>
+                </label>
+                <input type="text" id="default_bg_color_hex" value="#FFFFFF" placeholder="#FFFFFF" class="w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm font-mono">
+              </div>
             </div>
           </div>
           
@@ -176,8 +195,7 @@
           </div>
           
           <p class="text-xs text-gray-500 mt-2">
-            <strong>Background:</strong> Leave as #FFFFFF to auto-fetch from Templated.io. Set a custom value to override.
-            <br><strong>Theme:</strong> Applied to layers with "theme-" prefix. Users can change both colors in the app.
+            <strong>Theme:</strong> Applied to layers with "theme-" prefix. Users can change colors in the app.
           </p>
         </div>
 
@@ -271,6 +289,7 @@
     let currentMode = 'new';
     let selectedTemplateId = null;
     let existingTemplateData = null;
+    let backgroundType = 'original'; // 'original' or 'color'
 
     // ============================================
     // Authentication
@@ -362,6 +381,29 @@
       document.getElementById('fontStatus').classList.add('hidden');
       document.getElementById('existingTemplateInfo').classList.add('hidden');
       updatePresetButtons();
+      setBackgroundType('original'); // Default to original background
+    }
+
+    // Background type toggle
+    function setBackgroundType(type) {
+      backgroundType = type;
+      const originalBtn = document.getElementById('bgTypeOriginal');
+      const colorBtn = document.getElementById('bgTypeColor');
+      const bgColorSection = document.getElementById('bgColorSection');
+      
+      if (type === 'original') {
+        originalBtn.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+        originalBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        colorBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        colorBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        bgColorSection.classList.add('hidden');
+      } else {
+        colorBtn.classList.add('border-primary', 'bg-primary/10', 'text-primary');
+        colorBtn.classList.remove('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        originalBtn.classList.remove('border-primary', 'bg-primary/10', 'text-primary');
+        originalBtn.classList.add('border-gray-300', 'dark:border-gray-600', 'text-gray-600', 'dark:text-gray-400');
+        bgColorSection.classList.remove('hidden');
+      }
     }
 
     // Lookup template by Templated ID
@@ -376,7 +418,7 @@
       try {
         const { data, error } = await supabaseClient
           .from('templates')
-          .select('id, templated_id, name, canvas_width, canvas_height, default_background_color, default_theme_color, is_active')
+          .select('id, templated_id, name, canvas_width, canvas_height, default_background_color, default_theme_color, is_active, background_type')
           .eq('templated_id', templatedId)
           .single();
         
@@ -406,6 +448,11 @@
         document.getElementById('default_theme_color').value = data.default_theme_color || '#303030';
         document.getElementById('default_theme_color_hex').value = data.default_theme_color || '';
         document.getElementById('is_active').checked = data.is_active;
+        
+        // Set background type based on existing template
+        // If no background_color is set or it's marked as 'original', use original
+        const bgType = data.background_type || (data.default_background_color ? 'color' : 'original');
+        setBackgroundType(bgType);
         
       } catch (err) {
         console.error('Error looking up template:', err);
@@ -563,10 +610,13 @@
       const canvasHeight = parseInt(document.getElementById('canvas_height').value);
       const isActive = document.getElementById('is_active').checked;
       
-      // Get colors
+      // Get colors based on background type
       const bgColorHex = document.getElementById('default_bg_color_hex').value.trim();
       const themeColorHex = document.getElementById('default_theme_color_hex').value.trim();
-      const defaultBgColor = /^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF';
+      // Only use background color if type is 'color', otherwise null for original/image backgrounds
+      const defaultBgColor = backgroundType === 'color' 
+        ? (/^#[0-9A-Fa-f]{6}$/.test(bgColorHex) ? bgColorHex.toUpperCase() : '#FFFFFF')
+        : null;
       const defaultThemeColor = /^#[0-9A-Fa-f]{6}$/.test(themeColorHex) ? themeColorHex.toUpperCase() : null;
       
       // Validate based on mode
@@ -606,6 +656,7 @@
               canvas_height: canvasHeight,
               is_active: isActive,
               supports: ['single'],
+              background_type: backgroundType,
               default_background_color: defaultBgColor,
               default_theme_color: defaultThemeColor
             })
@@ -635,6 +686,7 @@
           // Build update object - exclude canvas size for resyncing
           const updateData = {
             is_active: isActive,
+            background_type: backgroundType,
             default_background_color: defaultBgColor,
             default_theme_color: defaultThemeColor,
             updated_at: new Date().toISOString()
