@@ -29,7 +29,7 @@ import ViewShot from 'react-native-view-shot';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Image as ExpoImage } from 'expo-image';
-import { Home, Save, Download, Share2, MoreHorizontal, Pencil, Trash2, X, Crown } from 'lucide-react-native';
+import { Home, Save, Download, Share2, MoreHorizontal, Pencil, Trash2, X, Crown, RotateCcw } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { useProjects } from '@/domains/projects';
@@ -94,7 +94,7 @@ export default function EditorV2Screen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // Project state from AppContext (will be migrated to EditorContext in future)
-  const { currentProject, setCapturedImage, resetProject } = useApp();
+  const { currentProject, setCapturedImage, resetProject, resetCapturedImages } = useApp();
   
   // Project mutations from ProjectContext
   const { 
@@ -592,6 +592,26 @@ export default function EditorV2Screen() {
     
     return false;
   }, [capturedImages, capturedCount, overlays]);
+
+  // Check if ANY changes exist from the original template state (for revert button)
+  const hasAnyChanges = useMemo(() => {
+    // Has any captured images
+    if (capturedCount > 0) return true;
+    // Has any overlays
+    if (overlays.length > 0) return true;
+    // Background color changed from template default
+    const defaultBgColor = template?.defaultBackgroundColor || '#FFFFFF';
+    if (selectedBackgroundColor.toUpperCase() !== defaultBgColor.toUpperCase()) return true;
+    // Theme color changed from template default
+    const defaultThemeColor = template?.defaultThemeColor;
+    if (selectedThemeColor !== defaultThemeColor) return true;
+    // Has any background overrides
+    if (Object.keys(backgroundOverrides).length > 0) return true;
+    // Has pending manipulation adjustments
+    if (pendingManipulationAdjustments !== null) return true;
+    
+    return false;
+  }, [capturedCount, overlays, selectedBackgroundColor, selectedThemeColor, backgroundOverrides, pendingManipulationAdjustments, template]);
 
   // NOTE: triggerPreviewRender removed - photos now rendered client-side via LayeredCanvas
   // Templated.io API is only called when user taps Download (see handleDownload)
@@ -1827,6 +1847,40 @@ export default function EditorV2Screen() {
     }
   }, [hasUnsavedChanges, resetProject, router, handleSaveDraft, currentProject.draftId]);
 
+  // Handle revert to original template state
+  const handleRevertToOriginal = useCallback(() => {
+    Alert.alert(
+      'Revert to Original?',
+      'All images and changes will be cleared. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revert',
+          style: 'destructive',
+          onPress: () => {
+            // Clear all captured images
+            resetCapturedImages();
+            // Clear all overlays
+            setOverlays([]);
+            // Reset background color to template default
+            setSelectedBackgroundColor(template?.defaultBackgroundColor || '#FFFFFF');
+            // Reset theme color to template default
+            setSelectedThemeColor(template?.defaultThemeColor);
+            // Clear background overrides
+            setBackgroundOverrides({});
+            // Clear pending manipulation adjustments
+            setPendingManipulationAdjustments(null);
+            // Clear any selection
+            setSelection(DEFAULT_SELECTION);
+            // Clear selected overlay
+            setSelectedOverlayId(null);
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  }, [resetCapturedImages, template]);
+
   // Execute the actual download to gallery
   const executeDownload = useCallback(async () => {
     setIsDownloading(true);
@@ -2101,6 +2155,18 @@ export default function EditorV2Screen() {
 
           {/* Right - Action Buttons */}
           <View style={styles.headerButtonsRight}>
+            {/* Revert to Original Button */}
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={handleRevertToOriginal}
+              disabled={!hasAnyChanges}
+            >
+              <RotateCcw 
+                size={20} 
+                color={hasAnyChanges ? Colors.light.accent : Colors.light.textTertiary} 
+              />
+            </TouchableOpacity>
+
             {/* Save Button (icon only) */}
             <TouchableOpacity
               style={[

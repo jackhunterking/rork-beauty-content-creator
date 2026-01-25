@@ -21,16 +21,17 @@
  * - image_url → render image
  * 
  * SVG Element Support (Jan 2026):
- * - <rect> → Rendered with Rect component, supports rx/ry for rounded corners
- * - <ellipse> → Rendered with Ellipse component, supports cx/cy/rx/ry
- * - <circle> → Rendered with Circle component, supports cx/cy/r
- * - <path> → Rendered with Path component, supports d, fill, stroke, strokeWidth, strokeLinecap, strokeLinejoin
+ * - <rect> → Rendered with Rect component, supports rx/ry for rounded corners, stroke-dasharray
+ * - <ellipse> → Rendered with Ellipse component, supports cx/cy/rx/ry, stroke-dasharray
+ * - <circle> → Rendered with Circle component, supports cx/cy/r, stroke-dasharray
+ * - <path> → Rendered with Path component, supports d, fill, stroke, strokeWidth, strokeLinecap, strokeLinejoin, stroke-dasharray
+ * - <line> → Rendered with Line component, supports x1/y1/x2/y2, stroke, stroke-dasharray, stroke-linecap
  */
 
 import React, { useState, useMemo } from 'react';
 import { View, Text, ViewStyle, TextStyle, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { SvgUri, SvgXml, Svg, Path, Rect, Ellipse, Circle } from 'react-native-svg';
+import { SvgUri, SvgXml, Svg, Path, Rect, Ellipse, Circle, Line } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Template, CapturedImages, TemplatedLayer, MediaAsset, ThemeLayer, isTextThemeLayer } from '@/types';
 import { useTemplateFonts } from '@/hooks/useTemplateFonts';
@@ -41,7 +42,7 @@ import { WatermarkOverlay } from './WatermarkOverlay';
 // SVG Element Type Detection
 // ============================================
 
-type SvgElementType = 'rect' | 'ellipse' | 'circle' | 'path' | 'unknown';
+type SvgElementType = 'rect' | 'ellipse' | 'circle' | 'path' | 'line' | 'unknown';
 
 /**
  * Detect the primary SVG element type in HTML
@@ -50,6 +51,8 @@ function detectSvgElementType(html: string): SvgElementType {
   const lowerHtml = html.toLowerCase();
   
   // Check for specific element types in order of specificity
+  // Line detection BEFORE rect (lines are more specific)
+  if (/<line\s/i.test(html)) return 'line';
   if (/<path\s/i.test(html)) return 'path';
   if (/<ellipse\s/i.test(html)) return 'ellipse';
   if (/<circle\s/i.test(html)) return 'circle';
@@ -66,6 +69,7 @@ interface RectAttributes {
   fill: string | null;
   stroke: string | null;
   strokeWidth: number;
+  strokeDasharray: string | null;
   rx: number;
   ry: number;
   x: number;
@@ -78,6 +82,7 @@ interface EllipseAttributes {
   fill: string | null;
   stroke: string | null;
   strokeWidth: number;
+  strokeDasharray: string | null;
   cx: number;
   cy: number;
   rx: number;
@@ -88,6 +93,7 @@ interface CircleAttributes {
   fill: string | null;
   stroke: string | null;
   strokeWidth: number;
+  strokeDasharray: string | null;
   cx: number;
   cy: number;
   r: number;
@@ -100,7 +106,19 @@ interface PathAttributes {
   strokeWidth: number;
   strokeLinecap: string | null;
   strokeLinejoin: string | null;
+  strokeDasharray: string | null;
   viewBox: string;
+}
+
+interface LineAttributes {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  stroke: string | null;
+  strokeWidth: number;
+  strokeDasharray: string | null;
+  strokeLinecap: string | null;
 }
 
 /**
@@ -116,6 +134,7 @@ function parseRectAttributes(html: string): RectAttributes | null {
     const fillMatch = rectTag.match(/fill="([^"]+)"/i);
     const strokeMatch = rectTag.match(/stroke="([^"]+)"/i);
     const strokeWidthMatch = rectTag.match(/stroke-width="([^"]+)"/i);
+    const strokeDasharrayMatch = rectTag.match(/stroke-dasharray="([^"]+)"/i);
     const rxMatch = rectTag.match(/rx="([^"]+)"/i);
     const ryMatch = rectTag.match(/ry="([^"]+)"/i);
     const xMatch = rectTag.match(/\sx="([^"]+)"/i);
@@ -127,6 +146,7 @@ function parseRectAttributes(html: string): RectAttributes | null {
       fill: fillMatch ? fillMatch[1] : null,
       stroke: strokeMatch ? strokeMatch[1] : null,
       strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
       rx: rxMatch ? parseFloat(rxMatch[1]) : 0,
       ry: ryMatch ? parseFloat(ryMatch[1]) : 0,
       x: xMatch ? parseFloat(xMatch[1]) : 0,
@@ -152,6 +172,7 @@ function parseEllipseAttributes(html: string): EllipseAttributes | null {
     const fillMatch = ellipseTag.match(/fill="([^"]+)"/i);
     const strokeMatch = ellipseTag.match(/stroke="([^"]+)"/i);
     const strokeWidthMatch = ellipseTag.match(/stroke-width="([^"]+)"/i);
+    const strokeDasharrayMatch = ellipseTag.match(/stroke-dasharray="([^"]+)"/i);
     const cxMatch = ellipseTag.match(/cx="([^"]+)"/i);
     const cyMatch = ellipseTag.match(/cy="([^"]+)"/i);
     const rxMatch = ellipseTag.match(/rx="([^"]+)"/i);
@@ -161,6 +182,7 @@ function parseEllipseAttributes(html: string): EllipseAttributes | null {
       fill: fillMatch ? fillMatch[1] : null,
       stroke: strokeMatch ? strokeMatch[1] : null,
       strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
       cx: cxMatch ? parseFloat(cxMatch[1]) : 0,
       cy: cyMatch ? parseFloat(cyMatch[1]) : 0,
       rx: rxMatch ? parseFloat(rxMatch[1]) : 0,
@@ -184,6 +206,7 @@ function parseCircleAttributes(html: string): CircleAttributes | null {
     const fillMatch = circleTag.match(/fill="([^"]+)"/i);
     const strokeMatch = circleTag.match(/stroke="([^"]+)"/i);
     const strokeWidthMatch = circleTag.match(/stroke-width="([^"]+)"/i);
+    const strokeDasharrayMatch = circleTag.match(/stroke-dasharray="([^"]+)"/i);
     const cxMatch = circleTag.match(/cx="([^"]+)"/i);
     const cyMatch = circleTag.match(/cy="([^"]+)"/i);
     const rMatch = circleTag.match(/\sr="([^"]+)"/i);
@@ -192,6 +215,7 @@ function parseCircleAttributes(html: string): CircleAttributes | null {
       fill: fillMatch ? fillMatch[1] : null,
       stroke: strokeMatch ? strokeMatch[1] : null,
       strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
       cx: cxMatch ? parseFloat(cxMatch[1]) : 0,
       cy: cyMatch ? parseFloat(cyMatch[1]) : 0,
       r: rMatch ? parseFloat(rMatch[1]) : 0,
@@ -224,6 +248,9 @@ function parsePathAttributes(html: string): PathAttributes | null {
     
     if (!dMatch) return null;
     
+    // Extract stroke-dasharray for dashed lines
+    const strokeDasharrayMatch = pathTag.match(/stroke-dasharray="([^"]+)"/i);
+    
     return {
       d: dMatch[1],
       fill: fillMatch ? fillMatch[1] : null,
@@ -231,7 +258,42 @@ function parsePathAttributes(html: string): PathAttributes | null {
       strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
       strokeLinecap: strokeLinecapMatch ? strokeLinecapMatch[1] : null,
       strokeLinejoin: strokeLinejoinMatch ? strokeLinejoinMatch[1] : null,
+      strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
       viewBox,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract line element attributes from SVG HTML
+ */
+function parseLineAttributes(html: string): LineAttributes | null {
+  try {
+    const lineMatch = html.match(/<line[^>]*>/i);
+    if (!lineMatch) return null;
+    
+    const lineTag = lineMatch[0];
+    
+    const x1Match = lineTag.match(/x1="([^"]+)"/i);
+    const y1Match = lineTag.match(/y1="([^"]+)"/i);
+    const x2Match = lineTag.match(/x2="([^"]+)"/i);
+    const y2Match = lineTag.match(/y2="([^"]+)"/i);
+    const strokeMatch = lineTag.match(/stroke="([^"]+)"/i);
+    const strokeWidthMatch = lineTag.match(/stroke-width="([^"]+)"/i);
+    const strokeDasharrayMatch = lineTag.match(/stroke-dasharray="([^"]+)"/i);
+    const strokeLinecapMatch = lineTag.match(/stroke-linecap="([^"]+)"/i);
+    
+    return {
+      x1: x1Match ? parseFloat(x1Match[1]) : 0,
+      y1: y1Match ? parseFloat(y1Match[1]) : 0,
+      x2: x2Match ? parseFloat(x2Match[1]) : 0,
+      y2: y2Match ? parseFloat(y2Match[1]) : 0,
+      stroke: strokeMatch ? strokeMatch[1] : null,
+      strokeWidth: strokeWidthMatch ? parseFloat(strokeWidthMatch[1]) : 0,
+      strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
+      strokeLinecap: strokeLinecapMatch ? strokeLinecapMatch[1] : null,
     };
   } catch {
     return null;
@@ -551,60 +613,152 @@ export function LayeredCanvas({
     // BACKGROUND LAYERS: Replaceable background textures/patterns
     // If user selected a custom background color (different from template default),
     // render solid color. Otherwise render the original layer.
+    // 
+    // SHAPE SUPPORT (Jan 2026):
+    // - Ellipse/Circle shapes: Render using SVG Ellipse with user's color
+    // - Rectangles with rx/ry: Extract border radius from SVG HTML
+    // - Plain rectangles: Render as View with backgroundColor
     // ═══════════════════════════════════════════════════════════════════
     if (isBackground) {
+      // Detect SVG element type from HTML (ellipse, circle, rect, etc.)
+      const svgElementType = layer.html ? detectSvgElementType(layer.html) : 'none';
+      const scaledWidth = layer.width * scaleX;
+      const scaledHeight = layer.height * scaleY;
+      
+      // DEBUG: Log background layer details for shape investigation
+      console.log(`[LayeredCanvas] Background layer: ${layer.layer}`, {
+        type: layer.type,
+        border_radius: layer.border_radius,
+        fill: layer.fill,
+        hasHtml: !!layer.html,
+        svgElementType,
+        htmlPreview: layer.html ? layer.html.substring(0, 200) + '...' : null,
+      });
+      
       // Check if user has selected a custom background color
       // (different from the template's default background color)
       const hasCustomBackgroundColor = backgroundColor && 
         defaultBackgroundColor && 
         backgroundColor.toUpperCase() !== defaultBackgroundColor.toUpperCase();
       
-      if (hasCustomBackgroundColor) {
-        // User selected a custom color - render solid color rectangle
-        const borderRadius = parseBorderRadius(layer.border_radius);
-        return (
-          <View 
-            key={layer.layer} 
-            style={[style, { 
-              backgroundColor,
-              borderRadius: borderRadius * uniformScale,
-            }]} 
-          />
-        );
+      // Determine which color to use: user's custom color or original layer fill
+      const fillColorToUse = hasCustomBackgroundColor ? backgroundColor : (layer.fill || '#E5E5E5');
+      
+      console.log(`[LayeredCanvas] ${layer.layer} - hasCustomBg: ${hasCustomBackgroundColor}, svgType: ${svgElementType}, fillColor: ${fillColorToUse}`);
+      
+      // ─────────────────────────────────────────────────────────────────
+      // ELLIPSE SHAPES: Render as SVG Ellipse with correct fill color
+      // ─────────────────────────────────────────────────────────────────
+      if (svgElementType === 'ellipse' && layer.html) {
+        const ellipseAttrs = parseEllipseAttributes(layer.html);
+        if (ellipseAttrs) {
+          console.log(`[LayeredCanvas] ${layer.layer} - Rendering as SVG Ellipse`, ellipseAttrs);
+          
+          // Scale ellipse attributes to canvas size
+          const scaledCx = scaledWidth / 2;  // Center in container
+          const scaledCy = scaledHeight / 2;
+          const scaledRx = scaledWidth / 2;  // Fill container
+          const scaledRy = scaledHeight / 2;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                <Ellipse
+                  cx={scaledCx}
+                  cy={scaledCy}
+                  rx={scaledRx}
+                  ry={scaledRy}
+                  fill={fillColorToUse}
+                />
+              </Svg>
+            </View>
+          );
+        }
       }
       
-      // No custom color - render original layer
-      // For images, use BackgroundImage with cover fit
+      // ─────────────────────────────────────────────────────────────────
+      // CIRCLE SHAPES: Render as SVG Circle with correct fill color
+      // ─────────────────────────────────────────────────────────────────
+      if (svgElementType === 'circle' && layer.html) {
+        const circleAttrs = parseCircleAttributes(layer.html);
+        if (circleAttrs) {
+          console.log(`[LayeredCanvas] ${layer.layer} - Rendering as SVG Circle`, circleAttrs);
+          
+          const scaledCx = scaledWidth / 2;
+          const scaledCy = scaledHeight / 2;
+          const scaledR = Math.min(scaledWidth, scaledHeight) / 2;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                <Circle
+                  cx={scaledCx}
+                  cy={scaledCy}
+                  r={scaledR}
+                  fill={fillColorToUse}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // RECT SHAPES: Check for rx/ry (rounded corners) in SVG HTML
+      // ─────────────────────────────────────────────────────────────────
+      if (svgElementType === 'rect' && layer.html) {
+        const rectAttrs = parseRectAttributes(layer.html);
+        if (rectAttrs) {
+          const hasRoundedCorners = rectAttrs.rx > 0 || rectAttrs.ry > 0;
+          console.log(`[LayeredCanvas] ${layer.layer} - Rect with rx=${rectAttrs.rx}, ry=${rectAttrs.ry}, rounded=${hasRoundedCorners}`);
+          
+          if (hasRoundedCorners) {
+            // Use SVG Rect for proper rounded corners
+            const scaledRx = rectAttrs.rx * uniformScale;
+            const scaledRy = rectAttrs.ry * uniformScale;
+            
+            return (
+              <View key={layer.layer} style={style}>
+                <Svg width="100%" height="100%" viewBox={`0 0 ${scaledWidth} ${scaledHeight}`}>
+                  <Rect
+                    x={0}
+                    y={0}
+                    width={scaledWidth}
+                    height={scaledHeight}
+                    rx={scaledRx}
+                    ry={scaledRy}
+                    fill={fillColorToUse}
+                  />
+                </Svg>
+              </View>
+            );
+          }
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // IMAGE LAYERS: Render with BackgroundImage (cover fit)
+      // ─────────────────────────────────────────────────────────────────
       if (layer.image_url) {
         return <BackgroundImage key={layer.layer} uri={layer.image_url} style={style} />;
       }
       
-      // For shapes with fill, render as colored rectangle
-      if (layer.fill) {
-        const borderRadius = parseBorderRadius(layer.border_radius);
-        return (
-          <View 
-            key={layer.layer} 
-            style={[style, { 
-              backgroundColor: layer.fill,
-              borderRadius: borderRadius * uniformScale,
-            }]} 
-          />
-        );
-      }
+      // ─────────────────────────────────────────────────────────────────
+      // FALLBACK: Simple colored rectangle (no SVG shape detected)
+      // ─────────────────────────────────────────────────────────────────
+      // Try to extract border radius from layer property (for backwards compatibility)
+      const borderRadius = parseBorderRadius(layer.border_radius);
+      console.log(`[LayeredCanvas] ${layer.layer} - Fallback: View with borderRadius=${borderRadius}`);
       
-      // For shapes with HTML (SVG), render normally
-      if (layer.type === 'shape' && layer.html) {
-        const svgHtml = cleanSvgHtml(layer.html);
-        return (
-          <View key={layer.layer} style={style}>
-            <SvgXml xml={svgHtml} width="100%" height="100%" />
-          </View>
-        );
-      }
-      
-      // Fallback: transparent view
-      return <View key={layer.layer} style={style} />;
+      return (
+        <View 
+          key={layer.layer} 
+          style={[style, { 
+            backgroundColor: fillColorToUse,
+            borderRadius: borderRadius * uniformScale,
+          }]} 
+        />
+      );
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -623,18 +777,23 @@ export function LayeredCanvas({
         if (attrs) {
           // Determine fill color - apply theme if needed
           let fillColor = attrs.fill || 'transparent';
+          // Normalize 'none' to 'transparent' for React Native SVG
+          if (fillColor === 'none') fillColor = 'transparent';
+          
           const isTransparentFill = !fillColor || 
             fillColor === 'transparent' || 
-            fillColor === 'none' ||
             fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
           
           if (!isTransparentFill && isTheme && themeColor) {
             fillColor = themeColor;
           }
           
-          // Determine stroke color - apply theme if needed
-          let strokeColor = attrs.stroke || 'transparent';
-          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+          // Determine stroke color - use layer.stroke as fallback
+          let strokeColor = attrs.stroke || layer.stroke || 'transparent';
+          // Normalize 'none' to 'transparent'
+          if (strokeColor === 'none') strokeColor = 'transparent';
+          
+          if (isTheme && themeColor && !isTransparentColor(strokeColor)) {
             strokeColor = themeColor;
           }
           
@@ -655,6 +814,7 @@ export function LayeredCanvas({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={scaledStrokeWidth}
+                  strokeDasharray={attrs.strokeDasharray || undefined}
                 />
               </Svg>
             </View>
@@ -669,17 +829,23 @@ export function LayeredCanvas({
         const attrs = parseEllipseAttributes(layer.html);
         if (attrs) {
           let fillColor = attrs.fill || 'transparent';
+          // Normalize 'none' to 'transparent' for React Native SVG
+          if (fillColor === 'none') fillColor = 'transparent';
+          
           const isTransparentFill = !fillColor || 
             fillColor === 'transparent' || 
-            fillColor === 'none' ||
             fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
           
           if (!isTransparentFill && isTheme && themeColor) {
             fillColor = themeColor;
           }
           
-          let strokeColor = attrs.stroke || 'transparent';
-          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+          // Determine stroke color - use layer.stroke as fallback
+          let strokeColor = attrs.stroke || layer.stroke || 'transparent';
+          // Normalize 'none' to 'transparent'
+          if (strokeColor === 'none') strokeColor = 'transparent';
+          
+          if (isTheme && themeColor && !isTransparentColor(strokeColor)) {
             strokeColor = themeColor;
           }
           
@@ -700,6 +866,7 @@ export function LayeredCanvas({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={scaledStrokeWidth}
+                  strokeDasharray={attrs.strokeDasharray || undefined}
                 />
               </Svg>
             </View>
@@ -714,17 +881,23 @@ export function LayeredCanvas({
         const attrs = parseCircleAttributes(layer.html);
         if (attrs) {
           let fillColor = attrs.fill || 'transparent';
+          // Normalize 'none' to 'transparent' for React Native SVG
+          if (fillColor === 'none') fillColor = 'transparent';
+          
           const isTransparentFill = !fillColor || 
             fillColor === 'transparent' || 
-            fillColor === 'none' ||
             fillColor.match(/rgba\s*\([^,]+,[^,]+,[^,]+,\s*0\s*\)/i) !== null;
           
           if (!isTransparentFill && isTheme && themeColor) {
             fillColor = themeColor;
           }
           
-          let strokeColor = attrs.stroke || 'transparent';
-          if (isTheme && themeColor && attrs.stroke && attrs.stroke !== 'transparent' && attrs.stroke !== 'none' && attrs.stroke !== 'rgba(0,0,0,0)') {
+          // Determine stroke color - use layer.stroke as fallback
+          let strokeColor = attrs.stroke || layer.stroke || 'transparent';
+          // Normalize 'none' to 'transparent'
+          if (strokeColor === 'none') strokeColor = 'transparent';
+          
+          if (isTheme && themeColor && !isTransparentColor(strokeColor)) {
             strokeColor = themeColor;
           }
           
@@ -743,6 +916,7 @@ export function LayeredCanvas({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth={scaledStrokeWidth}
+                  strokeDasharray={attrs.strokeDasharray || undefined}
                 />
               </Svg>
             </View>
@@ -757,11 +931,17 @@ export function LayeredCanvas({
         const attrs = parsePathAttributes(layer.html);
         if (attrs) {
           let fillColor = attrs.fill;
-          const hasStroke = attrs.stroke && attrs.stroke !== 'none' && !isTransparentColor(attrs.stroke);
+          // Determine stroke color - use layer.stroke as fallback
+          let strokeColor = attrs.stroke || layer.stroke || 'transparent';
+          // Normalize 'none' to 'transparent'
+          if (strokeColor === 'none') strokeColor = 'transparent';
+          
+          const hasStroke = strokeColor && !isTransparentColor(strokeColor);
           
           if (!fillColor || fillColor === 'none') {
             if (hasStroke && attrs.strokeWidth > 0) {
-              fillColor = 'none';
+              // Stroke-only path, keep fill transparent
+              fillColor = 'transparent';
             } else if (isTheme && themeColor) {
               fillColor = themeColor;
             } else if (isTheme) {
@@ -772,9 +952,10 @@ export function LayeredCanvas({
           } else if (!isTransparentColor(fillColor) && isTheme && themeColor) {
             fillColor = themeColor;
           }
+          // Normalize 'none' to 'transparent' for fill as well
+          if (fillColor === 'none') fillColor = 'transparent';
           
-          let strokeColor = attrs.stroke || 'none';
-          if (strokeColor !== 'none' && isTheme && themeColor) {
+          if (!isTransparentColor(strokeColor) && isTheme && themeColor) {
             strokeColor = themeColor;
           }
           
@@ -793,6 +974,45 @@ export function LayeredCanvas({
                   strokeWidth={attrs.strokeWidth}
                   strokeLinecap={attrs.strokeLinecap as any || undefined}
                   strokeLinejoin={attrs.strokeLinejoin as any || undefined}
+                  strokeDasharray={attrs.strokeDasharray || undefined}
+                />
+              </Svg>
+            </View>
+          );
+        }
+      }
+      
+      // ─────────────────────────────────────────────────────────────────
+      // LINE ELEMENTS
+      // ─────────────────────────────────────────────────────────────────
+      if (elementType === 'line') {
+        const attrs = parseLineAttributes(layer.html);
+        if (attrs) {
+          // Lines only have stroke, no fill
+          // Use parsed stroke, or layer-level stroke as fallback
+          let strokeColor = attrs.stroke || layer.stroke || 'transparent';
+          if (isTheme && themeColor && !isTransparentColor(strokeColor)) {
+            strokeColor = themeColor;
+          }
+          
+          // Extract viewBox from SVG wrapper if present
+          const viewBoxMatch = layer.html.match(/viewBox="([^"]+)"/i);
+          const viewBox = viewBoxMatch ? viewBoxMatch[1] : `0 0 ${scaledWidth} ${scaledHeight}`;
+          
+          const scaledStrokeWidth = attrs.strokeWidth * uniformScale;
+          
+          return (
+            <View key={layer.layer} style={style}>
+              <Svg width="100%" height="100%" viewBox={viewBox} preserveAspectRatio="xMidYMid meet">
+                <Line
+                  x1={attrs.x1}
+                  y1={attrs.y1}
+                  x2={attrs.x2}
+                  y2={attrs.y2}
+                  stroke={strokeColor}
+                  strokeWidth={scaledStrokeWidth}
+                  strokeDasharray={attrs.strokeDasharray || undefined}
+                  strokeLinecap={attrs.strokeLinecap as any || undefined}
                 />
               </Svg>
             </View>
