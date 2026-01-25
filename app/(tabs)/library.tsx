@@ -37,6 +37,7 @@ import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatC
 import { useResponsive } from '@/hooks/useResponsive';
 import { getProjectDisplayName } from '@/utils/projectName';
 import RenameProjectModal from '@/components/RenameProjectModal';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -317,10 +318,30 @@ export default function ProjectsScreen() {
       </View>
 
       {isDraftsLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.light.accent} />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.listContainer, dynamicStyles.listContainer]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Skeleton Project Rows */}
+          {[1, 2, 3, 4, 5].map((i) => (
+            <View key={i} style={styles.projectRow}>
+              {/* Skeleton Thumbnail */}
+              <Skeleton width={72} height={96} borderRadius={10} />
+              
+              {/* Skeleton Text */}
+              <View style={styles.projectInfo}>
+                <Skeleton width="70%" height={16} borderRadius={4} />
+                <View style={{ marginTop: 8 }}>
+                  <Skeleton width="40%" height={13} borderRadius={4} />
+                </View>
+              </View>
+              
+              {/* Skeleton Menu Button */}
+              <Skeleton circle size={40} />
+            </View>
+          ))}
+        </ScrollView>
       ) : filteredProjects.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIcon}>
@@ -559,16 +580,6 @@ const styles = StyleSheet.create({
   },
   
   // Loading & Empty States
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: Colors.light.textSecondary,
-  },
   emptyState: {
     flex: 1,
     alignItems: 'center',

@@ -55,6 +55,7 @@ import {
 } from '@/components/editor-v2';
 import { enhanceImageWithPolling, AIProcessingProgress, AIProcessingStatus } from '@/services/aiService';
 import { AIStudioSheet, AIProcessingOverlay, AISuccessOverlay, AIErrorView, AIAlreadyAppliedToast } from '@/components/ai';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { BottomSheetModal, BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import type { AIFeatureKey } from '@/types';
 import type { AIResult } from '@/domains/editor/types';
@@ -115,6 +116,7 @@ export default function EditorV2Screen() {
     canShare,
     canUseAIStudio, 
     tier, 
+    isLoading: isSubscriptionLoading,
     requestDownload,
     requestShare,
     requestRemoveWatermark,
@@ -125,6 +127,10 @@ export default function EditorV2Screen() {
   
   // Backward compatibility: isPremium = any tier above free
   const isPremium = tier !== 'free';
+  
+  // Watermark should only show for confirmed free users, not during loading
+  // This prevents the flash where premium users briefly see the watermark
+  const showWatermark = !isSubscriptionLoading && !canDownload;
   
   // Legacy requestPremiumAccess wrapper for child components
   const requestPremiumAccess = useCallback(async (feature: string) => {
@@ -1881,7 +1887,8 @@ export default function EditorV2Screen() {
     }
 
     // User is Free tier - show Download paywall
-    await requestDownload();
+    // Pass executeDownload as callback to execute after successful purchase (Gated paywall)
+    await requestDownload(executeDownload);
   }, [capturedImages, canDownload, tier, executeDownload, requestDownload]);
 
   // Execute share action
@@ -1941,7 +1948,8 @@ export default function EditorV2Screen() {
     }
 
     // User is Free tier - show Share paywall
-    await requestShare();
+    // Pass executeShare as callback to execute after successful purchase (Gated paywall)
+    await requestShare(executeShare);
   }, [capturedImages, canShare, tier, executeShare, requestShare]);
 
   // Handle opening project actions bottom sheet
@@ -2152,8 +2160,8 @@ export default function EditorV2Screen() {
           </View>
         </View>
 
-        {/* Upgrade CTA Banner - shown when watermark is visible (free users) */}
-        {!canDownload && (
+        {/* Upgrade CTA Banner - shown when watermark is visible (free users) - only after loading */}
+        {!isSubscriptionLoading && !canDownload && (
           <TouchableOpacity 
             style={styles.upgradeBanner}
             onPress={requestRemoveWatermark}
@@ -2170,10 +2178,19 @@ export default function EditorV2Screen() {
         <Pressable 
           style={styles.canvasArea} 
           onPress={isCropMode ? undefined : handleCanvasTap}
-          disabled={isCropMode}
+          disabled={isCropMode || isSubscriptionLoading}
         >
+          {/* Skeleton Loading Overlay - shown while subscription status is loading */}
+          {isSubscriptionLoading && (
+            <View style={styles.canvasSkeletonContainer}>
+              <View style={[styles.canvasSkeleton, { width: canvasDimensions.width || 300, height: canvasDimensions.height || 400 }]}>
+                <Skeleton width="100%" height="100%" borderRadius={0} />
+              </View>
+            </View>
+          )}
+
           {/* Canvas wrapper for positioning overlay layer */}
-          <View style={styles.canvasWrapper}>
+          <View style={[styles.canvasWrapper, isSubscriptionLoading && styles.canvasHidden]}>
             {/* ViewShot wrapper for capturing canvas with overlays */}
             <ViewShot
               ref={viewShotRef}
@@ -2221,7 +2238,7 @@ export default function EditorV2Screen() {
                 themeColor={selectedThemeColor}
                 capturedImages={capturedImages}
                 useClientSideCompositing={!!template?.frameOverlayUrl}
-                showWatermark={!canDownload}
+                showWatermark={showWatermark}
               />
               
               {/* Overlay Layer - renders overlays on top of canvas (hidden during manipulation/crop) */}
@@ -2297,6 +2314,15 @@ export default function EditorV2Screen() {
             onThemeColorChange={handleThemeColorChange}
             onConfirm={handleContextBarConfirm}
           />
+        ) : isSubscriptionLoading ? (
+          // Skeleton toolbar while subscription is loading
+          <View style={styles.skeletonToolbar}>
+            <View style={styles.skeletonToolbarRow}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} circle size={44} />
+              ))}
+            </View>
+          </View>
         ) : (
           <EditorMainToolbar
             activeTool={activeMainTool}
@@ -2589,7 +2615,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 0, 246, 0.15)',
+    borderColor: '#000000',
   },
   upgradeBannerText: {
     fontSize: 13,
@@ -2605,6 +2631,31 @@ const styles = StyleSheet.create({
   },
   canvasWrapper: {
     position: 'relative',
+    alignItems: 'center',
+  },
+  canvasHidden: {
+    opacity: 0,
+    position: 'absolute',
+  },
+  canvasSkeletonContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  canvasSkeleton: {
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  skeletonToolbar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.light.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.borderLight,
+  },
+  skeletonToolbarRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     alignItems: 'center',
   },
   viewShotWrapper: {

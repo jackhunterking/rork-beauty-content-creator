@@ -29,7 +29,6 @@ import Colors from '@/constants/colors';
 import type { AIFeatureKey, BackgroundPreset, Slot, MediaAsset, SubscriptionTier } from '@/types';
 import { AIProcessingProgress } from '@/services/aiService';
 import type { AIResult, BackgroundInfo } from '@/domains/editor/types';
-import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 
 import AIStudioHomeView from './AIStudioHomeView';
 import ImageSlotCarousel from './ImageSlotCarousel';
@@ -39,8 +38,8 @@ import ReplaceBackgroundView from './ReplaceBackgroundView';
 import AIProcessingOverlay from './AIProcessingOverlay';
 import AISuccessOverlay from './AISuccessOverlay';
 import AIErrorView from './AIErrorView';
-import PremiumAIPrompt from './PremiumAIPrompt';
 import AIAlreadyAppliedToast from './AIAlreadyAppliedToast';
+// Note: PremiumAIPrompt removed - each feature view now triggers specific Superwall campaigns
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -95,13 +94,9 @@ export default function AIStudioSheet({
 }: AIStudioSheetProps) {
   const insets = useSafeAreaInsets();
   
-  // Get paywall trigger from subscription hook
-  const { requestStudioAccess } = useTieredSubscription();
-  
-  // Handle upgrade button press - triggers Studio paywall
-  const handleUpgrade = useCallback(async () => {
-    await requestStudioAccess(undefined, 'ai_studio');
-  }, [requestStudioAccess]);
+  // Note: Removed generic requestStudioAccess/handleUpgrade
+  // Each feature view (AutoQualityView, RemoveBackgroundView, ReplaceBackgroundView)
+  // now handles its own paywall via specific Superwall campaigns
   
   // Internal selected slot state (initialized from external, can change within sheet)
   const [internalSelectedSlotId, setInternalSelectedSlotId] = useState<string | null>(externalSelectedSlotId);
@@ -326,17 +321,17 @@ export default function AIStudioSheet({
   
   // Render current view
   const renderContent = () => {
-    // Show premium prompt only for FREE users
-    // Pro users should see AI features (with Studio paywall when they try to use them)
-    // Studio users have full access
-    if (tier === 'free') {
-      return (
-        <PremiumAIPrompt
-          onUpgrade={handleUpgrade}
-          onClose={handleSkip}
-        />
-      );
-    }
+    // REMOVED: Generic PremiumAIPrompt for free users
+    // 
+    // Now ALL users (free, pro, studio) see the AI Studio interface.
+    // Each feature view (AutoQualityView, RemoveBackgroundView, ReplaceBackgroundView)
+    // has its own tier check that triggers the CORRECT Superwall campaign:
+    // - studio_auto_quality for Auto Quality
+    // - studio_bg_remove for Remove Background
+    // - studio_bg_replace for Replace Background
+    //
+    // This provides better UX (users see what features do before paywall)
+    // and ensures the right Superwall campaigns are shown.
     
     switch (currentView) {
       case 'home':

@@ -260,7 +260,8 @@ export default function AutoQualityView({
     // Check if user has Studio access
     if (!canUseAIStudio) {
       console.log(`[AutoQualityView] User is ${tier} tier, showing Auto Quality paywall`);
-      await requestAutoQuality();
+      // Pass performEnhancement as callback to execute after successful purchase (Gated paywall)
+      await requestAutoQuality(performEnhancement);
       return;
     }
 
@@ -305,6 +306,16 @@ export default function AutoQualityView({
               ? 'AI enhancement already applied. Re-applying may reduce image quality. Capture a new photo to enhance again.'
               : 'Enhance resolution and sharpen details with AI'}
           </Text>
+          
+          {/* Warning about text in images */}
+          {!isAlreadyEnhanced && (
+            <View style={styles.infoContainer}>
+              <Ionicons name="information-circle-outline" size={18} color={Colors.light.textTertiary} />
+              <Text style={styles.infoText}>
+                Not recommended for images with text — AI may distort letters.
+              </Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -461,6 +472,20 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textAlign: 'center',
     marginTop: 16,
+  },
+  infoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 16,
+  },
+  infoText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 13,
+    color: Colors.light.textSecondary,
   },
   // STANDARD FOOTER - same across all AI views
   footer: {

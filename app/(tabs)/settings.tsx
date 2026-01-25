@@ -27,8 +27,6 @@ import {
   Send,
   ImageIcon,
   X,
-  Cloud,
-  CloudOff,
   Gift,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -36,7 +34,7 @@ import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
 import { getTierDisplayInfo } from "@/constants/tiers";
-import { usePremiumStatus, usePremiumFeature, useRestorePurchases, useTieredSubscription } from "@/hooks/usePremiumStatus";
+import { usePremiumStatus, useRestorePurchases, useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { submitFeedback } from "@/services/feedbackService";
 import { 
@@ -48,6 +46,7 @@ import {
 } from "@/services/brandKitService";
 import { BrandKit } from "@/types";
 import { useResponsive } from "@/hooks/useResponsive";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 // App configuration - replace with your actual URLs
 const APP_CONFIG = {
@@ -78,10 +77,8 @@ export default function SettingsScreen() {
   } = usePremiumStatus();
   
   // Get tiered subscription info for accurate tier display
-  const { tier, source } = useTieredSubscription();
+  const { tier, source, requestMembership } = useTieredSubscription();
   const tierInfo = getTierDisplayInfo(tier, source);
-  
-  const { requestPremiumAccess, paywallState } = usePremiumFeature();
   // Restore purchases only needed for free users
   const { 
     restorePurchases, 
@@ -195,33 +192,35 @@ export default function SettingsScreen() {
     );
   }, [isAuthenticated]);
 
-  // Handle Upgrade to Pro button press
-  const handleUpgradeToPro = async () => {
-    await requestPremiumAccess('settings_upgrade', () => {
-      // User upgraded to pro
-    });
+  // Handle Upgrade button press - shows membership_manage paywall
+  const handleUpgrade = async () => {
+    await requestMembership();
   };
 
-  // Handle Restore Purchases - uses direct restore without showing paywall
+  // Handle Restore Purchases - refreshes entitlements from Superwall
   const handleRestorePurchases = async () => {
     const result = await restorePurchases();
     
     if (result.success) {
-      // Show success or wait for restoreSuccess state to update
-      if (isPremium) {
+      if (result.hasEntitlements) {
+        // User has active entitlements - show success
         Alert.alert('Success', 'Your purchases have been restored!');
       } else {
-        // Check again after a moment - subscription status may update
-        setTimeout(() => {
-          if (subscriptionDetails.status === 'ACTIVE') {
-            Alert.alert('Success', 'Your purchases have been restored!');
-          } else {
-            Alert.alert(
-              'No Purchases Found',
-              'We couldn\'t find any previous purchases to restore. If you believe this is an error, please contact support.'
-            );
-          }
-        }, 1000);
+        // No entitlements found - offer options
+        Alert.alert(
+          'No Purchases Found',
+          'We couldn\'t find any previous purchases. If you have an active subscription, it may take a moment to sync.\n\nYou can also manage your subscriptions through Apple.',
+          [
+            { text: 'OK', style: 'cancel' },
+            { 
+              text: 'Manage in Settings', 
+              onPress: () => {
+                // Open iOS subscription management
+                Linking.openURL('https://apps.apple.com/account/subscriptions');
+              }
+            },
+          ]
+        );
       }
     } else {
       Alert.alert('Error', result.error || 'Failed to restore purchases. Please try again.');
@@ -373,12 +372,26 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Subscription</Text>
             <View style={[
               styles.card, 
-              isSubscribed && { 
+              !isSubscriptionLoading && isSubscribed && { 
                 borderColor: tierInfo.color, 
                 borderWidth: 2,
               }
             ]}>
-              {isSubscribed ? (
+              {isSubscriptionLoading ? (
+                // Skeleton loading state for subscription
+                <View style={styles.subscriptionSkeleton}>
+                  <View style={styles.upgradePrompt}>
+                    <Skeleton circle size={52} />
+                    <View style={[styles.subscriptionInfo, { gap: 8 }]}>
+                      <Skeleton width={120} height={18} borderRadius={4} />
+                      <Skeleton width={180} height={14} borderRadius={4} />
+                    </View>
+                  </View>
+                  <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+                    <Skeleton width="100%" height={48} borderRadius={12} />
+                  </View>
+                </View>
+              ) : isSubscribed ? (
                 // Show current plan card matching membership page
                 <>
                   <View style={styles.currentPlanContainer}>
@@ -438,20 +451,18 @@ export default function SettingsScreen() {
                   <TouchableOpacity 
                     style={[
                       styles.upgradeButton,
-                      (isLoading || paywallState === 'presenting') && styles.upgradeButtonDisabled,
+                      isLoading && styles.upgradeButtonDisabled,
                     ]} 
                     activeOpacity={0.8}
-                    onPress={handleUpgradeToPro}
-                    disabled={isLoading || paywallState === 'presenting'}
+                    onPress={handleUpgrade}
+                    disabled={isLoading}
                   >
-                    {isLoading || paywallState === 'presenting' ? (
+                    {isLoading ? (
                       <ActivityIndicator size="small" color={Colors.light.surface} />
                     ) : (
                       <Crown size={18} color={Colors.light.surface} />
                     )}
-                    <Text style={styles.upgradeButtonText}>
-                      {paywallState === 'presenting' ? 'Loading...' : 'Upgrade to Pro'}
-                    </Text>
+                    <Text style={styles.upgradeButtonText}>Upgrade</Text>
                   </TouchableOpacity>
                   <TouchableOpacity 
                     style={styles.restoreButton}
@@ -572,19 +583,7 @@ export default function SettingsScreen() {
 
           {/* Brand Kit Section */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitleInline}>Brand Kit</Text>
-              {/* Cloud sync indicator */}
-              <View style={styles.syncBadge}>
-                {isSyncingBrandKit ? (
-                  <ActivityIndicator size="small" color={Colors.light.textSecondary} />
-                ) : isAuthenticated ? (
-                  <Cloud size={12} color={Colors.light.success} />
-                ) : (
-                  <CloudOff size={12} color={Colors.light.textTertiary} />
-                )}
-              </View>
-            </View>
+            <Text style={styles.sectionTitle}>Brand Kit</Text>
             <View style={styles.card}>
               {/* Logo Section */}
               {brandKit?.logoUri ? (
@@ -648,8 +647,6 @@ export default function SettingsScreen() {
               <View style={styles.brandKitInfo}>
                 <Text style={styles.brandKitInfoText}>
                   Your logo will be available as an overlay option when editing templates.
-                  {isAuthenticated && ' Your brand kit is synced to the cloud.'}
-                  {!isAuthenticated && ' Sign in to sync across devices.'}
                 </Text>
               </View>
             </View>
@@ -802,18 +799,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 4,
   },
-  sectionTitleInline: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: Colors.light.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  syncBadge: {
-    marginLeft: 'auto',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
   cardDisabled: {
     opacity: 0.5,
   },
@@ -935,6 +920,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.light.surface,
+  },
+  subscriptionSkeleton: {
+    // Container for skeleton loading state
   },
   upgradePrompt: {
     flexDirection: 'row',

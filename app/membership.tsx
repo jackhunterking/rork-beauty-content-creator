@@ -4,7 +4,6 @@ import {
   Text, 
   TouchableOpacity, 
   ScrollView, 
-  ActivityIndicator,
   Alert,
   Linking,
 } from "react-native";
@@ -23,6 +22,7 @@ import Colors from "@/constants/colors";
 import { getTierDisplayInfo, TIER_COLORS } from "@/constants/tiers";
 import { useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useResponsive } from "@/hooks/useResponsive";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { SubscriptionTier, SubscriptionTierSource } from "@/types";
 
 /**
@@ -114,7 +114,7 @@ export default function MembershipScreen() {
     },
   }), [responsive]);
 
-  // Loading state
+  // Loading state - show skeleton
   if (isSubscriptionLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -129,9 +129,42 @@ export default function MembershipScreen() {
           <Text style={styles.headerTitle}>Membership</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.light.accent} />
-        </View>
+        <ScrollView 
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, dynamicStyles.scrollContent]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={dynamicStyles.contentContainer}>
+            {/* Skeleton Current Plan Card */}
+            <View style={styles.card}>
+              <Skeleton width={80} height={12} borderRadius={4} style={{ marginBottom: 16 }} />
+              <View style={styles.planInfo}>
+                <View style={styles.planHeader}>
+                  <Skeleton circle size={24} />
+                  <Skeleton width={100} height={24} borderRadius={4} />
+                </View>
+                <Skeleton width={160} height={14} borderRadius={4} style={{ marginTop: 8 }} />
+              </View>
+            </View>
+
+            {/* Skeleton Management Section */}
+            <View style={styles.section}>
+              <Skeleton width={60} height={12} borderRadius={4} style={{ marginBottom: 12 }} />
+              
+              {/* Skeleton Action Button */}
+              <View style={styles.actionButton}>
+                <View style={styles.actionButtonContent}>
+                  <Skeleton width={44} height={44} borderRadius={12} />
+                  <View style={styles.actionTextContainer}>
+                    <Skeleton width={100} height={16} borderRadius={4} />
+                    <Skeleton width={140} height={13} borderRadius={4} style={{ marginTop: 6 }} />
+                  </View>
+                </View>
+                <Skeleton width={20} height={20} borderRadius={4} />
+              </View>
+            </View>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -282,12 +315,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 20,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
   // Card
   card: {
     backgroundColor: Colors.light.surface,

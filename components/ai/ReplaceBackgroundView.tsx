@@ -348,7 +348,8 @@ export default function ReplaceBackgroundView({
     // Check if user has Studio access
     if (!canUseAIStudio) {
       console.log(`[ReplaceBackgroundView] User is ${tier} tier, showing BG Replace paywall`);
-      await requestBGReplace();
+      // Pass performApply as callback to execute after successful purchase (Gated paywall)
+      await requestBGReplace(performApply);
       return;
     }
 

@@ -155,7 +155,8 @@ export default function RemoveBackgroundView({
     // Check if user has Studio access
     if (!canUseAIStudio) {
       console.log(`[RemoveBackgroundView] User is ${tier} tier, showing BG Remove paywall`);
-      await requestBGRemove();
+      // Pass performRemoval as callback to execute after successful purchase (Gated paywall)
+      await requestBGRemove(performRemoval);
       return;
     }
 

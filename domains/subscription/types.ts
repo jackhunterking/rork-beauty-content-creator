@@ -24,13 +24,14 @@ export interface SubscriptionState {
 
 /**
  * Subscription context actions
+ * With Gated paywalls: onFeatureGranted callback executes after successful purchase
  */
 export interface SubscriptionActions {
-  requestDownload: () => Promise<boolean>;
-  requestShare: () => Promise<boolean>;
-  requestRemoveWatermark: () => Promise<boolean>;
-  requestProAccess: (feature?: string) => Promise<boolean>;
-  requestStudioAccess: (feature?: string) => Promise<boolean>;
+  requestDownload: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
+  requestShare: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
+  requestRemoveWatermark: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
+  requestProAccess: (onGranted?: () => void, feature?: string) => Promise<void>;
+  requestStudioAccess: (onGranted?: () => void, feature?: string) => Promise<void>;
 }
 
 /**

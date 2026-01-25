@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useUser, usePlacement, useSuperwall } from 'expo-superwall';
 import { supabase } from '@/lib/supabase';
 import type { Entitlement, EntitlementsInfo } from 'expo-superwall';
@@ -63,28 +63,29 @@ export interface TieredSubscription {
   
   // ============================================
   // Feature-specific paywall triggers
+  // With Gated paywalls: onFeatureGranted is called only after successful purchase
   // ============================================
   
-  /** Show Download paywall (pro_download placement) */
-  requestDownload: () => Promise<void>;
+  /** Show Download paywall (pro_download placement) - pass callback to execute after purchase */
+  requestDownload: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
-  /** Show Share paywall (pro_share placement) */
-  requestShare: () => Promise<void>;
+  /** Show Share paywall (pro_share placement) - pass callback to execute after purchase */
+  requestShare: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
   /** Show Remove Watermark paywall (pro_watermark placement) */
-  requestRemoveWatermark: () => Promise<void>;
+  requestRemoveWatermark: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
-  /** Show Auto Quality paywall (studio_auto_quality placement) */
-  requestAutoQuality: () => Promise<void>;
+  /** Show Auto Quality paywall (studio_auto_quality placement) - pass callback to execute after purchase */
+  requestAutoQuality: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
-  /** Show BG Remove paywall (studio_bg_remove placement) */
-  requestBGRemove: () => Promise<void>;
+  /** Show BG Remove paywall (studio_bg_remove placement) - pass callback to execute after purchase */
+  requestBGRemove: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
-  /** Show BG Replace paywall (studio_bg_replace placement) */
-  requestBGReplace: () => Promise<void>;
+  /** Show BG Replace paywall (studio_bg_replace placement) - pass callback to execute after purchase */
+  requestBGReplace: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
   /** Show Membership paywall (membership_manage placement) */
-  requestMembership: () => Promise<void>;
+  requestMembership: (onFeatureGranted?: () => void | Promise<void>) => Promise<void>;
   
   // ============================================
   // Legacy helpers (for backwards compatibility)
@@ -219,7 +220,11 @@ export function useTieredSubscription(): TieredSubscription {
   // Entitlements state
   const [entitlementsInfo, setEntitlementsInfo] = useState<EntitlementsInfo | null>(null);
   
-  // Paywall placement hook - used for callbacks only
+  // Ref to store pending feature callback for Gated paywalls
+  // When user purchases, we execute this callback to run the feature they wanted
+  const pendingFeatureCallback = useRef<(() => void | Promise<void>) | null>(null);
+  
+  // Paywall placement hook - handles feature execution after successful gating
   const { registerPlacement: hookRegisterPlacement } = usePlacement({
     onPresent: (info) => {
       trackInitiatedCheckout(info.name);
@@ -227,10 +232,41 @@ export function useTieredSubscription(): TieredSubscription {
     onDismiss: (info, result) => {
       if (result.type === 'purchased') {
         trackSubscribe(info.name || 'subscription', 0, 'USD');
+        
+        // IMPORTANT: Execute the pending feature callback after successful purchase
+        // With Gated paywalls, this is when the user gains access to the feature
+        if (pendingFeatureCallback.current) {
+          const callback = pendingFeatureCallback.current;
+          pendingFeatureCallback.current = null; // Clear before executing
+          
+          // Execute the callback (could be async)
+          try {
+            const result = callback();
+            // If it returns a promise, we don't need to await it here
+            // The calling component handles any loading states
+            if (result instanceof Promise) {
+              result.catch((error) => {
+                console.error('Feature callback error:', error);
+              });
+            }
+          } catch (error) {
+            console.error('Feature callback error:', error);
+          }
+        }
+      } else {
+        // User dismissed without purchasing - clear the pending callback
+        pendingFeatureCallback.current = null;
       }
     },
-    onSkip: (reason) => {},
-    onError: (error) => {},
+    onSkip: (reason) => {
+      // Paywall was skipped (user already subscribed) - clear callback
+      // Note: If skipped, the feature should already be accessible via canDownload/canShare checks
+      pendingFeatureCallback.current = null;
+    },
+    onError: (error) => {
+      // Error occurred - clear the pending callback
+      pendingFeatureCallback.current = null;
+    },
   });
 
   // Check Supabase subscriptions table - THE SINGLE SOURCE OF TRUTH
@@ -317,93 +353,124 @@ export function useTieredSubscription(): TieredSubscription {
   const { tier, source } = resolveTier(activeEntitlements, supabaseTier);
 
   // Calculate loading state
+  // Use OR (||) so isLoading is true while EITHER source is still checking
+  // This prevents showing "free" state while Supabase is still fetching complimentary tier
   const superwallLoading = subscriptionStatus?.status === 'UNKNOWN' || subscriptionStatus === undefined;
-  const isLoading = superwallLoading && isCheckingSupabase;
+  const isLoading = superwallLoading || isCheckingSupabase;
 
   // ============================================
   // Feature-specific paywall triggers
+  // Pass onFeatureGranted callback to execute after successful purchase (Gated paywalls)
   // ============================================
   
-  /** Show Download paywall */
-  const requestDownload = useCallback(async () => {
+  /** Show Download paywall - onFeatureGranted executes after successful purchase */
+  const requestDownload = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'pro_download',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // pro_download error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show Share paywall */
-  const requestShare = useCallback(async () => {
+  /** Show Share paywall - onFeatureGranted executes after successful purchase */
+  const requestShare = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'pro_share',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // pro_share error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show Remove Watermark paywall */
-  const requestRemoveWatermark = useCallback(async () => {
+  /** Show Remove Watermark paywall - onFeatureGranted executes after successful purchase */
+  const requestRemoveWatermark = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'pro_watermark',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // pro_watermark error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show Auto Quality paywall */
-  const requestAutoQuality = useCallback(async () => {
+  /** Show Auto Quality paywall - onFeatureGranted executes after successful purchase */
+  const requestAutoQuality = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'studio_auto_quality',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // studio_auto_quality error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show BG Remove paywall */
-  const requestBGRemove = useCallback(async () => {
+  /** Show BG Remove paywall - onFeatureGranted executes after successful purchase */
+  const requestBGRemove = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'studio_bg_remove',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // studio_bg_remove error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show BG Replace paywall */
-  const requestBGReplace = useCallback(async () => {
+  /** Show BG Replace paywall - onFeatureGranted executes after successful purchase */
+  const requestBGReplace = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'studio_bg_replace',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // studio_bg_replace error
     }
   }, [hookRegisterPlacement, tier]);
   
-  /** Show Membership paywall - using usePlacement as per Superwall docs */
-  const requestMembership = useCallback(async () => {
+  /** Show Membership paywall - onFeatureGranted executes after successful purchase */
+  const requestMembership = useCallback(async (onFeatureGranted?: () => void | Promise<void>) => {
     try {
+      // Store the callback to execute after successful purchase
+      pendingFeatureCallback.current = onFeatureGranted || null;
+      
       await hookRegisterPlacement({
         placement: 'membership_manage',
         params: { current_tier: tier },
       });
     } catch (error) {
+      pendingFeatureCallback.current = null;
       // membership_manage error
     }
   }, [hookRegisterPlacement, tier]);
@@ -540,41 +607,48 @@ export function usePremiumFeature() {
 
 /**
  * Hook to restore purchases
+ * 
+ * NOTE: Superwall automatically syncs entitlements from StoreKit on app launch.
+ * This hook provides a way for users to manually trigger a refresh.
+ * 
+ * The proper way to restore with Superwall:
+ * 1. Show a paywall that has "Restore Purchases" link (all paywalls have this by default)
+ * 2. Or use getEntitlements() to force refresh from Superwall servers
+ * 
+ * For users who want to manage their subscription, direct them to:
+ * - The membership_manage placement (shows plans + restore link)
+ * - Or directly to Apple's subscription management
  */
 export function useRestorePurchases() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreSuccess, setRestoreSuccess] = useState(false);
   
-  const { registerPlacement } = usePlacement({
-    onSkip: (reason) => {
-      setRestoreSuccess(true);
-    },
-    onDismiss: (info, result) => {
-      if (result.type === 'restored' || result.type === 'purchased') {
-        setRestoreSuccess(true);
-      }
-    },
-    onError: (error) => {
-      setRestoreError(error);
-    },
-  });
+  const { getEntitlements } = useSuperwall();
 
-  const restorePurchases = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+  /**
+   * Refreshes entitlements from Superwall servers.
+   * This will pick up any purchases that may have been made on other devices
+   * or weren't synced properly.
+   */
+  const restorePurchases = useCallback(async (): Promise<{ success: boolean; error?: string; hasEntitlements?: boolean }> => {
     setIsRestoring(true);
     setRestoreError(null);
     setRestoreSuccess(false);
 
     try {
-      await registerPlacement({
-        placement: 'restore_purchases',
-        feature: () => {
-          setRestoreSuccess(true);
-        },
-      });
-
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return { success: true };
+      // Force refresh entitlements from Superwall servers
+      // This syncs with StoreKit and returns current entitlements
+      const entitlementsInfo = await getEntitlements();
+      
+      // Check if user has any active entitlements
+      const hasActiveEntitlements = entitlementsInfo?.active && entitlementsInfo.active.length > 0;
+      
+      setRestoreSuccess(true);
+      return { 
+        success: true, 
+        hasEntitlements: hasActiveEntitlements 
+      };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to restore purchases';
       setRestoreError(errorMessage);
@@ -582,7 +656,7 @@ export function useRestorePurchases() {
     } finally {
       setIsRestoring(false);
     }
-  }, [registerPlacement]);
+  }, [getEntitlements]);
 
   useEffect(() => {
     if (restoreSuccess) {

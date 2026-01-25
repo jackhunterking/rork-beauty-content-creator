@@ -1,4 +1,4 @@
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, ActivityIndicator, RefreshControl } from "react-native";
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Pressable, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -11,6 +11,7 @@ import { Template, TemplateFormat } from "@/types";
 import { clearAllImageCache } from "@/domains/shared";
 import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
 import { useResponsive, getResponsiveTileHeight } from "@/hooks/useResponsive";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 // Helper to get icon component for a format config
 const getFormatIcon = (config: FormatConfig, active: boolean) => {
@@ -55,7 +56,7 @@ export default function CreateScreen() {
   
   // Pull-to-refresh state
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+
   // Filter templates by favorites if toggle is on
   const displayedTemplates = useMemo(() => {
     if (showFavoritesOnly) {
@@ -156,114 +157,122 @@ export default function CreateScreen() {
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.light.accent} />
-          <Text style={styles.loadingText}>Loading templates...</Text>
-        </View>
-      ) : (
-        <ScrollView 
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefresh}
-              tintColor={Colors.light.accent}
-              colors={[Colors.light.accent]}
-            />
-          }
-        >
-          {/* Templates Section */}
-          <View style={[styles.templatesSection, dynamicStyles.templatesSection]}>
-            {/* Format Filter Row */}
-            <View style={[styles.filterRow, { maxWidth: dynamicStyles.grid.maxWidth }]}>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filterScrollContent}
-              >
-                {formatFilters.map((item) => {
-                  const isActive = selectedFormat === item.format;
-                  return (
-                    <TouchableOpacity
-                      key={item.format}
-                      style={[
-                        styles.formatButton,
-                        isActive && styles.formatButtonActive,
-                      ]}
-                      onPress={() => handleFormatSelect(item.format)}
-                      activeOpacity={0.7}
-                    >
-                      {item.icon(isActive)}
-                      <Text style={[
-                        styles.formatLabel,
-                        isActive && styles.formatLabelActive,
-                      ]}>
-                        {item.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-
-            {/* Templates Grid */}
-            {displayedTemplates.length === 0 ? (
-              <View style={styles.emptyTemplates}>
-                <Star size={32} color={Colors.light.textTertiary} />
-                <Text style={styles.emptyTemplatesText}>
-                  {showFavoritesOnly 
-                    ? 'No favorite templates yet' 
-                    : 'No templates available'}
-                </Text>
-                {showFavoritesOnly && (
-                  <TouchableOpacity 
-                    style={styles.clearFilterButton}
-                    onPress={() => setShowFavoritesOnly(false)}
-                  >
-                    <Text style={styles.clearFilterText}>Show all templates</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              <View style={[styles.grid, dynamicStyles.grid]}>
-                {displayedTemplates.map((template) => (
-                  <Pressable
-                    key={template.id}
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.light.accent}
+            colors={[Colors.light.accent]}
+          />
+        }
+      >
+        {/* Templates Section */}
+        <View style={[styles.templatesSection, dynamicStyles.templatesSection]}>
+          {/* Format Filter Row - Always visible */}
+          <View style={[styles.filterRow, { maxWidth: dynamicStyles.grid.maxWidth }]}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterScrollContent}
+            >
+              {formatFilters.map((item) => {
+                const isActive = selectedFormat === item.format;
+                return (
+                  <TouchableOpacity
+                    key={item.format}
                     style={[
-                      styles.templateTile,
-                      dynamicStyles.templateTile,
-                      { height: getTileHeight(template.format) }
+                      styles.formatButton,
+                      isActive && styles.formatButtonActive,
                     ]}
-                    onPress={() => handleTemplateSelect(template)}
+                    onPress={() => handleFormatSelect(item.format)}
+                    activeOpacity={0.7}
                   >
-                    <Image
-                      source={{ uri: template.thumbnail }}
-                      style={styles.templateThumbnail}
-                      contentFit="cover"
-                      transition={200}
-                    />
-                    
-                    <TouchableOpacity
-                      style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}
-                      onPress={(e) => handleToggleFavourite(e, template.id)}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Star
-                        size={16}
-                        color={template.isFavourite ? Colors.light.accent : Colors.light.surface}
-                        fill={template.isFavourite ? Colors.light.accent : 'transparent'}
-                      />
-                    </TouchableOpacity>
-                  </Pressable>
-                ))}
-              </View>
-            )}
+                    {item.icon(isActive)}
+                    <Text style={[
+                      styles.formatLabel,
+                      isActive && styles.formatLabelActive,
+                    ]}>
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
-        </ScrollView>
-      )}
+
+          {/* Templates Grid - Shows skeleton during loading */}
+          {isLoading ? (
+            <View style={[styles.grid, dynamicStyles.grid]}>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.templateTile,
+                    dynamicStyles.templateTile,
+                    { height: getTileHeight(selectedFormat) }
+                  ]}
+                >
+                  <Skeleton width="100%" height="100%" borderRadius={0} />
+                </View>
+              ))}
+            </View>
+          ) : displayedTemplates.length === 0 ? (
+            <View style={styles.emptyTemplates}>
+              <Star size={32} color={Colors.light.textTertiary} />
+              <Text style={styles.emptyTemplatesText}>
+                {showFavoritesOnly 
+                  ? 'No favorite templates yet' 
+                  : 'No templates available'}
+              </Text>
+              {showFavoritesOnly && (
+                <TouchableOpacity 
+                  style={styles.clearFilterButton}
+                  onPress={() => setShowFavoritesOnly(false)}
+                >
+                  <Text style={styles.clearFilterText}>Show all templates</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={[styles.grid, dynamicStyles.grid]}>
+              {displayedTemplates.map((template) => (
+                <Pressable
+                  key={template.id}
+                  style={[
+                    styles.templateTile,
+                    dynamicStyles.templateTile,
+                    { height: getTileHeight(template.format) }
+                  ]}
+                  onPress={() => handleTemplateSelect(template)}
+                >
+                  <Image
+                    source={{ uri: template.thumbnail }}
+                    style={styles.templateThumbnail}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                  
+                  <TouchableOpacity
+                    style={[styles.favouriteButton, template.isFavourite && styles.favouriteButtonActive]}
+                    onPress={(e) => handleToggleFavourite(e, template.id)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Star
+                      size={16}
+                      color={template.isFavourite ? Colors.light.accent : Colors.light.surface}
+                      fill={template.isFavourite ? Colors.light.accent : 'transparent'}
+                    />
+                  </TouchableOpacity>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -308,16 +317,6 @@ const styles = StyleSheet.create({
   headerFavoritesTextActive: {
     color: Colors.light.accent,
     fontWeight: '600' as const,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: Colors.light.textSecondary,
   },
   scrollView: {
     flex: 1,
