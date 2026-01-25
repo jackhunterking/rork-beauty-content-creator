@@ -1,7 +1,7 @@
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 import { ImageSlot, FramePositionInfo, MediaAsset } from '@/types';
-import { trackTempFile } from '@/services/tempCleanupService';
+import { trackTempFile } from '@/domains/shared';
 
 // ============================================
 // Remote Image Localization for Templated.io

@@ -14,7 +14,7 @@
  */
 
 import { supabase, SUPABASE_URL } from '@/lib/supabase';
-import { uploadTempImage } from './tempUploadService';
+import { uploadTempImage } from '@/domains/shared';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   AIFeatureKey,

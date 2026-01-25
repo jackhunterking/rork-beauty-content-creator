@@ -33,7 +33,7 @@ import {
 import { 
   cleanupTempFiles, 
   cleanupOldTempFiles 
-} from "@/services/tempCleanupService";
+} from "@/domains/shared";
 import { usePostHog } from "posthog-react-native";
 import { useScreenTracking } from "@/hooks/useScreenTracking";
 import { prewarmFontCatalog } from "@/services/googleFontsService";

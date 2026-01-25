@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { Image as ExpoImage } from 'expo-image';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { decode } from 'base64-arraybuffer';
+import type { Draft, PortfolioItem } from '@/types';
 
 // ============================================
 // Constants
@@ -64,11 +65,93 @@ export function isLocalFile(uri: string | null | undefined): boolean {
 }
 
 /**
- * Add cache bust parameter to a URL
+ * Add cache-busting parameter to a local file URI
+ * 
+ * Only applies to local file:// URIs. Remote URLs are returned unchanged
+ * as they have proper HTTP cache headers.
+ * 
+ * @param uri - The file URI (can be local file:// or remote http(s)://)
+ * @param version - Version identifier (timestamp string, number, or Date)
+ * @returns URI with cache-busting parameter for local files, unchanged for remote
  */
-export function withCacheBust(uri: string, version: string): string {
-  const separator = uri.includes('?') ? '&' : '?';
-  return `${uri}${separator}v=${version}`;
+export function withCacheBust(
+  uri: string | null | undefined, 
+  version: string | number | Date
+): string | null {
+  if (!uri) return null;
+  
+  // Only add cache busting to local files
+  // Remote URLs have HTTP cache headers and don't need this
+  if (!uri.startsWith('file://')) {
+    return uri;
+  }
+  
+  // Convert version to timestamp number
+  let versionTimestamp: number;
+  if (typeof version === 'string') {
+    versionTimestamp = new Date(version).getTime();
+  } else if (version instanceof Date) {
+    versionTimestamp = version.getTime();
+  } else {
+    versionTimestamp = version;
+  }
+  
+  // Handle invalid dates - fallback to current time
+  if (isNaN(versionTimestamp)) {
+    versionTimestamp = Date.now();
+  }
+  
+  return `${uri}?v=${versionTimestamp}`;
+}
+
+/**
+ * Get the best available preview URI for a draft with cache busting applied
+ * 
+ * Priority order:
+ * 1. localPreviewPath (local file with overlays)
+ * 2. renderedPreviewUrl (Templated.io URL)
+ * 3. beforeImageUrl (legacy)
+ * 4. afterImageUrl (legacy)
+ * 5. First image from capturedImageUrls
+ * 
+ * Cache busting is automatically applied to local files using the draft's updatedAt.
+ * 
+ * @param draft - The draft object
+ * @returns Cache-busted URI or null if no preview available
+ */
+export function getDraftPreviewUri(draft: Draft): string | null {
+  let uri: string | null = null;
+  
+  // Priority: localPreviewPath > renderedPreviewUrl > captured images
+  if (draft.localPreviewPath) {
+    uri = draft.localPreviewPath;
+  } else if (draft.renderedPreviewUrl) {
+    uri = draft.renderedPreviewUrl;
+  } else if (draft.beforeImageUrl) {
+    uri = draft.beforeImageUrl;
+  } else if (draft.afterImageUrl) {
+    uri = draft.afterImageUrl;
+  } else if (draft.capturedImageUrls) {
+    const firstImage = Object.values(draft.capturedImageUrls)[0];
+    if (firstImage) {
+      uri = firstImage;
+    }
+  }
+  
+  // Apply cache busting using the draft's updatedAt timestamp
+  return withCacheBust(uri, draft.updatedAt);
+}
+
+/**
+ * Get cache-busted URI for a portfolio item preview
+ * 
+ * @param item - Portfolio item with imageUrl and createdAt
+ * @returns Cache-busted URI
+ */
+export function getPortfolioPreviewUri(item: PortfolioItem): string {
+  // Prefer local path if available, otherwise use remote URL
+  const uri = item.localPath || item.imageUrl;
+  return withCacheBust(uri, item.createdAt) || item.imageUrl;
 }
 
 // ============================================
@@ -194,6 +277,58 @@ export async function uploadTempImage(
 }
 
 /**
+ * Upload a captured image to Supabase temp storage immediately after capture
+ * 
+ * This is the cloud-first approach: upload immediately after camera capture
+ * to get a durable Supabase URL. This eliminates "file not found" errors
+ * caused by iOS deleting temporary camera files.
+ * 
+ * This is functionally identical to uploadTempImage but with a more
+ * descriptive name for the capture flow.
+ * 
+ * @param localUri - Local file URI from camera/image picker (file://)
+ * @param slotId - Slot identifier for organizing the upload
+ * @returns Public Supabase URL of the uploaded image
+ * @throws Error if upload fails
+ */
+export async function uploadCapturedImage(
+  localUri: string,
+  slotId: string
+): Promise<string> {
+  return uploadTempImage(localUri, slotId);
+}
+
+/**
+ * Upload multiple slot images to temp storage in parallel
+ * Returns a map of slot IDs to public URLs
+ * 
+ * @param slotImages - Map of slot ID to local URI
+ * @param sessionId - Optional session ID for grouping
+ * @returns Map of slot ID to public URL
+ */
+export async function uploadMultipleTempImages(
+  slotImages: Record<string, string>,
+  sessionId?: string
+): Promise<Record<string, string>> {
+  const session = sessionId || getSessionId();
+  const results: Record<string, string> = {};
+
+  // Upload all images in parallel
+  const uploadPromises = Object.entries(slotImages).map(async ([slotId, localUri]) => {
+    const publicUrl = await uploadTempImage(localUri, slotId, session);
+    return { slotId, publicUrl };
+  });
+
+  const uploadResults = await Promise.all(uploadPromises);
+
+  for (const { slotId, publicUrl } of uploadResults) {
+    results[slotId] = publicUrl;
+  }
+
+  return results;
+}
+
+/**
  * Upload an image to permanent drafts storage
  * 
  * @param draftId - The draft ID
@@ -267,6 +402,27 @@ export async function clearAllCache(): Promise<void> {
   } catch (error) {
     console.warn('[ImageService] Failed to clear cache:', error);
   }
+}
+
+/**
+ * Alias for clearAllCache - for backward compatibility
+ * Call this when templates are updated to ensure fresh images are loaded.
+ */
+export async function clearAllImageCache(): Promise<void> {
+  return clearAllCache();
+}
+
+/**
+ * Clear cache for a specific template.
+ * 
+ * Note: expo-image doesn't support selective cache clearing by key,
+ * so this clears all cached images. Use sparingly.
+ * 
+ * @param templateId - The template ID that was updated
+ */
+export async function clearCacheForTemplate(templateId: string): Promise<void> {
+  console.log(`[ImageService] Clearing cache for template: ${templateId}`);
+  await clearAllCache();
 }
 
 /**
@@ -386,6 +542,63 @@ export async function cleanupOldTempFiles(maxAgeMs: number = 30 * 60 * 1000): Pr
 }
 
 /**
+ * Clean up a specific temp file by URL
+ * 
+ * @param publicUrl - The public URL of the temp image
+ */
+export async function cleanupTempFile(publicUrl: string): Promise<void> {
+  try {
+    // Extract file path from public URL
+    const url = new URL(publicUrl);
+    const pathParts = url.pathname.split('/');
+    // Path format: /storage/v1/object/public/temp-uploads/session_xxx/slotId_xxx.jpg
+    const bucketIndex = pathParts.indexOf(TEMP_BUCKET_NAME);
+    if (bucketIndex === -1) {
+      console.warn('[ImageService] Invalid temp file URL:', publicUrl);
+      return;
+    }
+    
+    const filePath = pathParts.slice(bucketIndex + 1).join('/');
+    
+    const { error } = await supabase.storage
+      .from(TEMP_BUCKET_NAME)
+      .remove([filePath]);
+
+    if (error) {
+      console.error('[ImageService] Error deleting temp file:', error);
+    }
+  } catch (error) {
+    console.error('[ImageService] Cleanup temp file error:', error);
+  }
+}
+
+/**
+ * Clean up captured images when a project is discarded without saving
+ * This should be called when resetProject() is invoked in AppContext
+ * 
+ * @param sessionId - Optional session ID to clean up (uses current if not provided)
+ */
+export async function cleanupCapturedImages(sessionId?: string): Promise<void> {
+  const session = sessionId || currentSessionId;
+  if (!session) {
+    console.log('[ImageService] No captured images to clean up (no session)');
+    return;
+  }
+
+  const urls = sessionUploadedUrls.get(session);
+  if (!urls || urls.length === 0) {
+    console.log('[ImageService] No captured images tracked for cleanup');
+    resetSession();
+    return;
+  }
+
+  console.log(`[ImageService] Cleaning up ${urls.length} captured images from discarded project`);
+  
+  // Clean up the entire session (more efficient than individual file deletion)
+  await cleanupSession(session);
+}
+
+/**
  * Clean up temp uploads session from Supabase storage
  */
 export async function cleanupSession(sessionId?: string): Promise<void> {
@@ -430,6 +643,13 @@ export function clearTracking(): void {
 }
 
 // ============================================
+// Constants Export
+// ============================================
+
+/** Bucket name for temp uploads - exported for external use */
+export const TEMP_UPLOADS_BUCKET = TEMP_BUCKET_NAME;
+
+// ============================================
 // Default Export
 // ============================================
 
@@ -438,6 +658,8 @@ export const imageService = {
   isCloudStorageUrl,
   isLocalFile,
   withCacheBust,
+  getDraftPreviewUri,
+  getPortfolioPreviewUri,
 
   // Session management
   generateSessionId,
@@ -448,10 +670,14 @@ export const imageService = {
 
   // Upload
   uploadTempImage,
+  uploadCapturedImage,
+  uploadMultipleTempImages,
   uploadDraftImage,
 
   // Cache
   clearAllCache,
+  clearAllImageCache,
+  clearCacheForTemplate,
   clearMemoryCache,
 
   // Cleanup
@@ -459,6 +685,8 @@ export const imageService = {
   untrackTempFile,
   cleanupTempFiles,
   cleanupOldTempFiles,
+  cleanupTempFile,
+  cleanupCapturedImages,
   cleanupSession,
   getTrackedFilesCount,
   clearTracking,

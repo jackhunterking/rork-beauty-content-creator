@@ -32,7 +32,7 @@ import { useProjects } from '@/domains/projects';
 import { useTemplates } from '@/domains/templates';
 import { useApp } from '@/contexts/AppContext';
 import { Draft, TemplateFormat } from '@/types';
-import { getDraftPreviewUri } from '@/services/imageUtils';
+import { getDraftPreviewUri } from '@/domains/shared';
 import { getAllFormats, getDefaultFormat, getFormatById, getFormatLabel, FormatConfig } from '@/constants/formats';
 import { useResponsive } from '@/hooks/useResponsive';
 import { getProjectDisplayName } from '@/utils/projectName';

@@ -35,7 +35,7 @@ import {
   replaceBackgroundWithGradient,
   AIProcessingProgress,
 } from '@/services/aiService';
-import { uploadTempImage } from '@/services/tempUploadService';
+import { uploadTempImage } from '@/domains/shared';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import { 

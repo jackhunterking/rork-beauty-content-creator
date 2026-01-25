@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Template, TemplateRow } from '@/types';
 import { mapRowToTemplate, fetchTemplates } from '@/services/templateService';
-import { clearCacheForTemplate } from '@/services/imageCacheService';
+import { clearCacheForTemplate } from '@/domains/shared';
 import { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 interface UseRealtimeTemplatesResult {

@@ -4,7 +4,7 @@ import { uploadDraftImage, deleteDraftImages, copyDraftImages } from './storageS
 import { getLocalPreviewPath, deleteDirectory, getDraftDirectory, copyFile, getCachedRenderPath, createDraftDirectories } from './localStorageService';
 import { copyOverlays } from './overlayPersistenceService';
 import { getDuplicateProjectName } from '@/utils/projectName';
-import { cleanupTempFile, TEMP_UPLOADS_BUCKET } from './tempUploadService';
+import { cleanupTempFile, TEMP_UPLOADS_BUCKET } from '@/domains/shared';
 
 /**
  * Helper to get the current authenticated user ID

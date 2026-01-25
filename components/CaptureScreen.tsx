@@ -22,7 +22,7 @@ import {
 } from "@/utils/imageProcessing";
 import { ImageSlot, FramePositionInfo } from "@/types";
 import { AvailableArea, calculateFrameForAvailableArea } from "@/utils/frameCalculator";
-import { uploadCapturedImage } from "@/services/tempUploadService";
+import { uploadCapturedImage } from "@/domains/shared";
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -601,10 +601,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
             ) : (
               // Normal preview state - Retake/Continue layout
               <>
-                <Text style={styles.adjustmentInstructions}>
-                  Pinch to zoom • Drag to position
-                </Text>
-                
                 {/* Primary Actions Row - Retake and Continue */}
                 <View style={styles.previewActions}>
                   <TouchableOpacity 
@@ -756,13 +752,6 @@ const styles = StyleSheet.create({
   },
   previewActionsContainer: {
     paddingBottom: 40,
-  },
-  adjustmentInstructions: {
-    textAlign: 'center',
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 16,
   },
   previewActions: {
     flexDirection: 'row',

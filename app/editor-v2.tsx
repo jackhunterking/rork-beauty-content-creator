@@ -44,7 +44,7 @@ import { TemplateCanvas } from '@/components/TemplateCanvas';
 import { extractSlots, getSlotById, hasValidCapturedImage, scaleSlots, getCapturedSlotCount } from '@/utils/slotParser';
 import { applyAdjustmentsAndCrop, ensureLocalUri } from '@/utils/imageProcessing';
 import { renderPreview } from '@/services/renderService';
-import { uploadTempImage } from '@/services/tempUploadService';
+import { uploadTempImage } from '@/domains/shared';
 import {
   CropToolbar,
   EditorMainToolbar,
@@ -87,7 +87,7 @@ import {
 } from '@/components/overlays';
 import { saveOverlays, loadOverlays } from '@/services/overlayPersistenceService';
 import { saveLocalPreviewFile, createDraftDirectories } from '@/services/localStorageService';
-import { cleanupTempFiles, trackTempFile, untrackTempFile } from '@/services/tempCleanupService';
+import { cleanupTempFiles, trackTempFile, untrackTempFile } from '@/domains/shared';
 
 export default function EditorV2Screen() {
   const router = useRouter();

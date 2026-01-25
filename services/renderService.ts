@@ -4,7 +4,7 @@ import {
   uploadMultipleTempImages, 
   cleanupSession, 
   generateSessionId,
-} from './tempUploadService';
+} from '@/domains/shared';
 import { Overlay } from '@/types/overlays';
 
 /**

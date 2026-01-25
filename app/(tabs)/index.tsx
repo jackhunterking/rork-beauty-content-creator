@@ -8,7 +8,7 @@ import Colors from "@/constants/colors";
 import { useTemplates } from "@/domains/templates";
 import { useApp } from "@/contexts/AppContext";
 import { Template, TemplateFormat } from "@/types";
-import { clearAllImageCache } from "@/services/imageCacheService";
+import { clearAllImageCache } from "@/domains/shared";
 import { getAllFormats, getFormatById, FormatConfig } from "@/constants/formats";
 import { useResponsive, getResponsiveTileHeight } from "@/hooks/useResponsive";
 

@@ -16,7 +16,7 @@ import { Template, CapturedImages, Slot } from '@/types';
 import { SlotRegion } from './SlotRegion';
 import { extractSlots, scaleSlots } from '@/utils/slotParser';
 import Colors from '@/constants/colors';
-import { withCacheBust } from '@/services/imageUtils';
+import { withCacheBust } from '@/domains/shared';
 import { LayeredCanvas } from './LayeredCanvas';
 import { getGradientPoints } from '@/constants/gradients';
 import { WatermarkOverlay } from './WatermarkOverlay';

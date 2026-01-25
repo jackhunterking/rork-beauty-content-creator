@@ -26,7 +26,7 @@ import { captureRef } from 'react-native-view-shot';
 import Colors from '@/constants/colors';
 import { getGradientPoints } from '@/constants/gradients';
 import { enhanceQuality, AIProcessingProgress } from '@/services/aiService';
-import { uploadTempImage } from '@/services/tempUploadService';
+import { uploadTempImage } from '@/domains/shared';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 import type { MediaAsset } from '@/types';

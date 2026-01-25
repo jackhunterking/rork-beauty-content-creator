@@ -23,7 +23,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 
 import Colors from '@/constants/colors';
 import { removeBackground, AIProcessingProgress } from '@/services/aiService';
-import { uploadTempImage } from '@/services/tempUploadService';
+import { uploadTempImage } from '@/domains/shared';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
 

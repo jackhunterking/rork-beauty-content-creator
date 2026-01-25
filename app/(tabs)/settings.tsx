@@ -29,12 +29,13 @@ import {
   X,
   Cloud,
   CloudOff,
+  Gift,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
 import * as Application from 'expo-application';
 import Colors from "@/constants/colors";
-import { getTierDisplayInfo, getTierMemberLabel, isPaidTier } from "@/constants/tiers";
+import { getTierDisplayInfo } from "@/constants/tiers";
 import { usePremiumStatus, usePremiumFeature, useRestorePurchases, useTieredSubscription } from "@/hooks/usePremiumStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { submitFeedback } from "@/services/feedbackService";
@@ -370,25 +371,35 @@ export default function SettingsScreen() {
           {/* Subscription Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Subscription</Text>
-            <View style={styles.card}>
+            <View style={[
+              styles.card, 
+              isSubscribed && { 
+                borderColor: tierInfo.color, 
+                borderWidth: 2,
+              }
+            ]}>
               {isSubscribed ? (
-                // Show actual tier (Pro or Studio) with correct colors
+                // Show current plan card matching membership page
                 <>
-                  <View style={styles.subscriptionActive}>
-                    <View style={[styles.subscriptionIcon, { backgroundColor: tierInfo.backgroundColor }]}>
-                      <tierInfo.icon size={24} color={tierInfo.color} />
-                    </View>
-                    <View style={styles.subscriptionInfo}>
-                      <Text style={styles.subscriptionStatus}>{getTierMemberLabel(tier)}</Text>
-                      <Text style={styles.subscriptionDetail}>{tierInfo.description}</Text>
-                    </View>
-                    <View style={styles.activeBadge}>
-                      <Check size={14} color={Colors.light.success} />
-                      <Text style={styles.activeBadgeText}>Active</Text>
+                  <View style={styles.currentPlanContainer}>
+                    <Text style={styles.currentPlanLabel}>Current Plan</Text>
+                    <View style={styles.planHeader}>
+                      {tierInfo.icon && (
+                        <tierInfo.icon size={20} color={tierInfo.color} />
+                      )}
+                      <Text style={[styles.planName, { color: tierInfo.color }]}>
+                        {tierInfo.name}
+                      </Text>
+                      {source === 'complimentary' && (
+                        <View style={styles.complimentaryBadge}>
+                          <Gift size={10} color={Colors.light.accent} />
+                          <Text style={styles.complimentaryBadgeText}>Complimentary</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                   
-                  {/* Single "Manage Membership" button - uses tier color */}
+                  {/* Manage Membership button - uses tier color */}
                   <TouchableOpacity 
                     style={[styles.manageMembershipButton, { backgroundColor: tierInfo.color }]}
                     onPress={() => router.push('/membership')}
@@ -870,12 +881,43 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   
-  // Subscription styles
-  subscriptionActive: {
+  // Subscription styles - matches membership page
+  currentPlanContainer: {
+    padding: 16,
+    gap: 8,
+  },
+  currentPlanLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.light.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  planHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 14,
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  planName: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: Colors.light.text,
+  },
+  complimentaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(201, 168, 124, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  complimentaryBadgeText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: Colors.light.accent,
+    textTransform: 'uppercase',
   },
   manageMembershipButton: {
     flexDirection: 'row',
@@ -921,20 +963,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textSecondary,
     marginTop: 2,
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(90, 171, 97, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  activeBadgeText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: Colors.light.success,
   },
   
   // Subscription details styles

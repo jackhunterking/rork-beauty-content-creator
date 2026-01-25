@@ -12,7 +12,7 @@ import { extractSlots } from '@/utils/slotParser';
 import { initializeLocalStorage } from '@/services/localStorageService';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { getDefaultFormat } from '@/constants/formats';
-import { cleanupCapturedImages, getCurrentSessionId, resetSession, generateSessionId } from '@/services/tempUploadService';
+import { cleanupCapturedImages, getCurrentSessionId, resetSession, generateSessionId } from '@/domains/shared';
 
 const STORAGE_KEYS = {
   BRAND_KIT: 'resulta_brand_kit',
