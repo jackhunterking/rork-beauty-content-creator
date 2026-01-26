@@ -373,8 +373,8 @@
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
-    // Templated.io API (for fetching template layers)
-    const TEMPLATED_API_KEY = 'b0b73cf7dd304321c9eed6ad0ad4303ab21b1f09b47a5ab6fb6d2f9e51d7fa15';
+    // Edge function for fetching template layers (avoids CORS issues)
+    const FETCH_LAYERS_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/fetch-template-layers`;
     const GOOGLE_FONTS_API_KEY = 'AIzaSyCfCq6uQdUk35EosgGc-aSEIK9sCq4BVFY';
 
     let currentMode = 'new';
@@ -1105,22 +1105,23 @@
         // Ensure Google Fonts catalog is loaded
         await fetchGoogleFontsCatalog();
         
-        // Fetch template layers from Templated.io
-        const layersUrl = `https://api.templated.io/v1/template/${templatedId}/layers?includeLockedLayers=true`;
-        const response = await fetch(layersUrl, {
-          method: 'GET',
+        // Fetch template layers via edge function (avoids CORS issues)
+        const response = await fetch(FETCH_LAYERS_FUNCTION_URL, {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${TEMPLATED_API_KEY}`,
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
           },
+          body: JSON.stringify({ templated_id: templatedId }),
         });
         
-        if (!response.ok) {
-          throw new Error(`Failed to fetch template: ${response.status}`);
+        const result = await response.json();
+        
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || `Failed to fetch template: ${response.status}`);
         }
         
-        const layersData = await response.json();
-        fetchedLayers = Array.isArray(layersData) ? layersData : layersData.layers || [];
+        fetchedLayers = result.layers || [];
         
         console.log(`Fetched ${fetchedLayers.length} layers from Templated.io`);
         
