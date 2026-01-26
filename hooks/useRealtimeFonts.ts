@@ -26,11 +26,13 @@ export interface CustomFont {
   fontFamily: string;      // Exact name from Templated.io (e.g., "Sacco-SemiBoldCondensed")
   displayName: string | null;
   source: FontSource;      // Where to load the font from
-  fileUrl: string | null;  // Supabase Storage URL (for 'supabase' source)
+  fileUrl: string | null;  // Supabase Storage URL for regular weight (for 'supabase' source)
+  fileUrlBold: string | null;  // Supabase Storage URL for bold weight (700)
   fileFormat: 'ttf' | 'otf' | 'woff' | 'woff2' | null;
   weights: string[];       // Available weights (e.g., ['400', '700'])
   isActive: boolean;       // Whether font is ready to use
   defaultWeight: string;   // Default weight to use (e.g., '400', '700')
+  googleFontName: string | null; // Official Google Fonts family name for fallback
   createdAt: string;
   updatedAt: string;
 }
@@ -42,10 +44,12 @@ interface CustomFontRow {
   display_name: string | null;
   source: FontSource;
   file_url: string | null;
+  file_url_bold: string | null;
   file_format: string | null;
   weights: string[] | null;
   is_active: boolean;
   default_weight: string | null;
+  google_font_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -73,10 +77,12 @@ function mapRowToFont(row: CustomFontRow): CustomFont {
     displayName: row.display_name,
     source: row.source,
     fileUrl: row.file_url,
+    fileUrlBold: row.file_url_bold,
     fileFormat: row.file_format as CustomFont['fileFormat'],
     weights: row.weights || ['400'],
     isActive: row.is_active,
     defaultWeight: row.default_weight || '400',
+    googleFontName: row.google_font_name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

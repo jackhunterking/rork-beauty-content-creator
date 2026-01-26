@@ -3,14 +3,36 @@
  * 
  * Handles SVG file selection, parsing, and conversion to PNG.
  * Used for adding SVG logos to the editor and Brand Kit.
+ * 
+ * Note: expo-document-picker requires a native rebuild to work.
+ * The picker functions gracefully handle the case when the module isn't available.
  */
 
-import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { captureRef } from 'react-native-view-shot';
 import React from 'react';
 import { View } from 'react-native';
 import { SvgXml } from 'react-native-svg';
+
+// Lazy load DocumentPicker to avoid crashes when native module isn't available
+let DocumentPicker: typeof import('expo-document-picker') | null = null;
+let documentPickerAvailable = false;
+
+try {
+  DocumentPicker = require('expo-document-picker');
+  documentPickerAvailable = true;
+} catch (e) {
+  console.warn('[SVGProcessor] expo-document-picker not available. Rebuild the app to enable SVG file imports.');
+  documentPickerAvailable = false;
+}
+
+/**
+ * Check if SVG file picking is available
+ * Returns false if the native module hasn't been rebuilt
+ */
+export function isSVGPickerAvailable(): boolean {
+  return documentPickerAvailable;
+}
 
 // ============================================
 // Types
@@ -109,8 +131,18 @@ export function isValidSVG(content: string): boolean {
 
 /**
  * Open document picker to select an SVG file
+ * 
+ * Note: Requires native rebuild after installing expo-document-picker
  */
 export async function pickSVGFile(): Promise<SVGPickerResult> {
+  // Check if document picker is available
+  if (!documentPickerAvailable || !DocumentPicker) {
+    return {
+      success: false,
+      error: 'SVG import requires an app rebuild. Please rebuild the app to enable this feature.',
+    };
+  }
+
   try {
     const result = await DocumentPicker.getDocumentAsync({
       type: ['image/svg+xml', 'image/svg'],

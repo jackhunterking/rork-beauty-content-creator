@@ -46,7 +46,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Colors from '@/constants/colors';
 import { getBrandLogo, saveBrandLogo } from '@/services/brandKitService';
 import { LogoOverlay, LOGO_SIZE_CONSTRAINTS } from '@/types/overlays';
-import { pickSVGFile, parseSVGDimensions, getSVGRenderProps } from '@/utils/svgProcessor';
+import { pickSVGFile, parseSVGDimensions, getSVGRenderProps, isSVGPickerAvailable } from '@/utils/svgProcessor';
 
 interface BrandLogoData {
   uri: string;
@@ -458,7 +458,11 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
         <View style={styles.uploadOptionsRow}>
           {/* From Photos Button (PNG/JPEG) */}
           <TouchableOpacity
-            style={styles.uploadOptionButton}
+            style={[
+              styles.uploadOptionButton,
+              // Make full width if SVG not available
+              !isSVGPickerAvailable() && styles.uploadOptionButtonFullWidth,
+            ]}
             onPress={handlePickImage}
             disabled={isLoading || isSaving}
             activeOpacity={0.7}
@@ -468,32 +472,38 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
             ) : (
               <>
                 <FileImage size={20} color={Colors.light.surface} />
-                <Text style={styles.uploadButtonText}>From Photos</Text>
+                <Text style={styles.uploadButtonText}>
+                  {isSVGPickerAvailable() ? 'From Photos' : 'Upload Logo'}
+                </Text>
               </>
             )}
           </TouchableOpacity>
 
-          {/* From Files Button (SVG) */}
-          <TouchableOpacity
-            style={[styles.uploadOptionButton, styles.uploadOptionButtonSecondary]}
-            onPress={handlePickSVG}
-            disabled={isLoading || isSaving}
-            activeOpacity={0.7}
-          >
-            {svgState.isProcessing ? (
-              <ActivityIndicator size="small" color={Colors.light.accent} />
-            ) : (
-              <>
-                <FolderOpen size={20} color={Colors.light.accent} />
-                <Text style={styles.uploadButtonTextSecondary}>SVG File</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {/* From Files Button (SVG) - only show if available */}
+          {isSVGPickerAvailable() && (
+            <TouchableOpacity
+              style={[styles.uploadOptionButton, styles.uploadOptionButtonSecondary]}
+              onPress={handlePickSVG}
+              disabled={isLoading || isSaving}
+              activeOpacity={0.7}
+            >
+              {svgState.isProcessing ? (
+                <ActivityIndicator size="small" color={Colors.light.accent} />
+              ) : (
+                <>
+                  <FolderOpen size={20} color={Colors.light.accent} />
+                  <Text style={styles.uploadButtonTextSecondary}>SVG File</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Helper text */}
         <Text style={styles.helperText}>
-          PNG files preserve transparency. SVG files will be converted to PNG.
+          {isSVGPickerAvailable() 
+            ? 'PNG files preserve transparency. SVG files will be converted to PNG.'
+            : 'PNG files with transparency are fully supported.'}
         </Text>
       </View>
     );
@@ -717,6 +727,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.surfaceSecondary,
     borderWidth: 1.5,
     borderColor: Colors.light.accent,
+  },
+  uploadOptionButtonFullWidth: {
+    flex: undefined,
+    width: '100%',
   },
   uploadButton: {
     flexDirection: 'row',

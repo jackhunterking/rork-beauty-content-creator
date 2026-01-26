@@ -64,48 +64,121 @@ const WEIGHT_TO_SUFFIX: Record<string, string> = {
 };
 
 /**
- * Load a font from Supabase Storage
+ * Load a font from Supabase Storage with proper weight support
  * 
- * For variable fonts (fonts with multiple weights in one file),
- * we register the font with weight-specific names to ensure fontWeight works.
+ * Strategy:
+ * 1. Load regular weight from fileUrl
+ * 2. Load bold weight from fileUrlBold if available
+ * 3. If bold file not available but googleFontName is set, try Google Fonts fallback
  * 
- * @param fontFamily - The font family name (used as the font name in RN)
- * @param fileUrl - The Supabase Storage URL for the font file
- * @param weights - Available weights for this font (e.g., ['400', '700'])
+ * @param fontInfo - Complete font info including weight-specific URLs and googleFontName
  */
-async function loadSupabaseFont(
-  fontFamily: string, 
-  fileUrl: string, 
-  weights: string[] = ['400']
-): Promise<boolean> {
+async function loadSupabaseFont(fontInfo: CustomFont): Promise<boolean> {
+  const { fontFamily, fileUrl, fileUrlBold, weights = ['400'], googleFontName } = fontInfo;
+  
   try {
-    console.log(`[UnifiedFont] Loading from Supabase: ${fontFamily} (weights: ${weights.join(', ')})`);
+    console.log(`[UnifiedFont] Loading from Supabase: ${fontFamily}`);
+    console.log(`[UnifiedFont]   Regular URL: ${fileUrl ? 'yes' : 'no'}`);
+    console.log(`[UnifiedFont]   Bold URL: ${fileUrlBold ? 'yes' : 'no'}`);
+    console.log(`[UnifiedFont]   Google Font fallback: ${googleFontName || 'none'}`);
+    console.log(`[UnifiedFont]   Weights needed: ${weights.join(', ')}`);
     
-    // For fonts with multiple weights, register with both base name and weight-specific names
-    // This ensures fontWeight style works in React Native
-    const fontsToLoad: Record<string, string> = {
-      // Base name - will work with fontWeight style on iOS
-      [fontFamily]: fileUrl,
-    };
+    const fontsToLoad: Record<string, string> = {};
+    const needsGoogleFallback: string[] = [];
     
-    // Also register weight-specific variants for better compatibility
-    // Format: FontFamily_700 for bold, etc.
+    // Load regular weight
+    if (fileUrl) {
+      fontsToLoad[fontFamily] = fileUrl;
+      console.log(`[UnifiedFont]   → ${fontFamily} (regular) from Supabase`);
+    }
+    
+    // For each non-400 weight, check if we have a specific file
     for (const weight of weights) {
-      if (weight !== '400') {
-        // Use underscore format for weight variants (e.g., LeagueSpartan_700)
-        fontsToLoad[`${fontFamily}_${weight}`] = fileUrl;
+      if (weight === '400') continue;
+      
+      const weightFontName = `${fontFamily}_${weight}`;
+      
+      if (weight === '700' && fileUrlBold) {
+        // Load bold from Supabase
+        fontsToLoad[weightFontName] = fileUrlBold;
+        console.log(`[UnifiedFont]   → ${weightFontName} from Supabase (bold file)`);
+      } else {
+        // Mark this weight as needing Google Fonts fallback
+        needsGoogleFallback.push(weight);
+        console.log(`[UnifiedFont]   → ${weightFontName} needs Google Fonts fallback`);
       }
     }
     
-    console.log(`[UnifiedFont] Registering ${Object.keys(fontsToLoad).length} font variants for ${fontFamily}`);
+    // Load Supabase fonts
+    if (Object.keys(fontsToLoad).length > 0) {
+      await Font.loadAsync(fontsToLoad);
+      console.log(`[UnifiedFont] ✓ Loaded ${Object.keys(fontsToLoad).length} variant(s) from Supabase`);
+    }
     
-    // expo-font can load fonts from remote URLs
-    await Font.loadAsync(fontsToLoad);
+    // Try Google Fonts fallback for missing weights (using admin-configured mapping)
+    if (needsGoogleFallback.length > 0 && googleFontName) {
+      console.log(`[UnifiedFont] Trying Google Fonts fallback: "${googleFontName}" for weights: ${needsGoogleFallback.join(', ')}`);
+      
+      try {
+        // Load missing weights from Google Fonts
+        const success = await loadGoogleFontWithMapping(fontFamily, googleFontName, needsGoogleFallback);
+        if (success) {
+          console.log(`[UnifiedFont] ✓ Loaded missing weights from Google Fonts (${googleFontName})`);
+        }
+      } catch (err) {
+        console.warn(`[UnifiedFont] Google Fonts fallback failed for ${googleFontName}:`, err);
+      }
+    } else if (needsGoogleFallback.length > 0) {
+      console.warn(`[UnifiedFont] No Google Font linked for ${fontFamily}, missing weights: ${needsGoogleFallback.join(', ')}. Use admin panel to link a Google Font.`);
+    }
     
-    console.log(`[UnifiedFont] ✓ Loaded from Supabase: ${fontFamily} with ${weights.length} weight(s)`);
     return true;
   } catch (error) {
     console.error(`[UnifiedFont] Failed to load from Supabase: ${fontFamily}`, error);
+    return false;
+  }
+}
+
+/**
+ * Load specific weights from Google Fonts but register under Templated font name
+ * This allows using Google Fonts as a fallback for missing weight files
+ */
+async function loadGoogleFontWithMapping(
+  templatedFontName: string,
+  googleFontName: string, 
+  weights: string[]
+): Promise<boolean> {
+  try {
+    // Import dynamically to avoid circular dependency
+    const { getFontInfo } = await import('./googleFontsService');
+    
+    const info = await getFontInfo(googleFontName);
+    if (!info) {
+      console.warn(`[UnifiedFont] Google Font not found: ${googleFontName}`);
+      return false;
+    }
+    
+    const fontsToLoad: Record<string, string> = {};
+    
+    for (const weight of weights) {
+      const variantName = weight === '400' ? 'regular' : weight;
+      const url = info.files[variantName];
+      
+      if (url) {
+        // Register under the Templated font name with weight suffix
+        const fontName = weight === '400' ? templatedFontName : `${templatedFontName}_${weight}`;
+        fontsToLoad[fontName] = url.replace('http://', 'https://');
+      }
+    }
+    
+    if (Object.keys(fontsToLoad).length > 0) {
+      await Font.loadAsync(fontsToLoad);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error(`[UnifiedFont] Failed to load Google Font mapping:`, error);
     return false;
   }
 }
@@ -161,10 +234,10 @@ export async function loadFont(
             break;
             
           case 'supabase':
-            // Load from Supabase Storage
+            // Load from Supabase Storage with weight-specific URLs
             if (fontInfo.fileUrl && fontInfo.isActive) {
-              // Pass weights for variable font support
-              success = await loadSupabaseFont(fontFamily, fontInfo.fileUrl, fontInfo.weights || ['400']);
+              // Pass complete font info for proper weight handling
+              success = await loadSupabaseFont(fontInfo);
             } else if (!fontInfo.isActive) {
               console.warn(`[UnifiedFont] Font ${fontFamily} is not active (file not uploaded yet)`);
               success = false;

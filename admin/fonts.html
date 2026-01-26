@@ -31,6 +31,47 @@
       border-color: #E91E63;
       background-color: rgba(233, 30, 99, 0.05);
     }
+    /* Google Fonts Autocomplete */
+    .autocomplete-container {
+      position: relative;
+    }
+    .autocomplete-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      z-index: 50;
+      margin-top: 4px;
+    }
+    .dark .autocomplete-dropdown {
+      background: #374151;
+      border-color: #4b5563;
+    }
+    .autocomplete-item {
+      padding: 10px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .autocomplete-item:hover {
+      background: #f3f4f6;
+    }
+    .dark .autocomplete-item:hover {
+      background: #4b5563;
+    }
+    .autocomplete-item.selected {
+      background: #fce7f3;
+    }
+    .dark .autocomplete-item.selected {
+      background: #831843;
+    }
   </style>
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 min-h-screen">
@@ -234,6 +275,33 @@
                 For variable fonts, select which weight to use as default when rendering text.
               </p>
             </div>
+            
+            <!-- Google Fonts Fallback (for missing weight files) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-green-50 dark:bg-green-900/20">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Google Fonts Fallback</p>
+                <span class="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300">🌐 Recommended</span>
+              </div>
+              <p class="text-xs text-gray-600 dark:text-gray-400 mb-3">
+                Link to a Google Font for automatic weight loading. If you don't upload a Bold file, the app will load the bold weight from Google Fonts.
+              </p>
+              <div class="autocomplete-container">
+                <input 
+                  type="text" 
+                  id="googleFontSearch"
+                  placeholder="Search Google Fonts (e.g., League Spartan)"
+                  class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                  autocomplete="off"
+                >
+                <div id="googleFontDropdown" class="autocomplete-dropdown hidden"></div>
+              </div>
+              <div id="selectedGoogleFont" class="hidden mt-3 p-2 rounded-lg bg-green-100 dark:bg-green-800/30 flex items-center justify-between">
+                <span class="text-sm text-green-800 dark:text-green-200">
+                  <span class="font-medium">Linked:</span> <span id="selectedGoogleFontName"></span>
+                </span>
+                <button onclick="clearGoogleFont()" class="text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200 text-sm">✕ Remove</button>
+              </div>
+            </div>
           </div>
           
           <div id="uploadProgress" class="hidden mt-4">
@@ -286,6 +354,10 @@
       italic: null,
       boldItalic: null
     };
+    
+    // Google Fonts catalog (cached)
+    let googleFontsCatalog = null;
+    let selectedGoogleFontName = null;
 
     // ============================================
     // Authentication
@@ -425,11 +497,14 @@
         const defaultWeight = font.default_weight || '400';
         const weightLabel = getWeightLabel(defaultWeight);
         
+        // Google Font fallback
+        const hasGoogleFallback = font.google_font_name;
+        
         return `
           <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
             <div class="flex items-center justify-between">
               <div class="flex-1">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-3 flex-wrap">
                   <p class="font-semibold text-gray-900 dark:text-white">${escapeHtml(font.font_family)}</p>
                   <span class="text-xs px-2 py-1 rounded-full ${isGoogle ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">
                     ${sourceLabel}
@@ -437,6 +512,11 @@
                   ${!isGoogle && defaultWeight !== '400' ? `
                     <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
                       Weight: ${weightLabel}
+                    </span>
+                  ` : ''}
+                  ${!isGoogle && hasGoogleFallback ? `
+                    <span class="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                      🔗 ${escapeHtml(font.google_font_name)}
                     </span>
                   ` : ''}
                 </div>
@@ -468,6 +548,7 @@
     function openUploadModal(fontFamily, fontId, fontData) {
       currentUploadFont = { fontFamily, fontId, fontData };
       pendingUploads = { regular: null, bold: null, italic: null, boldItalic: null };
+      selectedGoogleFontName = null;
       
       document.getElementById('uploadFontName').textContent = fontFamily;
       document.getElementById('uploadModal').classList.remove('hidden');
@@ -489,6 +570,18 @@
       // Set default weight from font data (default to '400' if not set)
       const defaultWeight = fontData?.default_weight || '400';
       document.getElementById('defaultWeightSelect').value = defaultWeight;
+      
+      // Show existing Google Font link
+      if (fontData?.google_font_name) {
+        selectedGoogleFontName = fontData.google_font_name;
+        document.getElementById('googleFontSearch').value = fontData.google_font_name;
+        document.getElementById('selectedGoogleFont').classList.remove('hidden');
+        document.getElementById('selectedGoogleFontName').textContent = fontData.google_font_name;
+      } else {
+        document.getElementById('googleFontSearch').value = '';
+        document.getElementById('selectedGoogleFont').classList.add('hidden');
+        document.getElementById('selectedGoogleFontName').textContent = '';
+      }
       
       // Enable save if regular already uploaded
       updateSaveButton();
@@ -629,6 +722,9 @@
         const selectedWeight = document.getElementById('defaultWeightSelect').value;
         updates.default_weight = selectedWeight;
         
+        // Include Google Font name (can be null to clear it)
+        updates.google_font_name = selectedGoogleFontName || null;
+        
         // Update database (always save since we at least have the default_weight)
         progressText.textContent = 'Saving to database...';
         
@@ -698,6 +794,101 @@
       };
       return weightLabels[weight] || weight;
     }
+
+    // ============================================
+    // Google Fonts Autocomplete
+    // ============================================
+    
+    const GOOGLE_FONTS_API_KEY = 'AIzaSyCfCq6uQdUk35EosgGc-aSEIK9sCq4BVFY';
+    
+    async function fetchGoogleFontsCatalog() {
+      if (googleFontsCatalog) return googleFontsCatalog;
+      
+      try {
+        const response = await fetch(`https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=${GOOGLE_FONTS_API_KEY}`);
+        const data = await response.json();
+        googleFontsCatalog = data.items || [];
+        console.log(`Loaded ${googleFontsCatalog.length} Google Fonts`);
+        return googleFontsCatalog;
+      } catch (err) {
+        console.error('Failed to fetch Google Fonts:', err);
+        return [];
+      }
+    }
+    
+    function searchGoogleFonts(query) {
+      if (!googleFontsCatalog || !query.trim()) return [];
+      
+      const lowerQuery = query.toLowerCase();
+      return googleFontsCatalog
+        .filter(font => font.family.toLowerCase().includes(lowerQuery))
+        .slice(0, 10); // Limit to 10 results
+    }
+    
+    // Setup autocomplete
+    document.getElementById('googleFontSearch').addEventListener('input', async (e) => {
+      const query = e.target.value;
+      const dropdown = document.getElementById('googleFontDropdown');
+      
+      if (query.length < 2) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+      
+      // Ensure catalog is loaded
+      await fetchGoogleFontsCatalog();
+      
+      const results = searchGoogleFonts(query);
+      
+      if (results.length === 0) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+      
+      dropdown.innerHTML = results.map(font => `
+        <div class="autocomplete-item" onclick="selectGoogleFont('${escapeHtml(font.family)}')">
+          <span class="text-lg">🔤</span>
+          <div>
+            <p class="font-medium text-gray-900 dark:text-white">${escapeHtml(font.family)}</p>
+            <p class="text-xs text-gray-500">${font.variants.length} variant(s) • ${font.category}</p>
+          </div>
+        </div>
+      `).join('');
+      
+      dropdown.classList.remove('hidden');
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      const dropdown = document.getElementById('googleFontDropdown');
+      const search = document.getElementById('googleFontSearch');
+      if (!search.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
+    
+    function selectGoogleFont(fontFamily) {
+      selectedGoogleFontName = fontFamily;
+      
+      // Update UI
+      document.getElementById('googleFontSearch').value = fontFamily;
+      document.getElementById('googleFontDropdown').classList.add('hidden');
+      document.getElementById('selectedGoogleFont').classList.remove('hidden');
+      document.getElementById('selectedGoogleFontName').textContent = fontFamily;
+      
+      // Enable save button
+      updateSaveButton();
+    }
+    
+    function clearGoogleFont() {
+      selectedGoogleFontName = null;
+      document.getElementById('googleFontSearch').value = '';
+      document.getElementById('selectedGoogleFont').classList.add('hidden');
+      document.getElementById('selectedGoogleFontName').textContent = '';
+    }
+    
+    // Prefetch Google Fonts catalog on page load
+    fetchGoogleFontsCatalog();
 
     // Dark mode detection
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
