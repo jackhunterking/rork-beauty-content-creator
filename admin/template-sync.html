@@ -373,9 +373,9 @@
 
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     
-    // Edge function for fetching template layers (avoids CORS issues)
+    // Edge functions for fetching data (avoids CORS issues and uses valid API keys from secrets)
     const FETCH_LAYERS_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/fetch-template-layers`;
-    const GOOGLE_FONTS_API_KEY = 'AIzaSyCfCq6uQdUk35EosgGc-aSEIK9sCq4BVFY';
+    const FETCH_GOOGLE_FONTS_URL = `${SUPABASE_URL}/functions/v1/fetch-google-fonts`;
 
     let currentMode = 'new';
     let selectedTemplateId = null;
@@ -1066,40 +1066,27 @@
       if (googleFontsCatalog && googleFontsCatalog.length > 0) return googleFontsCatalog;
       
       try {
-        console.log('[Google Fonts] Fetching catalog...');
-        const apiUrl = `https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=${GOOGLE_FONTS_API_KEY}`;
-        console.log('[Google Fonts] API URL:', apiUrl.replace(GOOGLE_FONTS_API_KEY, 'REDACTED'));
+        console.log('[Google Fonts] Fetching catalog via edge function...');
         
-        const response = await fetch(apiUrl);
+        const response = await fetch(FETCH_GOOGLE_FONTS_URL, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        });
         
         console.log('[Google Fonts] Response status:', response.status);
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[Google Fonts] API error:', response.status, response.statusText);
-          console.error('[Google Fonts] Error body:', errorText);
-          
-          // Try to parse as JSON for more details
-          try {
-            const errorJson = JSON.parse(errorText);
-            if (errorJson.error?.message) {
-              alert(`Google Fonts API error: ${errorJson.error.message}\n\nThe API key may have domain restrictions. Check Google Cloud Console.`);
-            }
-          } catch (e) {}
-          
-          return [];
-        }
-        
         const data = await response.json();
-        console.log('[Google Fonts] Response data keys:', Object.keys(data));
         
-        if (data.error) {
-          console.error('[Google Fonts] API returned error:', data.error);
-          alert(`Google Fonts API error: ${data.error.message || JSON.stringify(data.error)}`);
+        if (!response.ok || !data.success) {
+          console.error('[Google Fonts] Error:', data.error || data.details);
+          alert(`Failed to load Google Fonts: ${data.error || 'Unknown error'}`);
           return [];
         }
         
-        googleFontsCatalog = data.items || [];
+        googleFontsCatalog = data.fonts || [];
         console.log(`[Google Fonts] Successfully loaded ${googleFontsCatalog.length} fonts`);
         
         // Test search for "League Spartan"
@@ -1109,7 +1096,7 @@
         return googleFontsCatalog;
       } catch (err) {
         console.error('[Google Fonts] Failed to fetch:', err);
-        alert(`Failed to load Google Fonts catalog: ${err.message}\n\nCheck browser console for details.`);
+        alert(`Failed to load Google Fonts catalog: ${err.message}`);
         return [];
       }
     }
