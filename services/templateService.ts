@@ -92,6 +92,8 @@ export function mapRowToTemplate(row: TemplateRow): Template {
     // Default colors for template design (used to initialize editor)
     defaultBackgroundColor: row.default_background_color || '#FFFFFF',
     defaultThemeColor: row.default_theme_color || undefined,
+    // Default text transform for text layers
+    defaultTextTransform: (row.default_text_transform as 'none' | 'uppercase' | 'lowercase' | 'capitalize') || 'none',
   };
 }
 

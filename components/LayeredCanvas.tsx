@@ -90,6 +90,32 @@ function normalizeWeight(weight: string | undefined): string {
   return weightMap[lowerWeight] || weight;
 }
 
+/**
+ * Apply text transform to a string
+ * 
+ * @param text - Original text
+ * @param transform - Transform type: 'none', 'uppercase', 'lowercase', 'capitalize'
+ * @returns Transformed text
+ */
+function applyTextTransform(text: string | undefined, transform?: string): string {
+  if (!text) return '';
+  if (!transform || transform === 'none') return text;
+  
+  switch (transform) {
+    case 'uppercase':
+      return text.toUpperCase();
+    case 'lowercase':
+      return text.toLowerCase();
+    case 'capitalize':
+      return text
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    default:
+      return text;
+  }
+}
+
 // ============================================
 // SVG Element Type Detection
 // ============================================
@@ -1233,9 +1259,12 @@ export function LayeredCanvas({
         letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
       };
       
+      // Apply text transform from template settings
+      const displayText = applyTextTransform(layer.text, template.defaultTextTransform);
+      
       return (
         <View key={layer.layer} style={[style, { justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={textStyle}>{layer.text}</Text>
+          <Text style={textStyle}>{displayText}</Text>
         </View>
       );
     }
@@ -1289,9 +1318,12 @@ export function LayeredCanvas({
         letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
       };
       
+      // Apply text transform from template settings
+      const displayText = applyTextTransform(layer.text, template.defaultTextTransform);
+      
       return (
         <View key={layer.layer} style={[style, { justifyContent: 'center', alignItems: 'center' }]}>
-          <Text style={textStyle}>{layer.text}</Text>
+          <Text style={textStyle}>{displayText}</Text>
         </View>
       );
     }

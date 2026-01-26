@@ -64,6 +64,24 @@ export interface SVGPickerResult {
   error?: string;
 }
 
+/** Result from picking any file (PNG or SVG) */
+export interface FilePickerResult {
+  success: boolean;
+  /** File type detected */
+  fileType?: 'png' | 'svg' | 'image';
+  /** For SVG: the SVG content */
+  svgContent?: string;
+  /** For images: the file URI */
+  imageUri?: string;
+  /** File name */
+  fileName?: string;
+  /** Image dimensions (for non-SVG) */
+  width?: number;
+  height?: number;
+  /** Error message if failed */
+  error?: string;
+}
+
 // ============================================
 // SVG Parsing
 // ============================================
@@ -178,6 +196,92 @@ export async function pickSVGFile(): Promise<SVGPickerResult> {
     };
   } catch (error) {
     console.error('[SVGProcessor] Failed to pick SVG file:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to pick file',
+    };
+  }
+}
+
+/**
+ * Open document picker to select any image file (PNG, JPEG, or SVG)
+ * 
+ * This allows users to pick logos from the Files app, supporting:
+ * - PNG files (with transparency)
+ * - JPEG files
+ * - SVG files (will need to be converted to PNG)
+ * 
+ * Note: Requires native rebuild after installing expo-document-picker
+ */
+export async function pickImageFile(): Promise<FilePickerResult> {
+  // Check if document picker is available
+  if (!documentPickerAvailable || !DocumentPicker) {
+    return {
+      success: false,
+      error: 'File picker requires an app rebuild. Please rebuild the app to enable this feature.',
+    };
+  }
+
+  try {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/svg'],
+      copyToCacheDirectory: true,
+    });
+
+    if (result.canceled || !result.assets || result.assets.length === 0) {
+      return {
+        success: false,
+        error: 'No file selected',
+      };
+    }
+
+    const asset = result.assets[0];
+    const fileName = asset.name || 'unknown';
+    const mimeType = asset.mimeType || '';
+    
+    // Determine file type by extension or mime type
+    const isSVG = mimeType.includes('svg') || 
+                  fileName.toLowerCase().endsWith('.svg');
+    
+    if (isSVG) {
+      // Read SVG file content
+      const svgContent = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      // Validate SVG content
+      if (!isValidSVG(svgContent)) {
+        return {
+          success: false,
+          error: 'Invalid SVG file. Please select a valid SVG image.',
+        };
+      }
+
+      const dimensions = parseSVGDimensions(svgContent);
+
+      return {
+        success: true,
+        fileType: 'svg',
+        svgContent,
+        fileName,
+        width: dimensions.width,
+        height: dimensions.height,
+      };
+    } else {
+      // PNG/JPEG image file
+      // Get image dimensions using Image.getSize isn't available directly,
+      // but we can use the asset info if available, or let the caller handle it
+      return {
+        success: true,
+        fileType: mimeType.includes('png') ? 'png' : 'image',
+        imageUri: asset.uri,
+        fileName,
+        // Note: Dimensions will need to be obtained by the caller using Image
+        // since expo-document-picker doesn't provide them for all file types
+      };
+    }
+  } catch (error) {
+    console.error('[SVGProcessor] Failed to pick image file:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to pick file',

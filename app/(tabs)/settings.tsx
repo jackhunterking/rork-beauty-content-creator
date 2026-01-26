@@ -28,6 +28,7 @@ import {
   ImageIcon,
   X,
   Gift,
+  FolderOpen,
 } from "lucide-react-native";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "expo-router";
@@ -47,6 +48,10 @@ import {
 import { BrandKit } from "@/types";
 import { useResponsive } from "@/hooks/useResponsive";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { pickImageFile, isSVGPickerAvailable, parseSVGDimensions, getSVGRenderProps } from "@/utils/svgProcessor";
+import { SvgXml } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
+import { useRef } from 'react';
 
 // App configuration - replace with your actual URLs
 const APP_CONFIG = {
@@ -130,16 +135,44 @@ export default function SettingsScreen() {
     }
   }, [isAuthenticated]);
 
-  // Handle Upload Logo - free for all users
+  // SVG processing state for settings
+  const [svgProcessing, setSvgProcessing] = useState<{
+    isProcessing: boolean;
+    svgContent: string | null;
+    width: number;
+    height: number;
+  }>({ isProcessing: false, svgContent: null, width: 0, height: 0 });
+  const svgRenderRef = useRef<View>(null);
+
+  // Handle Upload Logo - shows choice between Photos and Files
   const handleUploadLogo = useCallback(async () => {
-    pickAndUploadLogo();
+    // Show action sheet with options
+    const options = isSVGPickerAvailable() 
+      ? ['From Photos', 'From Files', 'Cancel']
+      : ['From Photos', 'Cancel'];
+    
+    Alert.alert(
+      'Upload Logo',
+      'Choose where to upload your logo from',
+      isSVGPickerAvailable() 
+        ? [
+            { text: 'From Photos', onPress: pickFromPhotos },
+            { text: 'From Files', onPress: pickFromFiles },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        : [
+            { text: 'From Photos', onPress: pickFromPhotos },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+    );
   }, []);
 
-  const pickAndUploadLogo = async () => {
+  // Pick from photo library
+  const pickFromPhotos = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.9,
+        quality: 1.0,  // Full quality to preserve transparency
         allowsEditing: true,
         aspect: [1, 1],
       });
@@ -147,10 +180,10 @@ export default function SettingsScreen() {
       if (!result.canceled && result.assets[0]) {
         setIsUploadingLogo(true);
         
-        const saveResult: BrandKitSaveResult = await saveBrandLogo(result.assets[0].uri);
+        // Save with transparency preservation
+        const saveResult: BrandKitSaveResult = await saveBrandLogo(result.assets[0].uri, true);
         
         if (saveResult.success) {
-          // Force UI update with new logo
           setBrandKit({ ...saveResult.brandKit });
           Alert.alert('Success', 'Logo saved!');
         } else {
@@ -163,6 +196,82 @@ export default function SettingsScreen() {
       setIsUploadingLogo(false);
     }
   };
+
+  // Pick from Files app (PNG/SVG)
+  const pickFromFiles = async () => {
+    try {
+      setIsUploadingLogo(true);
+      
+      const result = await pickImageFile();
+      
+      if (!result.success) {
+        if (result.error && result.error !== 'No file selected') {
+          Alert.alert('Error', result.error);
+        }
+        setIsUploadingLogo(false);
+        return;
+      }
+
+      // Handle SVG files
+      if (result.fileType === 'svg' && result.svgContent) {
+        setSvgProcessing({
+          isProcessing: true,
+          svgContent: result.svgContent,
+          width: result.width || 200,
+          height: result.height || 200,
+        });
+        // SVG will be captured in useEffect
+        return;
+      }
+
+      // Handle PNG/JPEG files
+      if (result.imageUri) {
+        const saveResult: BrandKitSaveResult = await saveBrandLogo(result.imageUri, true);
+        
+        if (saveResult.success) {
+          setBrandKit({ ...saveResult.brandKit });
+          Alert.alert('Success', 'Logo saved!');
+        } else {
+          Alert.alert('Error', saveResult.error || 'Failed to save logo. Please try again.');
+        }
+        setIsUploadingLogo(false);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to process file. Please try again.');
+      setIsUploadingLogo(false);
+    }
+  };
+
+  // Effect to capture SVG as PNG after render
+  useEffect(() => {
+    if (svgProcessing.isProcessing && svgProcessing.svgContent && svgRenderRef.current) {
+      const captureTimeout = setTimeout(async () => {
+        try {
+          const pngUri = await captureRef(svgRenderRef, {
+            format: 'png',
+            quality: 1,
+            result: 'tmpfile',
+          });
+
+          const saveResult: BrandKitSaveResult = await saveBrandLogo(pngUri, true);
+          
+          if (saveResult.success) {
+            setBrandKit({ ...saveResult.brandKit });
+            Alert.alert('Success', 'Logo saved!');
+          } else {
+            Alert.alert('Error', saveResult.error || 'Failed to save logo. Please try again.');
+          }
+        } catch (error) {
+          Alert.alert('Error', 'Failed to process SVG. Please try again.');
+        } finally {
+          setSvgProcessing({ isProcessing: false, svgContent: null, width: 0, height: 0 });
+          setIsUploadingLogo(false);
+        }
+      }, 100);
+
+      return () => clearTimeout(captureTimeout);
+    }
+  }, [svgProcessing]);
 
   // Handle Remove Logo
   const handleRemoveLogo = useCallback(async () => {
@@ -355,11 +464,32 @@ export default function SettingsScreen() {
     },
   }), [responsive]);
 
+  // Get SVG render props if processing
+  const svgRenderProps = svgProcessing.svgContent 
+    ? getSVGRenderProps(svgProcessing.svgContent, 500)
+    : null;
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={[styles.header, dynamicStyles.header]}>
-        <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
-      </View>
+    <>
+      {/* Hidden SVG render view for capture */}
+      {svgProcessing.isProcessing && svgRenderProps && (
+        <View 
+          ref={svgRenderRef}
+          style={{ position: 'absolute', top: -9999, left: -9999, backgroundColor: 'transparent' }}
+          collapsable={false}
+        >
+          <SvgXml
+            xml={svgRenderProps.xml}
+            width={svgRenderProps.width}
+            height={svgRenderProps.height}
+          />
+        </View>
+      )}
+
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={[styles.header, dynamicStyles.header]}>
+          <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
+        </View>
 
       <ScrollView 
         style={styles.scrollView}
@@ -757,6 +887,7 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </>
   );
 }
 

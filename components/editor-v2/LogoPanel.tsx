@@ -46,7 +46,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import Colors from '@/constants/colors';
 import { getBrandLogo, saveBrandLogo } from '@/services/brandKitService';
 import { LogoOverlay, LOGO_SIZE_CONSTRAINTS } from '@/types/overlays';
-import { pickSVGFile, parseSVGDimensions, getSVGRenderProps, isSVGPickerAvailable } from '@/utils/svgProcessor';
+import { pickImageFile, parseSVGDimensions, getSVGRenderProps, isSVGPickerAvailable } from '@/utils/svgProcessor';
 
 interface BrandLogoData {
   uri: string;
@@ -279,14 +279,14 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       }
     }, [brandLogo, onSelectLogo, handleClose]);
 
-    // Handle picking SVG file from files
-    const handlePickSVG = useCallback(async () => {
+    // Handle picking file from Files app (PNG or SVG)
+    const handlePickFromFiles = useCallback(async () => {
       try {
         setIsLoading(true);
         
-        const result = await pickSVGFile();
+        const result = await pickImageFile();
         
-        if (!result.success || !result.svgContent) {
+        if (!result.success) {
           if (result.error && result.error !== 'No file selected') {
             Alert.alert('Error', result.error);
           }
@@ -294,24 +294,87 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
           return;
         }
 
-        // Parse SVG dimensions
-        const dimensions = parseSVGDimensions(result.svgContent);
-        
-        // Set SVG state for rendering
-        setSvgState({
-          isProcessing: true,
-          svgContent: result.svgContent,
-          width: dimensions.width,
-          height: dimensions.height,
-        });
-        
-        // The SVG will be rendered and captured in useEffect
+        // Handle SVG files
+        if (result.fileType === 'svg' && result.svgContent) {
+          // Set SVG state for rendering and conversion
+          setSvgState({
+            isProcessing: true,
+            svgContent: result.svgContent,
+            width: result.width || 200,
+            height: result.height || 200,
+          });
+          // The SVG will be rendered and captured in useEffect
+          return;
+        }
+
+        // Handle PNG/JPEG files
+        if (result.imageUri) {
+          // For images from files, we need to get dimensions
+          // Use Image.getSize or process through ImageManipulator
+          const imageData = {
+            uri: result.imageUri,
+            width: result.width || 200,
+            height: result.height || 200,
+          };
+
+          setIsLoading(false);
+
+          // If user has no brand logo, offer to save it
+          if (!brandLogo) {
+            Alert.alert(
+              'Save to Brand Kit?',
+              'Would you like to save this logo to your brand kit for future use?',
+              [
+                {
+                  text: 'Just Use',
+                  style: 'cancel',
+                  onPress: () => {
+                    onSelectLogo(imageData);
+                    handleClose();
+                  },
+                },
+                {
+                  text: 'Save & Use',
+                  onPress: async () => {
+                    setIsSaving(true);
+                    try {
+                      const saveResult = await saveBrandLogo(imageData.uri, true);
+                      if (saveResult.success && saveResult.brandKit.logoUri) {
+                        onSelectLogo({
+                          uri: saveResult.brandKit.logoUri,
+                          width: saveResult.brandKit.logoWidth || imageData.width,
+                          height: saveResult.brandKit.logoHeight || imageData.height,
+                        });
+                        setBrandLogo({
+                          uri: saveResult.brandKit.logoUri,
+                          width: saveResult.brandKit.logoWidth || imageData.width,
+                          height: saveResult.brandKit.logoHeight || imageData.height,
+                        });
+                      } else {
+                        onSelectLogo(imageData);
+                      }
+                    } catch (error) {
+                      console.error('[LogoPanel] Save file failed:', error);
+                      onSelectLogo(imageData);
+                    } finally {
+                      setIsSaving(false);
+                      handleClose();
+                    }
+                  },
+                },
+              ]
+            );
+          } else {
+            onSelectLogo(imageData);
+            handleClose();
+          }
+        }
       } catch (error) {
-        console.error('[LogoPanel] Failed to pick SVG:', error);
-        Alert.alert('Error', 'Failed to process SVG file. Please try again.');
+        console.error('[LogoPanel] Failed to pick file:', error);
+        Alert.alert('Error', 'Failed to process file. Please try again.');
         setIsLoading(false);
       }
-    }, []);
+    }, [brandLogo, onSelectLogo, handleClose]);
 
     // Effect to capture SVG as PNG after render
     useEffect(() => {
@@ -456,11 +519,11 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
 
         {/* Upload Options Row */}
         <View style={styles.uploadOptionsRow}>
-          {/* From Photos Button (PNG/JPEG) */}
+          {/* From Photos Button - uses photo library */}
           <TouchableOpacity
             style={[
               styles.uploadOptionButton,
-              // Make full width if SVG not available
+              // Make full width if file picker not available
               !isSVGPickerAvailable() && styles.uploadOptionButtonFullWidth,
             ]}
             onPress={handlePickImage}
@@ -479,11 +542,11 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
             )}
           </TouchableOpacity>
 
-          {/* From Files Button (SVG) - only show if available */}
+          {/* From Files Button - uses Files app (PNG/SVG) */}
           {isSVGPickerAvailable() && (
             <TouchableOpacity
               style={[styles.uploadOptionButton, styles.uploadOptionButtonSecondary]}
-              onPress={handlePickSVG}
+              onPress={handlePickFromFiles}
               disabled={isLoading || isSaving}
               activeOpacity={0.7}
             >
@@ -492,7 +555,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
               ) : (
                 <>
                   <FolderOpen size={20} color={Colors.light.accent} />
-                  <Text style={styles.uploadButtonTextSecondary}>SVG File</Text>
+                  <Text style={styles.uploadButtonTextSecondary}>From Files</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -502,7 +565,7 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
         {/* Helper text */}
         <Text style={styles.helperText}>
           {isSVGPickerAvailable() 
-            ? 'PNG files preserve transparency. SVG files will be converted to PNG.'
+            ? 'Select PNG or SVG from Files. Transparency is preserved.'
             : 'PNG files with transparency are fully supported.'}
         </Text>
       </View>

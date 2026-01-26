@@ -400,6 +400,8 @@ export interface Template {
   defaultBackgroundColor?: string;
   /** Original theme color for theme-prefixed layers (hex) */
   defaultThemeColor?: string;
+  /** Default text transform for text layers: none, uppercase, lowercase, capitalize */
+  defaultTextTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
 // Templated.io layer structure
@@ -614,6 +616,8 @@ export interface TemplateRow {
   // Default colors for template design (used to initialize editor)
   default_background_color: string | null;
   default_theme_color: string | null;
+  // Default text transform for text layers
+  default_text_transform: string | null;
 }
 
 // ============================================
