@@ -4,6 +4,11 @@
  * Compact bottom panel for selecting and managing logo overlays.
  * Follows Canva's pattern: 25% height, horizontal layout,
  * brand kit integration, and upload options.
+ * 
+ * Supports:
+ * - PNG images with transparency preservation
+ * - SVG files (converted to PNG)
+ * - Brand Kit integration
  */
 
 import React, { useState, useCallback, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
@@ -17,6 +22,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { SvgXml } from 'react-native-svg';
+import { captureRef } from 'react-native-view-shot';
 import BottomSheet, {
   BottomSheetView,
   BottomSheetBackdrop,
@@ -31,11 +38,15 @@ import {
   ZoomIn,
   ZoomOut,
   Circle,
+  FileImage,
+  FolderOpen,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import Colors from '@/constants/colors';
 import { getBrandLogo, saveBrandLogo } from '@/services/brandKitService';
 import { LogoOverlay, LOGO_SIZE_CONSTRAINTS } from '@/types/overlays';
+import { pickSVGFile, parseSVGDimensions, getSVGRenderProps } from '@/utils/svgProcessor';
 
 interface BrandLogoData {
   uri: string;
@@ -45,6 +56,14 @@ interface BrandLogoData {
 
 type PanelMode = 'picker' | 'editor';
 type EditorMode = 'size' | 'opacity';
+
+// SVG processing state
+interface SVGProcessingState {
+  isProcessing: boolean;
+  svgContent: string | null;
+  width: number;
+  height: number;
+}
 
 export interface LogoPanelProps {
   /** Currently selected logo overlay (for editing mode) */
@@ -88,11 +107,18 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
   ) {
     const insets = useSafeAreaInsets();
     const bottomSheetRef = useRef<BottomSheet>(null);
+    const svgRenderRef = useRef<View>(null);
     const [mode, setMode] = useState<PanelMode>('picker');
     const [editorMode, setEditorMode] = useState<EditorMode>('size');
     const [brandLogo, setBrandLogo] = useState<BrandLogoData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [svgState, setSvgState] = useState<SVGProcessingState>({
+      isProcessing: false,
+      svgContent: null,
+      width: 0,
+      height: 0,
+    });
     
     // Calculate bottom padding with safe area
     const bottomPadding = insets.bottom + 12;
@@ -176,13 +202,13 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       }
     }, [brandLogo, onSelectLogo, handleClose]);
 
-    // Handle picking image from library
+    // Handle picking image from photo library (PNG/JPEG with transparency support)
     const handlePickImage = useCallback(async () => {
       try {
         setIsLoading(true);
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images'],
-          quality: 0.9,
+          quality: 1.0,  // Full quality to preserve transparency
           allowsEditing: false,
         });
 
@@ -213,7 +239,8 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
                   onPress: async () => {
                     setIsSaving(true);
                     try {
-                      const saveResult = await saveBrandLogo(imageData.uri);
+                      // Save with transparency preservation (PNG format)
+                      const saveResult = await saveBrandLogo(imageData.uri, true);
                       if (saveResult.success && saveResult.brandKit.logoUri) {
                         onSelectLogo({
                           uri: saveResult.brandKit.logoUri,
@@ -251,6 +278,134 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
         setIsLoading(false);
       }
     }, [brandLogo, onSelectLogo, handleClose]);
+
+    // Handle picking SVG file from files
+    const handlePickSVG = useCallback(async () => {
+      try {
+        setIsLoading(true);
+        
+        const result = await pickSVGFile();
+        
+        if (!result.success || !result.svgContent) {
+          if (result.error && result.error !== 'No file selected') {
+            Alert.alert('Error', result.error);
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        // Parse SVG dimensions
+        const dimensions = parseSVGDimensions(result.svgContent);
+        
+        // Set SVG state for rendering
+        setSvgState({
+          isProcessing: true,
+          svgContent: result.svgContent,
+          width: dimensions.width,
+          height: dimensions.height,
+        });
+        
+        // The SVG will be rendered and captured in useEffect
+      } catch (error) {
+        console.error('[LogoPanel] Failed to pick SVG:', error);
+        Alert.alert('Error', 'Failed to process SVG file. Please try again.');
+        setIsLoading(false);
+      }
+    }, []);
+
+    // Effect to capture SVG as PNG after render
+    useEffect(() => {
+      if (svgState.isProcessing && svgState.svgContent && svgRenderRef.current) {
+        // Small delay to ensure SVG is rendered
+        const captureTimeout = setTimeout(async () => {
+          try {
+            // Capture the rendered SVG as PNG
+            const pngUri = await captureRef(svgRenderRef, {
+              format: 'png',
+              quality: 1,
+              result: 'tmpfile',
+            });
+
+            const imageData = {
+              uri: pngUri,
+              width: svgState.width,
+              height: svgState.height,
+            };
+
+            // Reset SVG state
+            setSvgState({
+              isProcessing: false,
+              svgContent: null,
+              width: 0,
+              height: 0,
+            });
+            setIsLoading(false);
+
+            // If user has no brand logo, offer to save it
+            if (!brandLogo) {
+              Alert.alert(
+                'Save to Brand Kit?',
+                'Would you like to save this logo to your brand kit for future use?',
+                [
+                  {
+                    text: 'Just Use',
+                    style: 'cancel',
+                    onPress: () => {
+                      onSelectLogo(imageData);
+                      handleClose();
+                    },
+                  },
+                  {
+                    text: 'Save & Use',
+                    onPress: async () => {
+                      setIsSaving(true);
+                      try {
+                        const saveResult = await saveBrandLogo(imageData.uri, true);
+                        if (saveResult.success && saveResult.brandKit.logoUri) {
+                          onSelectLogo({
+                            uri: saveResult.brandKit.logoUri,
+                            width: saveResult.brandKit.logoWidth || imageData.width,
+                            height: saveResult.brandKit.logoHeight || imageData.height,
+                          });
+                          setBrandLogo({
+                            uri: saveResult.brandKit.logoUri,
+                            width: saveResult.brandKit.logoWidth || imageData.width,
+                            height: saveResult.brandKit.logoHeight || imageData.height,
+                          });
+                        } else {
+                          onSelectLogo(imageData);
+                        }
+                      } catch (error) {
+                        console.error('[LogoPanel] Save SVG failed:', error);
+                        onSelectLogo(imageData);
+                      } finally {
+                        setIsSaving(false);
+                        handleClose();
+                      }
+                    },
+                  },
+                ]
+              );
+            } else {
+              onSelectLogo(imageData);
+              handleClose();
+            }
+          } catch (error) {
+            console.error('[LogoPanel] Failed to capture SVG:', error);
+            setSvgState({
+              isProcessing: false,
+              svgContent: null,
+              width: 0,
+              height: 0,
+            });
+            setIsLoading(false);
+            Alert.alert('Error', 'Failed to process SVG file. Please try again.');
+          }
+        }, 100);
+
+        return () => clearTimeout(captureTimeout);
+      }
+    }, [svgState, brandLogo, onSelectLogo, handleClose]);
 
     // Handle scale slider change
     const handleScaleSliderChange = useCallback(
@@ -299,22 +454,47 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
           </View>
         )}
 
-        {/* Upload Button */}
-        <TouchableOpacity
-          style={styles.uploadButton}
-          onPress={handlePickImage}
-          disabled={isLoading || isSaving}
-          activeOpacity={0.7}
-        >
-          {isLoading || isSaving ? (
-            <ActivityIndicator size="small" color={Colors.light.surface} />
-          ) : (
-            <>
-              <Upload size={20} color={Colors.light.surface} />
-              <Text style={styles.uploadButtonText}>Upload Logo</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Upload Options Row */}
+        <View style={styles.uploadOptionsRow}>
+          {/* From Photos Button (PNG/JPEG) */}
+          <TouchableOpacity
+            style={styles.uploadOptionButton}
+            onPress={handlePickImage}
+            disabled={isLoading || isSaving}
+            activeOpacity={0.7}
+          >
+            {isLoading && !svgState.isProcessing ? (
+              <ActivityIndicator size="small" color={Colors.light.surface} />
+            ) : (
+              <>
+                <FileImage size={20} color={Colors.light.surface} />
+                <Text style={styles.uploadButtonText}>From Photos</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* From Files Button (SVG) */}
+          <TouchableOpacity
+            style={[styles.uploadOptionButton, styles.uploadOptionButtonSecondary]}
+            onPress={handlePickSVG}
+            disabled={isLoading || isSaving}
+            activeOpacity={0.7}
+          >
+            {svgState.isProcessing ? (
+              <ActivityIndicator size="small" color={Colors.light.accent} />
+            ) : (
+              <>
+                <FolderOpen size={20} color={Colors.light.accent} />
+                <Text style={styles.uploadButtonTextSecondary}>SVG File</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Helper text */}
+        <Text style={styles.helperText}>
+          PNG files preserve transparency. SVG files will be converted to PNG.
+        </Text>
       </View>
     );
 
@@ -375,36 +555,58 @@ export const LogoPanel = forwardRef<LogoPanelRef, LogoPanelProps>(
       );
     };
 
-    return (
-      <BottomSheet
-        ref={bottomSheetRef}
-        index={-1}
-        enableDynamicSizing
-        enablePanDownToClose
-        backdropComponent={renderBackdrop}
-        onChange={handleSheetChange}
-        backgroundStyle={styles.background}
-        handleIndicatorStyle={styles.handleIndicator}
-      >
-        <BottomSheetView style={styles.container}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {mode === 'picker' ? 'Add Logo' : editorMode === 'size' ? 'Logo Size' : 'Logo Opacity'}
-            </Text>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={handleClose}
-              activeOpacity={0.7}
-            >
-              <X size={18} color={Colors.light.textSecondary} />
-            </TouchableOpacity>
-          </View>
+    // Get SVG render props if processing
+    const svgRenderProps = svgState.svgContent 
+      ? getSVGRenderProps(svgState.svgContent, 500)
+      : null;
 
-          {/* Content */}
-          {mode === 'picker' ? renderPickerContent() : renderEditorContent()}
-        </BottomSheetView>
-      </BottomSheet>
+    return (
+      <>
+        {/* Hidden SVG render view for capture */}
+        {svgState.isProcessing && svgRenderProps && (
+          <View 
+            ref={svgRenderRef}
+            style={styles.hiddenSvgContainer}
+            collapsable={false}
+          >
+            <SvgXml
+              xml={svgRenderProps.xml}
+              width={svgRenderProps.width}
+              height={svgRenderProps.height}
+            />
+          </View>
+        )}
+
+        <BottomSheet
+          ref={bottomSheetRef}
+          index={-1}
+          enableDynamicSizing
+          enablePanDownToClose
+          backdropComponent={renderBackdrop}
+          onChange={handleSheetChange}
+          backgroundStyle={styles.background}
+          handleIndicatorStyle={styles.handleIndicator}
+        >
+          <BottomSheetView style={styles.container}>
+            {/* Header */}
+            <View style={styles.header}>
+              <Text style={styles.title}>
+                {mode === 'picker' ? 'Add Logo' : editorMode === 'size' ? 'Logo Size' : 'Logo Opacity'}
+              </Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={handleClose}
+                activeOpacity={0.7}
+              >
+                <X size={18} color={Colors.light.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Content */}
+            {mode === 'picker' ? renderPickerContent() : renderEditorContent()}
+          </BottomSheetView>
+        </BottomSheet>
+      </>
     );
   }
 );
@@ -497,6 +699,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.light.textTertiary,
   },
+  uploadOptionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  uploadOptionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.light.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  uploadOptionButtonSecondary: {
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderWidth: 1.5,
+    borderColor: Colors.light.accent,
+  },
   uploadButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -510,6 +731,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: Colors.light.surface,
+  },
+  uploadButtonTextSecondary: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.light.accent,
+  },
+  helperText: {
+    fontSize: 12,
+    color: Colors.light.textTertiary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  hiddenSvgContainer: {
+    position: 'absolute',
+    top: -9999,
+    left: -9999,
+    backgroundColor: 'transparent',
   },
   // Editor content
   editorContent: {

@@ -30,6 +30,7 @@ export interface CustomFont {
   fileFormat: 'ttf' | 'otf' | 'woff' | 'woff2' | null;
   weights: string[];       // Available weights (e.g., ['400', '700'])
   isActive: boolean;       // Whether font is ready to use
+  defaultWeight: string;   // Default weight to use (e.g., '400', '700')
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +45,7 @@ interface CustomFontRow {
   file_format: string | null;
   weights: string[] | null;
   is_active: boolean;
+  default_weight: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +76,7 @@ function mapRowToFont(row: CustomFontRow): CustomFont {
     fileFormat: row.file_format as CustomFont['fileFormat'],
     weights: row.weights || ['400'],
     isActive: row.is_active,
+    defaultWeight: row.default_weight || '400',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

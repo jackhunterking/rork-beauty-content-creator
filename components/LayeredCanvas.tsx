@@ -31,12 +31,64 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, ViewStyle, TextStyle, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import { SvgUri, SvgXml, Svg, Path, Rect, Ellipse, Circle, Line } from 'react-native-svg';
+import { SvgUri, SvgXml, Svg, Path, Rect, Ellipse, Circle, Line, G } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Template, CapturedImages, TemplatedLayer, MediaAsset, ThemeLayer, isTextThemeLayer } from '@/types';
 import { useTemplateFonts } from '@/hooks/useTemplateFonts';
 import { getGradientPoints } from '@/constants/gradients';
 import { WatermarkOverlay } from './WatermarkOverlay';
+
+// ============================================
+// Font Weight Handling
+// ============================================
+
+/**
+ * Get the font family name to use for a specific weight.
+ * For variable fonts (loaded with weight variants), returns weight-specific name.
+ * For non-variable fonts or weight 400, returns the base font family.
+ * 
+ * @param fontFamily - Base font family name
+ * @param fontWeight - Requested font weight (e.g., '400', '700', 'bold')
+ * @returns Font family name to use (may include weight suffix)
+ */
+function getFontFamilyForWeight(fontFamily: string | undefined, fontWeight: string | undefined): string | undefined {
+  if (!fontFamily) return undefined;
+  
+  // Normalize weight to numeric string
+  const normalizedWeight = normalizeWeight(fontWeight);
+  
+  // For weight 400 (regular), use the base font family
+  if (!normalizedWeight || normalizedWeight === '400' || normalizedWeight === 'normal') {
+    return fontFamily;
+  }
+  
+  // For other weights, use weight-specific font name (e.g., FontFamily_700)
+  // This matches the naming convention used in unifiedFontService.ts
+  return `${fontFamily}_${normalizedWeight}`;
+}
+
+/**
+ * Normalize font weight to numeric string
+ */
+function normalizeWeight(weight: string | undefined): string {
+  if (!weight) return '400';
+  
+  const weightMap: Record<string, string> = {
+    'thin': '100',
+    'extralight': '200',
+    'light': '300',
+    'regular': '400',
+    'normal': '400',
+    'medium': '500',
+    'semibold': '600',
+    'bold': '700',
+    'extrabold': '800',
+    'black': '900',
+  };
+  
+  const lowerWeight = weight.toLowerCase();
+  return weightMap[lowerWeight] || weight;
+}
 
 // ============================================
 // SVG Element Type Detection
@@ -108,6 +160,13 @@ interface PathAttributes {
   strokeLinejoin: string | null;
   strokeDasharray: string | null;
   viewBox: string;
+  /** Transform data extracted from path element's transform attribute */
+  transform?: {
+    translateX: number;
+    translateY: number;
+    scaleX: number;
+    scaleY: number;
+  };
 }
 
 interface LineAttributes {
@@ -226,6 +285,43 @@ function parseCircleAttributes(html: string): CircleAttributes | null {
 }
 
 /**
+ * Parse SVG transform attribute
+ * Handles patterns like: translate(-21.31 -52.14) scale(5.17, 5.85)
+ * or: translate(-21.31, -52.14) scale(5.17 5.85)
+ */
+function parseTransformAttribute(transformStr: string): { translateX: number; translateY: number; scaleX: number; scaleY: number } | null {
+  try {
+    let translateX = 0;
+    let translateY = 0;
+    let scaleX = 1;
+    let scaleY = 1;
+    
+    // Extract translate values - handles both space and comma separators
+    const translateMatch = transformStr.match(/translate\s*\(\s*([+-]?[\d.]+)[\s,]+([+-]?[\d.]+)\s*\)/i);
+    if (translateMatch) {
+      translateX = parseFloat(translateMatch[1]);
+      translateY = parseFloat(translateMatch[2]);
+    }
+    
+    // Extract scale values - handles both single value and x,y values
+    const scaleMatch = transformStr.match(/scale\s*\(\s*([+-]?[\d.]+)(?:[\s,]+([+-]?[\d.]+))?\s*\)/i);
+    if (scaleMatch) {
+      scaleX = parseFloat(scaleMatch[1]);
+      scaleY = scaleMatch[2] ? parseFloat(scaleMatch[2]) : scaleX;
+    }
+    
+    // Only return transform if there's actually a transform applied
+    if (translateX !== 0 || translateY !== 0 || scaleX !== 1 || scaleY !== 1) {
+      return { translateX, translateY, scaleX, scaleY };
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Extract path element attributes from SVG HTML (including stroke support for arrows)
  */
 function parsePathAttributes(html: string): PathAttributes | null {
@@ -251,6 +347,10 @@ function parsePathAttributes(html: string): PathAttributes | null {
     // Extract stroke-dasharray for dashed lines
     const strokeDasharrayMatch = pathTag.match(/stroke-dasharray="([^"]+)"/i);
     
+    // Extract transform attribute from path element
+    const transformMatch = pathTag.match(/transform="([^"]+)"/i);
+    const transform = transformMatch ? parseTransformAttribute(transformMatch[1]) : undefined;
+    
     return {
       d: dMatch[1],
       fill: fillMatch ? fillMatch[1] : null,
@@ -260,6 +360,7 @@ function parsePathAttributes(html: string): PathAttributes | null {
       strokeLinejoin: strokeLinejoinMatch ? strokeLinejoinMatch[1] : null,
       strokeDasharray: strokeDasharrayMatch ? strokeDasharrayMatch[1] : null,
       viewBox,
+      transform: transform || undefined,
     };
   } catch {
     return null;
@@ -959,6 +1060,19 @@ export function LayeredCanvas({
             strokeColor = themeColor;
           }
           
+          // Build the Path component
+          const pathComponent = (
+            <Path
+              d={attrs.d}
+              fill={fillColor}
+              stroke={strokeColor}
+              strokeWidth={attrs.strokeWidth}
+              strokeLinecap={attrs.strokeLinecap as any || undefined}
+              strokeLinejoin={attrs.strokeLinejoin as any || undefined}
+              strokeDasharray={attrs.strokeDasharray || undefined}
+            />
+          );
+          
           return (
             <View key={layer.layer} style={style}>
               <Svg
@@ -967,15 +1081,14 @@ export function LayeredCanvas({
                 viewBox={attrs.viewBox}
                 preserveAspectRatio="xMidYMid meet"
               >
-                <Path
-                  d={attrs.d}
-                  fill={fillColor}
-                  stroke={strokeColor}
-                  strokeWidth={attrs.strokeWidth}
-                  strokeLinecap={attrs.strokeLinecap as any || undefined}
-                  strokeLinejoin={attrs.strokeLinejoin as any || undefined}
-                  strokeDasharray={attrs.strokeDasharray || undefined}
-                />
+                {attrs.transform ? (
+                  // Apply SVG transform using G (Group) component
+                  <G transform={`translate(${attrs.transform.translateX}, ${attrs.transform.translateY}) scale(${attrs.transform.scaleX}, ${attrs.transform.scaleY})`}>
+                    {pathComponent}
+                  </G>
+                ) : (
+                  pathComponent
+                )}
               </Svg>
             </View>
           );
@@ -1060,6 +1173,18 @@ export function LayeredCanvas({
           strokeColor = themeColor;
         }
         
+        // Build the Path component
+        const vectorPathComponent = (
+          <Path
+            d={attrs.d}
+            fill={fillColor}
+            stroke={strokeColor}
+            strokeWidth={attrs.strokeWidth}
+            strokeLinecap={attrs.strokeLinecap as any || undefined}
+            strokeLinejoin={attrs.strokeLinejoin as any || undefined}
+          />
+        );
+        
         return (
           <View key={layer.layer} style={style}>
             <Svg
@@ -1068,14 +1193,14 @@ export function LayeredCanvas({
               viewBox={attrs.viewBox}
               preserveAspectRatio="xMidYMid meet"
             >
-              <Path
-                d={attrs.d}
-                fill={fillColor}
-                stroke={strokeColor}
-                strokeWidth={attrs.strokeWidth}
-                strokeLinecap={attrs.strokeLinecap as any || undefined}
-                strokeLinejoin={attrs.strokeLinejoin as any || undefined}
-              />
+              {attrs.transform ? (
+                // Apply SVG transform using G (Group) component
+                <G transform={`translate(${attrs.transform.translateX}, ${attrs.transform.translateY}) scale(${attrs.transform.scaleX}, ${attrs.transform.scaleY})`}>
+                  {vectorPathComponent}
+                </G>
+              ) : (
+                vectorPathComponent
+              )}
             </Svg>
           </View>
         );
@@ -1096,11 +1221,14 @@ export function LayeredCanvas({
       const originalColor = layer.color || '#000000';
       const textColor = themeColor ? themeColor : originalColor;
       
+      // Get weight-specific font family name for variable fonts
+      const fontFamilyToUse = getFontFamilyForWeight(layer.font_family, layer.font_weight);
+      
       const textStyle: TextStyle = {
         color: textColor,
         fontSize,
         fontWeight: (layer.font_weight as TextStyle['fontWeight']) || 'normal',
-        fontFamily: layer.font_family || undefined,
+        fontFamily: fontFamilyToUse,
         textAlign: (layer.horizontal_align as TextStyle['textAlign']) || 'center',
         letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
       };
@@ -1148,11 +1276,15 @@ export function LayeredCanvas({
       }
       
       const fontSize = layer.font_size ? parseInt(String(layer.font_size)) * uniformScale : 16 * uniformScale;
+      
+      // Get weight-specific font family name for variable fonts
+      const fontFamilyToUse = getFontFamilyForWeight(layer.font_family, layer.font_weight);
+      
       const textStyle: TextStyle = {
         color: layer.color || '#000000',
         fontSize,
         fontWeight: (layer.font_weight as TextStyle['fontWeight']) || 'normal',
-        fontFamily: layer.font_family || undefined,
+        fontFamily: fontFamilyToUse,
         textAlign: (layer.horizontal_align as TextStyle['textAlign']) || 'center',
         letterSpacing: layer.letter_spacing ? layer.letter_spacing * uniformScale : undefined,
       };

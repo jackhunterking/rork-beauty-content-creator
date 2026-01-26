@@ -48,21 +48,61 @@ export function isFontLoaded(fontFamily: string): boolean {
 }
 
 /**
+ * Weight mapping for font weight names
+ * Maps numeric weights to their string equivalents
+ */
+const WEIGHT_TO_SUFFIX: Record<string, string> = {
+  '100': 'Thin',
+  '200': 'ExtraLight',
+  '300': 'Light',
+  '400': 'Regular',
+  '500': 'Medium',
+  '600': 'SemiBold',
+  '700': 'Bold',
+  '800': 'ExtraBold',
+  '900': 'Black',
+};
+
+/**
  * Load a font from Supabase Storage
+ * 
+ * For variable fonts (fonts with multiple weights in one file),
+ * we register the font with weight-specific names to ensure fontWeight works.
  * 
  * @param fontFamily - The font family name (used as the font name in RN)
  * @param fileUrl - The Supabase Storage URL for the font file
+ * @param weights - Available weights for this font (e.g., ['400', '700'])
  */
-async function loadSupabaseFont(fontFamily: string, fileUrl: string): Promise<boolean> {
+async function loadSupabaseFont(
+  fontFamily: string, 
+  fileUrl: string, 
+  weights: string[] = ['400']
+): Promise<boolean> {
   try {
-    console.log(`[UnifiedFont] Loading from Supabase: ${fontFamily}`);
+    console.log(`[UnifiedFont] Loading from Supabase: ${fontFamily} (weights: ${weights.join(', ')})`);
+    
+    // For fonts with multiple weights, register with both base name and weight-specific names
+    // This ensures fontWeight style works in React Native
+    const fontsToLoad: Record<string, string> = {
+      // Base name - will work with fontWeight style on iOS
+      [fontFamily]: fileUrl,
+    };
+    
+    // Also register weight-specific variants for better compatibility
+    // Format: FontFamily_700 for bold, etc.
+    for (const weight of weights) {
+      if (weight !== '400') {
+        // Use underscore format for weight variants (e.g., LeagueSpartan_700)
+        fontsToLoad[`${fontFamily}_${weight}`] = fileUrl;
+      }
+    }
+    
+    console.log(`[UnifiedFont] Registering ${Object.keys(fontsToLoad).length} font variants for ${fontFamily}`);
     
     // expo-font can load fonts from remote URLs
-    await Font.loadAsync({
-      [fontFamily]: fileUrl,
-    });
+    await Font.loadAsync(fontsToLoad);
     
-    console.log(`[UnifiedFont] ✓ Loaded from Supabase: ${fontFamily}`);
+    console.log(`[UnifiedFont] ✓ Loaded from Supabase: ${fontFamily} with ${weights.length} weight(s)`);
     return true;
   } catch (error) {
     console.error(`[UnifiedFont] Failed to load from Supabase: ${fontFamily}`, error);
@@ -123,7 +163,8 @@ export async function loadFont(
           case 'supabase':
             // Load from Supabase Storage
             if (fontInfo.fileUrl && fontInfo.isActive) {
-              success = await loadSupabaseFont(fontFamily, fontInfo.fileUrl);
+              // Pass weights for variable font support
+              success = await loadSupabaseFont(fontFamily, fontInfo.fileUrl, fontInfo.weights || ['400']);
             } else if (!fontInfo.isActive) {
               console.warn(`[UnifiedFont] Font ${fontFamily} is not active (file not uploaded yet)`);
               success = false;

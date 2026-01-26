@@ -17,7 +17,7 @@ import { decode } from 'base64-arraybuffer';
 // Constants
 const BRAND_KIT_STORAGE_KEY = '@resulta_app_brand_kit';
 const BRAND_KIT_DIRECTORY = `${FileSystem.documentDirectory}brand-kit/`;
-const LOGO_FILENAME = 'brand_logo.jpg';
+const LOGO_FILENAME = 'brand_logo.png';  // PNG to preserve transparency
 const STORAGE_BUCKET = 'brand-logos';
 const ENCODING_BASE64 = 'base64' as const;
 
@@ -103,14 +103,14 @@ async function uploadToCloud(localPath: string, width: number, height: number): 
       encoding: ENCODING_BASE64,
     });
     
-    // Upload to storage
-    const filePath = `${userId}/logo.jpg`;
+    // Upload to storage (PNG for transparency support)
+    const filePath = `${userId}/logo.png`;
     const arrayBuffer = decode(base64);
     
     await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, arrayBuffer, {
-        contentType: 'image/jpeg',
+        contentType: 'image/png',
         upsert: true,
       });
     
@@ -151,21 +151,33 @@ export async function loadBrandKit(): Promise<BrandKit> {
 }
 
 /**
- * Save brand logo - optimized flow
- * 1. Process image with ImageManipulator
+ * Save brand logo - optimized flow with PNG transparency support
+ * 1. Process image with ImageManipulator (PNG format)
  * 2. Save locally (immediate feedback)
  * 3. Upload to cloud in background (if authenticated)
+ * 
+ * @param sourceUri - Local URI of the logo image
+ * @param preserveTransparency - If true, saves as PNG to preserve transparency (default: true)
  */
-export async function saveBrandLogo(sourceUri: string): Promise<BrandKitSaveResult> {
+export async function saveBrandLogo(
+  sourceUri: string,
+  preserveTransparency: boolean = true
+): Promise<BrandKitSaveResult> {
   try {
     // 1. Ensure directory exists
     await ensureDirectory();
     
-    // 2. Process image (normalize and compress)
+    // 2. Process image (normalize and optionally resize)
+    // Use PNG format to preserve transparency
     const result = await ImageManipulator.manipulateAsync(
       sourceUri,
       [{ resize: { width: 500 } }], // Resize to reasonable size
-      { format: ImageManipulator.SaveFormat.JPEG, compress: 0.8 }
+      { 
+        format: preserveTransparency 
+          ? ImageManipulator.SaveFormat.PNG 
+          : ImageManipulator.SaveFormat.JPEG,
+        compress: preserveTransparency ? 1.0 : 0.8  // No compression for PNG
+      }
     );
     
     const { uri: processedUri, width, height } = result;
@@ -236,9 +248,10 @@ export async function deleteBrandLogo(): Promise<BrandKit> {
     // Delete from cloud in background
     const userId = await getCurrentUserId();
     if (userId) {
+      // Remove both .png and .jpg versions for backwards compatibility
       supabase.storage
         .from(STORAGE_BUCKET)
-        .remove([`${userId}/logo.jpg`])
+        .remove([`${userId}/logo.png`, `${userId}/logo.jpg`])
         .then(() => {})
         .catch(() => {});
       

@@ -209,6 +209,31 @@
                 <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
               </div>
             </div>
+            
+            <!-- Default Weight (for variable fonts) -->
+            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-medium text-gray-900 dark:text-white">Default Weight</p>
+                <span class="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300">⚡ Variable Fonts</span>
+              </div>
+              <select 
+                id="defaultWeightSelect"
+                class="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+              >
+                <option value="100">100 - Thin</option>
+                <option value="200">200 - Extra Light</option>
+                <option value="300">300 - Light</option>
+                <option value="400" selected>400 - Regular</option>
+                <option value="500">500 - Medium</option>
+                <option value="600">600 - Semi Bold</option>
+                <option value="700">700 - Bold</option>
+                <option value="800">800 - Extra Bold</option>
+                <option value="900">900 - Black</option>
+              </select>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                For variable fonts, select which weight to use as default when rendering text.
+              </p>
+            </div>
           </div>
           
           <div id="uploadProgress" class="hidden mt-4">
@@ -396,6 +421,10 @@
         if (font.file_url_bold_italic) variants.push('Bold Italic');
         const variantsText = variants.length > 0 ? variants.join(', ') : 'None';
         
+        // Default weight display
+        const defaultWeight = font.default_weight || '400';
+        const weightLabel = getWeightLabel(defaultWeight);
+        
         return `
           <div class="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
             <div class="flex items-center justify-between">
@@ -405,6 +434,11 @@
                   <span class="text-xs px-2 py-1 rounded-full ${isGoogle ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'}">
                     ${sourceLabel}
                   </span>
+                  ${!isGoogle && defaultWeight !== '400' ? `
+                    <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                      Weight: ${weightLabel}
+                    </span>
+                  ` : ''}
                 </div>
                 <div class="flex items-center gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                   <span>Status: ${statusLabel}</span>
@@ -451,6 +485,10 @@
       updateVariantStatus('bold', fontData?.file_url_bold);
       updateVariantStatus('italic', fontData?.file_url_italic);
       updateVariantStatus('boldItalic', fontData?.file_url_bold_italic);
+      
+      // Set default weight from font data (default to '400' if not set)
+      const defaultWeight = fontData?.default_weight || '400';
+      document.getElementById('defaultWeightSelect').value = defaultWeight;
       
       // Enable save if regular already uploaded
       updateSaveButton();
@@ -530,9 +568,16 @@
     }
 
     function updateSaveButton() {
+      // Enable save if we have a regular font (either newly selected or already uploaded)
+      // This allows users to change the default weight even without uploading new files
       const hasRegular = pendingUploads.regular || currentUploadFont?.fontData?.file_url;
       document.getElementById('saveFontBtn').disabled = !hasRegular;
     }
+    
+    // Update save button when default weight changes
+    document.getElementById('defaultWeightSelect')?.addEventListener('change', () => {
+      updateSaveButton();
+    });
 
     async function saveFont() {
       if (!currentUploadFont) return;
@@ -580,29 +625,31 @@
           }
         }
         
-        // Update database
-        if (Object.keys(updates).length > 0) {
-          progressText.textContent = 'Saving to database...';
-          
-          // Set is_active to true if we have a regular font
-          if (updates.file_url || currentUploadFont.fontData?.file_url) {
-            updates.is_active = true;
-          }
-          
-          // Set file format if we have regular
-          if (pendingUploads.regular) {
-            updates.file_format = pendingUploads.regular.extension.substring(1);
-          }
-          
-          updates.updated_at = new Date().toISOString();
-          
-          const { error: updateError } = await supabaseClient
-            .from('custom_fonts')
-            .update(updates)
-            .eq('id', currentUploadFont.fontId);
-          
-          if (updateError) throw updateError;
+        // Always include default weight in updates
+        const selectedWeight = document.getElementById('defaultWeightSelect').value;
+        updates.default_weight = selectedWeight;
+        
+        // Update database (always save since we at least have the default_weight)
+        progressText.textContent = 'Saving to database...';
+        
+        // Set is_active to true if we have a regular font
+        if (updates.file_url || currentUploadFont.fontData?.file_url) {
+          updates.is_active = true;
         }
+        
+        // Set file format if we have regular
+        if (pendingUploads.regular) {
+          updates.file_format = pendingUploads.regular.extension.substring(1);
+        }
+        
+        updates.updated_at = new Date().toISOString();
+        
+        const { error: updateError } = await supabaseClient
+          .from('custom_fonts')
+          .update(updates)
+          .eq('id', currentUploadFont.fontId);
+        
+        if (updateError) throw updateError;
         
         // Success
         progressEl.classList.add('hidden');
@@ -635,6 +682,21 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+    
+    function getWeightLabel(weight) {
+      const weightLabels = {
+        '100': '100 Thin',
+        '200': '200 Extra Light',
+        '300': '300 Light',
+        '400': '400 Regular',
+        '500': '500 Medium',
+        '600': '600 Semi Bold',
+        '700': '700 Bold',
+        '800': '800 Extra Bold',
+        '900': '900 Black'
+      };
+      return weightLabels[weight] || weight;
     }
 
     // Dark mode detection
