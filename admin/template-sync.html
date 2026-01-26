@@ -1063,27 +1063,74 @@
     // ============================================
     
     async function fetchGoogleFontsCatalog() {
-      if (googleFontsCatalog) return googleFontsCatalog;
+      if (googleFontsCatalog && googleFontsCatalog.length > 0) return googleFontsCatalog;
       
       try {
-        const response = await fetch(`https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=${GOOGLE_FONTS_API_KEY}`);
+        console.log('[Google Fonts] Fetching catalog...');
+        const apiUrl = `https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=${GOOGLE_FONTS_API_KEY}`;
+        console.log('[Google Fonts] API URL:', apiUrl.replace(GOOGLE_FONTS_API_KEY, 'REDACTED'));
+        
+        const response = await fetch(apiUrl);
+        
+        console.log('[Google Fonts] Response status:', response.status);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Google Fonts] API error:', response.status, response.statusText);
+          console.error('[Google Fonts] Error body:', errorText);
+          
+          // Try to parse as JSON for more details
+          try {
+            const errorJson = JSON.parse(errorText);
+            if (errorJson.error?.message) {
+              alert(`Google Fonts API error: ${errorJson.error.message}\n\nThe API key may have domain restrictions. Check Google Cloud Console.`);
+            }
+          } catch (e) {}
+          
+          return [];
+        }
+        
         const data = await response.json();
+        console.log('[Google Fonts] Response data keys:', Object.keys(data));
+        
+        if (data.error) {
+          console.error('[Google Fonts] API returned error:', data.error);
+          alert(`Google Fonts API error: ${data.error.message || JSON.stringify(data.error)}`);
+          return [];
+        }
+        
         googleFontsCatalog = data.items || [];
-        console.log(`Loaded ${googleFontsCatalog.length} Google Fonts`);
+        console.log(`[Google Fonts] Successfully loaded ${googleFontsCatalog.length} fonts`);
+        
+        // Test search for "League Spartan"
+        const testSearch = googleFontsCatalog.filter(f => f.family.toLowerCase().includes('league'));
+        console.log('[Google Fonts] Test search for "league":', testSearch.map(f => f.family));
+        
         return googleFontsCatalog;
       } catch (err) {
-        console.error('Failed to fetch Google Fonts:', err);
+        console.error('[Google Fonts] Failed to fetch:', err);
+        alert(`Failed to load Google Fonts catalog: ${err.message}\n\nCheck browser console for details.`);
         return [];
       }
     }
     
     function searchGoogleFonts(query) {
-      if (!googleFontsCatalog || !query.trim()) return [];
+      console.log(`[Google Fonts] Searching for: "${query}", catalog has ${googleFontsCatalog?.length || 0} items`);
+      
+      if (!googleFontsCatalog || googleFontsCatalog.length === 0) {
+        console.warn('[Google Fonts] Catalog not loaded!');
+        return [];
+      }
+      
+      if (!query.trim()) return [];
       
       const lowerQuery = query.toLowerCase();
-      return googleFontsCatalog
+      const results = googleFontsCatalog
         .filter(font => font.family.toLowerCase().includes(lowerQuery))
         .slice(0, 8);
+      
+      console.log(`[Google Fonts] Found ${results.length} results:`, results.map(f => f.family));
+      return results;
     }
     
     async function fetchTemplateInfo() {
@@ -1170,10 +1217,15 @@
       section.classList.remove('hidden');
       countEl.textContent = `${fonts.length} font${fonts.length > 1 ? 's' : ''}`;
       
+      // Show warning if Google Fonts catalog failed to load
+      const catalogStatus = googleFontsCatalog && googleFontsCatalog.length > 0 
+        ? `<p class="text-xs text-green-600 mb-2">✓ Google Fonts catalog loaded (${googleFontsCatalog.length} fonts available)</p>`
+        : `<p class="text-xs text-red-500 mb-2">⚠️ Google Fonts catalog not loaded - search may not work. Check console for errors.</p>`;
+      
       // Reset font mappings
       fontMappings = {};
       
-      listEl.innerHTML = fonts.map((font, index) => `
+      listEl.innerHTML = catalogStatus + fonts.map((font, index) => `
         <div class="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
           <div class="flex items-center justify-between mb-2">
             <p class="font-medium text-gray-900 dark:text-white text-sm">${escapeHtml(font)}</p>
@@ -1206,7 +1258,7 @@
       document.addEventListener('click', closeAllFontDropdowns);
     }
     
-    function handleFontSearch(event, index) {
+    async function handleFontSearch(event, index) {
       const query = event.target.value;
       const dropdown = document.getElementById(`fontDropdown_${index}`);
       
@@ -1215,10 +1267,17 @@
         return;
       }
       
+      // Ensure Google Fonts catalog is loaded
+      if (!googleFontsCatalog || googleFontsCatalog.length === 0) {
+        dropdown.innerHTML = '<div class="p-3 text-sm text-amber-500">Loading Google Fonts...</div>';
+        dropdown.classList.remove('hidden');
+        await fetchGoogleFontsCatalog();
+      }
+      
       const results = searchGoogleFonts(query);
       
       if (results.length === 0) {
-        dropdown.innerHTML = '<div class="p-3 text-sm text-gray-500">No matching fonts found</div>';
+        dropdown.innerHTML = `<div class="p-3 text-sm text-gray-500">No matching fonts found for "${escapeHtml(query)}"</div>`;
         dropdown.classList.remove('hidden');
         return;
       }
