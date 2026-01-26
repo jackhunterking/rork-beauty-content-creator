@@ -180,13 +180,13 @@
             Uploading font: <strong id="uploadFontName" class="text-gray-900 dark:text-white"></strong>
           </p>
           
-          <!-- Font Variants -->
+          <!-- Simplified Font Settings -->
           <div class="space-y-4">
             
-            <!-- Regular (Required) -->
+            <!-- Font File Upload (Optional - for custom fonts) -->
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
               <div class="flex items-center justify-between mb-2">
-                <p class="font-medium text-gray-900 dark:text-white">Regular (400) <span class="text-red-500">*</span></p>
+                <p class="font-medium text-gray-900 dark:text-white">Font File <span class="text-xs text-gray-400">(optional for custom fonts)</span></p>
                 <span id="regularStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
               </div>
               <div 
@@ -198,64 +198,16 @@
                 <input type="file" id="fileInputRegular" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'regular')">
                 <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
               </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                Only needed for custom fonts not available in Google Fonts.
+              </p>
             </div>
             
-            <!-- Bold (Optional) -->
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div class="flex items-center justify-between mb-2">
-                <p class="font-medium text-gray-900 dark:text-white">Bold (700) <span class="text-xs text-gray-400">(optional)</span></p>
-                <span id="boldStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
-              </div>
-              <div 
-                id="dropzoneBold" 
-                class="dropzone rounded-lg p-4 text-center cursor-pointer"
-                onclick="document.getElementById('fileInputBold').click()"
-                data-variant="bold"
-              >
-                <input type="file" id="fileInputBold" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'bold')">
-                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
-              </div>
-            </div>
-            
-            <!-- Italic (Optional) -->
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div class="flex items-center justify-between mb-2">
-                <p class="font-medium text-gray-900 dark:text-white">Italic <span class="text-xs text-gray-400">(optional)</span></p>
-                <span id="italicStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
-              </div>
-              <div 
-                id="dropzoneItalic" 
-                class="dropzone rounded-lg p-4 text-center cursor-pointer"
-                onclick="document.getElementById('fileInputItalic').click()"
-                data-variant="italic"
-              >
-                <input type="file" id="fileInputItalic" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'italic')">
-                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
-              </div>
-            </div>
-            
-            <!-- Bold Italic (Optional) -->
-            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-              <div class="flex items-center justify-between mb-2">
-                <p class="font-medium text-gray-900 dark:text-white">Bold Italic <span class="text-xs text-gray-400">(optional)</span></p>
-                <span id="boldItalicStatus" class="text-xs px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">Not uploaded</span>
-              </div>
-              <div 
-                id="dropzoneBoldItalic" 
-                class="dropzone rounded-lg p-4 text-center cursor-pointer"
-                onclick="document.getElementById('fileInputBoldItalic').click()"
-                data-variant="boldItalic"
-              >
-                <input type="file" id="fileInputBoldItalic" accept=".ttf,.otf,.woff,.woff2" class="hidden" onchange="handleFileSelect(event, 'boldItalic')">
-                <p class="text-sm text-gray-600 dark:text-gray-400">Drop TTF/OTF/WOFF file or click to browse</p>
-              </div>
-            </div>
-            
-            <!-- Default Weight (for variable fonts) -->
+            <!-- Default Weight -->
             <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/20">
               <div class="flex items-center justify-between mb-2">
                 <p class="font-medium text-gray-900 dark:text-white">Default Weight</p>
-                <span class="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300">⚡ Variable Fonts</span>
+                <span class="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300">Required</span>
               </div>
               <select 
                 id="defaultWeightSelect"
@@ -272,7 +224,7 @@
                 <option value="900">900 - Black</option>
               </select>
               <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                For variable fonts, select which weight to use as default when rendering text.
+                Select the weight to use when rendering text with this font.
               </p>
             </div>
             
@@ -349,10 +301,7 @@
     
     let currentUploadFont = null;
     let pendingUploads = {
-      regular: null,
-      bold: null,
-      italic: null,
-      boldItalic: null
+      regular: null
     };
     
     // Google Fonts catalog (cached)
@@ -547,7 +496,7 @@
 
     function openUploadModal(fontFamily, fontId, fontData) {
       currentUploadFont = { fontFamily, fontId, fontData };
-      pendingUploads = { regular: null, bold: null, italic: null, boldItalic: null };
+      pendingUploads = { regular: null };
       selectedGoogleFontName = null;
       
       document.getElementById('uploadFontName').textContent = fontFamily;
@@ -556,16 +505,11 @@
       document.getElementById('uploadResult').classList.add('hidden');
       document.getElementById('saveFontBtn').disabled = true;
       
-      // Reset file inputs
-      ['Regular', 'Bold', 'Italic', 'BoldItalic'].forEach(variant => {
-        document.getElementById('fileInput' + variant).value = '';
-      });
+      // Reset file input
+      document.getElementById('fileInputRegular').value = '';
       
-      // Show existing uploads
+      // Show existing upload status
       updateVariantStatus('regular', fontData?.file_url);
-      updateVariantStatus('bold', fontData?.file_url_bold);
-      updateVariantStatus('italic', fontData?.file_url_italic);
-      updateVariantStatus('boldItalic', fontData?.file_url_bold_italic);
       
       // Set default weight from font data (default to '400' if not set)
       const defaultWeight = fontData?.default_weight || '400';
@@ -601,7 +545,7 @@
     function closeUploadModal() {
       document.getElementById('uploadModal').classList.add('hidden');
       currentUploadFont = null;
-      pendingUploads = { regular: null, bold: null, italic: null, boldItalic: null };
+      pendingUploads = { regular: null };
     }
 
     // Drag and drop for all dropzones
@@ -661,10 +605,12 @@
     }
 
     function updateSaveButton() {
-      // Enable save if we have a regular font (either newly selected or already uploaded)
-      // This allows users to change the default weight even without uploading new files
+      // Enable save if we have:
+      // - A font file (newly selected or already uploaded), OR
+      // - A Google Font linked
       const hasRegular = pendingUploads.regular || currentUploadFont?.fontData?.file_url;
-      document.getElementById('saveFontBtn').disabled = !hasRegular;
+      const hasGoogleFont = selectedGoogleFontName || currentUploadFont?.fontData?.google_font_name;
+      document.getElementById('saveFontBtn').disabled = !(hasRegular || hasGoogleFont);
     }
     
     // Update save button when default weight changes
@@ -728,9 +674,13 @@
         // Update database (always save since we at least have the default_weight)
         progressText.textContent = 'Saving to database...';
         
-        // Set is_active to true if we have a regular font
-        if (updates.file_url || currentUploadFont.fontData?.file_url) {
+        // Set is_active to true if we have a font file OR linked to Google Fonts
+        if (updates.file_url || currentUploadFont.fontData?.file_url || updates.google_font_name) {
           updates.is_active = true;
+          // Set source based on what we have
+          if (updates.google_font_name && !updates.file_url && !currentUploadFont.fontData?.file_url) {
+            updates.source = 'google';
+          }
         }
         
         // Set file format if we have regular
