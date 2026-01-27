@@ -362,12 +362,59 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Get current subscription state (for history tracking)
+    // Get current subscription state (for history tracking and admin protection)
     const { data: currentSub } = await supabase
       .from('subscriptions')
-      .select('id, tier, status')
+      .select('id, tier, status, source, admin_expires_at')
       .eq('user_id', cleanUserId)
       .single();
+
+    // IMPORTANT: Protect admin-granted subscriptions from being overwritten by webhooks
+    // Admin grants should take precedence over Superwall events
+    if (currentSub?.source === 'admin') {
+      // Check if admin grant has expired (null = never expires)
+      const adminExpired = currentSub.admin_expires_at 
+        ? new Date(currentSub.admin_expires_at) < new Date()
+        : false;
+      
+      if (!adminExpired) {
+        console.log(`[superwall-webhook] ⚠️ Skipping - user has active admin grant (tier: ${currentSub.tier})`);
+        console.log(`[superwall-webhook] Admin grants take precedence over Superwall events`);
+        
+        // Still log to history for audit trail (but don't change subscription)
+        await supabase
+          .from('subscription_history')
+          .insert({
+            user_id: cleanUserId,
+            subscription_id: currentSub.id,
+            event_type: event.type,
+            event_source: 'superwall_webhook',
+            tier_before: currentSub.tier,
+            tier_after: currentSub.tier,  // No change
+            status_before: currentSub.status,
+            status_after: currentSub.status,  // No change
+            raw_payload: {
+              ...event.data,
+              _skipped_reason: 'admin_grant_protected',
+            },
+            created_by: 'webhook',
+          });
+        
+        return new Response(JSON.stringify({ 
+          success: true,
+          message: 'Event acknowledged but skipped - admin grant protected',
+          event_type: event.type,
+          user_id: cleanUserId,
+          current_tier: currentSub.tier,
+          current_source: 'admin',
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else {
+        console.log(`[superwall-webhook] Admin grant has expired, proceeding with Superwall update`);
+      }
+    }
 
     // Determine new tier and status based on event type
     let newTier: 'free' | 'pro' | 'studio' = 'free';
@@ -446,6 +493,11 @@ Deno.serve(async (req: Request) => {
     // Upsert subscription record
     // NOTE: Superwall timestamps are already in MILLISECONDS (not seconds)
     // See: https://superwall.com/docs/integrations/webhooks
+    // 
+    // NOTE: We only reach this code if:
+    // 1. User has no admin grant, OR
+    // 2. User's admin grant has expired
+    // Active admin grants are protected and skip this code path entirely (see above)
     const subscriptionData = {
       user_id: cleanUserId,
       tier: newTier,
@@ -459,7 +511,8 @@ Deno.serve(async (req: Request) => {
         : null,
       superwall_purchased_at: new Date(event.data.purchasedAt).toISOString(),  // Already in ms
       superwall_environment: event.data.environment,
-      // Clear admin fields if this is a Superwall event (Superwall takes precedence)
+      // Clear admin fields since Superwall is now the active source
+      // (admin grant was either never set or has expired)
       admin_granted_by: null,
       admin_granted_at: null,
       admin_expires_at: null,

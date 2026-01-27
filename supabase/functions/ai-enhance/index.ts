@@ -316,7 +316,7 @@ Deno.serve(async (req: Request) => {
     if (config?.is_premium_only) {
       const { data: subscription } = await adminClient
         .from('subscriptions')
-        .select('tier, status, superwall_expires_at, admin_expires_at')
+        .select('tier, status, source, superwall_expires_at, admin_expires_at')
         .eq('user_id', user.id)
         .single();
 
@@ -329,26 +329,35 @@ Deno.serve(async (req: Request) => {
       // Determine if user has active premium access
       const now = new Date();
       
-      // Check expiration dates
-      const superwallExpired = subscription?.superwall_expires_at 
-        ? new Date(subscription.superwall_expires_at) < now 
-        : false;
-      const adminExpired = subscription?.admin_expires_at 
-        ? new Date(subscription.admin_expires_at) < now 
-        : false;
+      // IMPORTANT: Only check the expiration date for the CURRENT source
+      // - If source is 'admin', only check admin_expires_at (null = never expires)
+      // - If source is 'superwall', only check superwall_expires_at
+      // This prevents old Superwall expiration dates from invalidating admin grants
+      let isExpired = false;
+      
+      if (subscription?.source === 'admin') {
+        // Admin grants: only check admin_expires_at (null = never expires)
+        isExpired = subscription.admin_expires_at 
+          ? new Date(subscription.admin_expires_at) < now 
+          : false;
+      } else if (subscription?.source === 'superwall') {
+        // Superwall subscriptions: only check superwall_expires_at
+        isExpired = subscription.superwall_expires_at 
+          ? new Date(subscription.superwall_expires_at) < now 
+          : false;
+      }
       
       const isActive = subscription && 
         subscription.tier !== 'free' &&
         VALID_PREMIUM_STATUSES.includes(subscription.status) &&
-        !superwallExpired &&
-        !adminExpired;
+        !isExpired;
 
       if (!isActive) {
         console.log(`[ai-enhance] Premium check failed for user ${user.id}:`, {
           tier: subscription?.tier || 'no subscription',
           status: subscription?.status || 'unknown',
-          superwallExpired,
-          adminExpired,
+          source: subscription?.source || 'unknown',
+          isExpired,
           superwall_expires_at: subscription?.superwall_expires_at,
           admin_expires_at: subscription?.admin_expires_at,
         });
@@ -358,7 +367,7 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      console.log(`[ai-enhance] Premium check passed for user ${user.id}: tier=${subscription.tier}, status=${subscription.status}`);
+      console.log(`[ai-enhance] Premium check passed for user ${user.id}: tier=${subscription.tier}, source=${subscription.source}, status=${subscription.status}`);
     }
 
     // Get background prompt based on input type
