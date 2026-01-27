@@ -74,9 +74,6 @@ const COLOR_PRESETS: string[] = [
   '#FDF5E6', '#FFE4E1', '#FFDAB9', '#E6E6FA', '#B0E0E6', '#F0FFF0',
 ];
 
-// Hue spectrum for the rainbow bar
-const HUE_COLORS = ['#FF0000', '#FF8000', '#FFFF00', '#80FF00', '#00FF00', '#00FF80', '#00FFFF', '#0080FF', '#0000FF', '#8000FF', '#FF00FF', '#FF0080', '#FF0000'];
-
 /**
  * Helper to check if a color is light (for contrast)
  */
@@ -204,16 +201,17 @@ export default function ReplaceBackgroundView({
   const [customGradientDirection, setCustomGradientDirection] = useState<GradientDirection>('vertical');
   const [showCustomGradient, setShowCustomGradient] = useState(false);
   
-  // Color picker modal state for custom gradient
+  // Color picker modal state for custom gradient and solid color
   const [colorPickerVisible, setColorPickerVisible] = useState(false);
-  const [editingColorType, setEditingColorType] = useState<'start' | 'end'>('start');
+  const [editingColorType, setEditingColorType] = useState<'start' | 'end' | 'solid'>('start');
   
   // Processing state
   const [isPreparing, setIsPreparing] = useState(false);
   
   // Calculate preview dimensions based on SLOT aspect ratio (not image AR)
+  // Now we have more space since color presets are horizontal scrolling
   const maxPreviewWidth = SCREEN_WIDTH - 48;
-  const maxPreviewHeight = 160; // Increased from 120 for better slot AR handling
+  const maxPreviewHeight = 280; // Increased significantly - color presets now scroll horizontally
   const slotAspectRatio = slotDimensions.width / slotDimensions.height;
   
   let previewWidth = maxPreviewWidth;
@@ -408,13 +406,22 @@ export default function ReplaceBackgroundView({
   }, []);
 
   const handleColorPickerSelect = useCallback((color: string) => {
-    if (editingColorType === 'start') {
+    if (editingColorType === 'solid') {
+      setSelectedColor(color);
+      setHexInput(color);
+    } else if (editingColorType === 'start') {
       setCustomGradientStart(color);
     } else {
       setCustomGradientEnd(color);
     }
     setColorPickerVisible(false);
   }, [editingColorType]);
+
+  // Open color picker for solid color
+  const handleOpenSolidColorPicker = useCallback(() => {
+    setEditingColorType('solid');
+    setColorPickerVisible(true);
+  }, []);
 
   // Update custom gradient when colors/direction change
   useEffect(() => {
@@ -474,61 +481,60 @@ export default function ReplaceBackgroundView({
   // Render solid color content with inline picker
   const renderSolidContent = () => (
     <View style={styles.sectionContent}>
-      {/* Selected color preview */}
-      <View style={styles.selectedColorContainer}>
-        <View style={[styles.selectedColorPreview, { backgroundColor: selectedColor }]}>
-          {isLightColor(selectedColor) && <View style={styles.selectedColorBorder} />}
-        </View>
-        <View style={styles.selectedColorInfo}>
-          <Text style={styles.selectedColorLabel}>Selected Color</Text>
-          <View style={styles.hexInputContainer}>
-            <TextInput
-              style={styles.hexInput}
-              value={hexInput}
-              onChangeText={handleHexInputChange}
-              placeholder="#FFFFFF"
-              placeholderTextColor={Colors.light.textTertiary}
-              autoCapitalize="characters"
-              maxLength={7}
-            />
-          </View>
-        </View>
-      </View>
-
-      {/* Rainbow hue bar */}
-      <View style={styles.hueBarContainer}>
-        <LinearGradient
-          colors={HUE_COLORS}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.hueBar}
-        />
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.hueScrollContent}
+      {/* Selected color preview - compact row */}
+      <View style={styles.selectedColorRow}>
+        <TouchableOpacity 
+          style={[styles.selectedColorPreviewSmall, { backgroundColor: selectedColor }]}
+          onPress={handleOpenSolidColorPicker}
+          activeOpacity={0.7}
         >
-          {HUE_COLORS.slice(0, -1).map((color, idx) => (
-            <TouchableOpacity
-              key={idx}
-              style={styles.hueTouchArea}
-              onPress={() => handleColorSelect(color)}
-              activeOpacity={0.7}
-            />
-          ))}
-        </ScrollView>
+          {isLightColor(selectedColor) && <View style={styles.selectedColorBorderSmall} />}
+        </TouchableOpacity>
+        <View style={styles.hexInputContainerCompact}>
+          <TextInput
+            style={styles.hexInputCompact}
+            value={hexInput}
+            onChangeText={handleHexInputChange}
+            placeholder="#FFFFFF"
+            placeholderTextColor={Colors.light.textTertiary}
+            autoCapitalize="characters"
+            maxLength={7}
+          />
+        </View>
       </View>
 
-      {/* Color presets grid */}
+      {/* Color presets - horizontal scroll with custom picker button */}
       <Text style={styles.presetsLabel}>Presets</Text>
-      <View style={styles.colorGrid}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.colorPresetsScroll}
+      >
+        {/* Custom color picker button */}
+        <TouchableOpacity
+          style={styles.customColorButton}
+          onPress={handleOpenSolidColorPicker}
+          activeOpacity={0.7}
+        >
+          <LinearGradient
+            colors={['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.customColorButtonGradient}
+          />
+          <View style={styles.customColorButtonOverlay}>
+            <Ionicons name="add" size={20} color={Colors.light.text} />
+          </View>
+        </TouchableOpacity>
+        
+        {/* Preset colors */}
         {COLOR_PRESETS.map((color) => (
           <TouchableOpacity
             key={color}
             style={[
-              styles.colorSwatch,
+              styles.colorSwatchHorizontal,
               { backgroundColor: color },
-              selectedColor === color && styles.colorSwatchSelected,
+              selectedColor === color && styles.colorSwatchHorizontalSelected,
             ]}
             onPress={() => handleColorSelect(color)}
             activeOpacity={0.7}
@@ -536,13 +542,13 @@ export default function ReplaceBackgroundView({
             {selectedColor === color && (
               <Ionicons 
                 name="checkmark" 
-                size={16} 
+                size={14} 
                 color={isLightColor(color) ? '#000' : '#FFF'} 
               />
             )}
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 
@@ -763,11 +769,23 @@ export default function ReplaceBackgroundView({
         </TouchableOpacity>
       </View>
 
-      {/* Color Picker Modal for Custom Gradient */}
+      {/* Color Picker Modal for Custom Colors */}
       <ColorPickerModal
         visible={colorPickerVisible}
-        currentColor={editingColorType === 'start' ? customGradientStart : customGradientEnd}
-        title={editingColorType === 'start' ? 'Start Color' : 'End Color'}
+        currentColor={
+          editingColorType === 'solid' 
+            ? selectedColor 
+            : editingColorType === 'start' 
+              ? customGradientStart 
+              : customGradientEnd
+        }
+        title={
+          editingColorType === 'solid' 
+            ? 'Choose Color' 
+            : editingColorType === 'start' 
+              ? 'Start Color' 
+              : 'End Color'
+        }
         onSelectColor={handleColorPickerSelect}
         onClose={() => setColorPickerVisible(false)}
       />
@@ -775,9 +793,7 @@ export default function ReplaceBackgroundView({
   );
 }
 
-const SWATCH_SIZE = 40;
-const SWATCHES_PER_ROW = 7;
-const SWATCH_GAP = (SCREEN_WIDTH - 40 - (SWATCH_SIZE * SWATCHES_PER_ROW)) / (SWATCHES_PER_ROW - 1);
+const SWATCH_SIZE_HORIZONTAL = 44; // Slightly larger for horizontal scroll
 
 const styles = StyleSheet.create({
   container: { 
@@ -899,7 +915,7 @@ const styles = StyleSheet.create({
     color: Colors.light.accent,
   },
   tabContent: { 
-    minHeight: 200,
+    minHeight: 120, // Reduced - color presets now scroll horizontally
   },
   
   // Section content
@@ -933,35 +949,29 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
   
-  // Selected color preview
-  selectedColorContainer: {
+  // Selected color preview - compact horizontal row
+  selectedColorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.light.surfaceSecondary,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 16,
+    marginBottom: 12,
+    gap: 10,
   },
-  selectedColorPreview: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
+  selectedColorPreviewSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     position: 'relative',
     overflow: 'hidden',
   },
-  selectedColorBorder: {
+  selectedColorBorderSmall: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.light.border,
-  },
-  selectedColorInfo: {
-    flex: 1,
-    marginLeft: 14,
   },
   selectedColorLabel: {
     fontSize: 12,
@@ -969,16 +979,17 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     marginBottom: 6,
   },
-  hexInputContainer: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: 8,
+  hexInputContainerCompact: {
+    flex: 1,
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: Colors.light.border,
   },
-  hexInput: {
+  hexInputCompact: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
+    paddingVertical: 10,
+    fontSize: 15,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     color: Colors.light.text,
@@ -998,31 +1009,7 @@ const styles = StyleSheet.create({
     color: '#34C759',
   },
   
-  // Hue bar
-  hueBarContainer: {
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-    position: 'relative',
-  },
-  hueBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  hueScrollContent: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  hueTouchArea: {
-    flex: 1,
-    height: 32,
-  },
-  
-  // Color presets
+  // Color presets - horizontal scroll
   presetsLabel: {
     fontSize: 12,
     fontWeight: '600',
@@ -1031,23 +1018,45 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  colorGrid: {
+  colorPresetsScroll: {
+    paddingVertical: 4,
+    gap: 10,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SWATCH_GAP,
   },
-  colorSwatch: { 
-    width: SWATCH_SIZE, 
-    height: SWATCH_SIZE, 
-    borderRadius: SWATCH_SIZE / 2, 
+  colorSwatchHorizontal: { 
+    width: SWATCH_SIZE_HORIZONTAL, 
+    height: SWATCH_SIZE_HORIZONTAL, 
+    borderRadius: SWATCH_SIZE_HORIZONTAL / 2, 
     alignItems: 'center', 
     justifyContent: 'center', 
     borderWidth: 2, 
     borderColor: Colors.light.border,
   },
-  colorSwatchSelected: { 
+  colorSwatchHorizontalSelected: { 
     borderColor: Colors.light.accent,
     borderWidth: 3,
+  },
+  customColorButton: {
+    width: SWATCH_SIZE_HORIZONTAL,
+    height: SWATCH_SIZE_HORIZONTAL,
+    borderRadius: SWATCH_SIZE_HORIZONTAL / 2,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: Colors.light.border,
+    position: 'relative',
+  },
+  customColorButtonGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  customColorButtonOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
   },
   
   // Gradient styles
