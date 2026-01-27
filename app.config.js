@@ -39,8 +39,9 @@ export default {
         // App Tracking Transparency (ATT) - Required by Apple for iOS 14.5+
         NSUserTrackingUsageDescription: "This identifier will be used to deliver personalized ads to you and helps us understand how our ads perform.",
         // Facebook SDK Configuration
-        FacebookAppID: "664828860049907",
-        FacebookClientToken: "ef9324eb6436b29a84d6009d346c8b6e",
+        // NOTE: Updated to new Facebook App (without Meta Login)
+        FacebookAppID: "2066856954071896",
+        FacebookClientToken: "e2fb3be264e725ef4281a199ed3dcc1f",
         FacebookDisplayName: "Resulta",
         LSApplicationQueriesSchemes: ["fbapi", "fb-messenger-share-api", "fbauth2", "fbshareextension"],
       },
@@ -76,10 +77,10 @@ export default {
       [
         "react-native-fbsdk-next",
         {
-          appID: "664828860049907",
-          clientToken: "ef9324eb6436b29a84d6009d346c8b6e",
+          // NOTE: Updated to new Facebook App (without Meta Login)
+          appID: "2066856954071896",
+          clientToken: "e2fb3be264e725ef4281a199ed3dcc1f",
           displayName: "Resulta",
-          scheme: "fb664828860049907",
           autoInitEnabled: false, // Disabled - we initialize manually after ATT prompt
           autoLogAppEventsEnabled: true,
           advertiserIdCollectionEnabled: false, // Disabled by default - enabled programmatically based on ATT status

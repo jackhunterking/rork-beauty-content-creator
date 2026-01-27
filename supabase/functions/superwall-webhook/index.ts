@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 import { Webhook } from "https://esm.sh/svix@1.15.0";
 
 /**
@@ -40,6 +40,121 @@ const PRODUCT_TIER_MAP: Record<string, 'pro' | 'studio'> = {
   'resulta_studio_monthly': 'studio',
   'resulta_studio_yearly': 'studio',
 };
+
+// ============================================
+// Meta Conversion API (CAPI) Integration
+// ============================================
+
+/**
+ * Convert ArrayBuffer to hex string for SHA256 hashing
+ */
+function arrayBufferToHex(buffer: ArrayBuffer): string {
+  const byteArray = new Uint8Array(buffer);
+  return Array.from(byteArray)
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Hash a string using SHA256 (required for Meta CAPI user data)
+ */
+async function hashString(str: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str.toLowerCase().trim());
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return arrayBufferToHex(hashBuffer);
+}
+
+/**
+ * Send purchase event to Meta Conversion API
+ * This provides server-side tracking for iOS 14.5+ users who denied ATT
+ * 
+ * @param supabase - Supabase client for fetching user email
+ * @param userId - User ID to look up profile
+ * @param event - Superwall webhook payload with purchase data
+ */
+async function sendToMetaConversionAPI(
+  supabase: SupabaseClient,
+  userId: string,
+  event: WebhookPayload
+): Promise<void> {
+  const pixelId = Deno.env.get('META_PIXEL_ID');
+  const accessToken = Deno.env.get('META_ACCESS_TOKEN');
+  
+  // Skip if Meta CAPI is not configured
+  if (!pixelId || !accessToken) {
+    console.log('[superwall-webhook] Meta CAPI not configured, skipping');
+    return;
+  }
+  
+  try {
+    // Get user email from profiles table for better matching
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', userId)
+      .single();
+    
+    // Prepare user data with hashed identifiers
+    const userData: Record<string, string[]> = {
+      external_id: [await hashString(userId)],
+    };
+    
+    // Add hashed email if available (improves matching rate by ~30%)
+    if (profile?.email) {
+      userData.em = [await hashString(profile.email)];
+    }
+    
+    // Build the CAPI payload
+    // Using action_source: 'other' for server-side events (works reliably)
+    // Events are still tracked for attribution and appear in Events Manager
+    const payload = {
+      data: [{
+        event_name: 'Purchase',
+        event_time: Math.floor(event.data.purchasedAt / 1000), // Convert ms to seconds
+        event_id: event.data.transactionId, // For deduplication with client-side SDK
+        action_source: 'other', // Server-generated events
+        user_data: userData,
+        custom_data: {
+          currency: event.data.currencyCode || 'USD',
+          value: event.data.price, // Actual purchase price from Superwall
+          content_ids: [event.data.productId],
+          content_type: 'product',
+          content_name: event.data.productId,
+        },
+      }],
+    };
+    
+    console.log('[superwall-webhook] Sending to Meta CAPI:', {
+      event_name: 'Purchase',
+      value: event.data.price,
+      currency: event.data.currencyCode,
+      productId: event.data.productId,
+      hasEmail: !!profile?.email,
+    });
+    
+    // Send to Meta Conversion API
+    const response = await fetch(
+      `https://graph.facebook.com/v19.0/${pixelId}/events?access_token=${accessToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }
+    );
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log('[superwall-webhook] ✓ Meta CAPI event sent successfully:', result);
+    } else {
+      console.error('[superwall-webhook] Meta CAPI error:', result);
+    }
+  } catch (error) {
+    // Don't fail the webhook if CAPI fails - subscription update is more important
+    console.error('[superwall-webhook] Meta CAPI exception:', error);
+  }
+}
 
 /**
  * Determine subscription tier from product ID
@@ -392,6 +507,13 @@ Deno.serve(async (req: Request) => {
     if (historyError) {
       // Non-critical - log but don't fail
       console.warn('[superwall-webhook] Failed to log history:', historyError);
+    }
+
+    // Send purchase events to Meta Conversion API for better attribution
+    // Only for revenue-generating events (not cancellations/expirations/refunds)
+    const purchaseEvents = ['initial_purchase', 'renewal', 'non_renewing_purchase', 'uncancellation'];
+    if (purchaseEvents.includes(event.type) && event.data.price > 0) {
+      await sendToMetaConversionAPI(supabase, cleanUserId, event);
     }
 
     console.log(`[superwall-webhook] ✓ Successfully processed ${event.type} for user ${cleanUserId}`);

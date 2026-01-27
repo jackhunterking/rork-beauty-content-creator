@@ -4,7 +4,8 @@ import { supabase } from '@/lib/supabase';
 import type { Entitlement, EntitlementsInfo } from 'expo-superwall';
 import { 
   trackSubscribe, 
-  trackInitiatedCheckout 
+  trackInitiatedCheckout,
+  trackPurchase,
 } from '@/services/metaAnalyticsService';
 import type { SubscriptionTier, SubscriptionTierSource } from '@/types';
 
@@ -122,6 +123,20 @@ const TIER_RANK: Record<SubscriptionTier, number> = {
   studio: 2,
 };
 
+// ============================================
+// Product Price Mapping for Meta Analytics
+// Prices from App Store Connect (USD)
+// ============================================
+
+const PRODUCT_PRICE_MAP: Record<string, number> = {
+  'resulta_pro_weekly': 4.49,
+  'resulta_pro_monthly': 11.99,
+  'resulta_pro_yearly': 114.99,
+  'resulta_studio_weekly': 9.49,
+  'resulta_studio_monthly': 26.99,
+  'resulta_studio_yearly': 259.99,
+};
+
 /**
  * Resolve tier from Superwall entitlements
  * Maps entitlement IDs to subscription tiers
@@ -231,7 +246,14 @@ export function useTieredSubscription(): TieredSubscription {
     },
     onDismiss: (info, result) => {
       if (result.type === 'purchased') {
-        trackSubscribe(info.name || 'subscription', 0, 'USD');
+        // Get actual price from product ID mapping for accurate Meta attribution
+        const price = PRODUCT_PRICE_MAP[result.productId] || 11.99; // fallback to pro monthly
+        
+        // Track subscription event for Meta with actual revenue
+        trackSubscribe(result.productId, price, 'USD');
+        
+        // Also log as purchase event for ROAS optimization
+        trackPurchase(price, 'USD', result.productId);
         
         // IMPORTANT: Execute the pending feature callback after successful purchase
         // With Gated paywalls, this is when the user gains access to the feature
