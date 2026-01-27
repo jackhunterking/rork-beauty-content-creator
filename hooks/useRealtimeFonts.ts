@@ -131,13 +131,6 @@ export function useRealtimeFonts(): UseRealtimeFontsResult {
       if (fetchError) throw fetchError;
       
       const mappedFonts = (data as CustomFontRow[]).map(mapRowToFont);
-      console.log('[RealtimeFonts] Initial fetch complete:', mappedFonts.length, 'fonts');
-      
-      // Log sources for debugging
-      const googleFonts = mappedFonts.filter(f => f.source === 'google').length;
-      const supabaseFonts = mappedFonts.filter(f => f.source === 'supabase').length;
-      console.log(`[RealtimeFonts] Sources: ${googleFonts} Google, ${supabaseFonts} Supabase`);
-      
       updateFontsState(mappedFonts);
     } catch (err) {
       console.error('[RealtimeFonts] Error fetching fonts:', err);
@@ -150,8 +143,6 @@ export function useRealtimeFonts(): UseRealtimeFontsResult {
   // Handle INSERT
   const handleInsert = useCallback((payload: RealtimePostgresChangesPayload<CustomFontRow>) => {
     const newRow = payload.new as CustomFontRow;
-    console.log('[RealtimeFonts] INSERT:', newRow.font_family);
-    
     const newFont = mapRowToFont(newRow);
     setFonts(prev => {
       const updated = [...prev, newFont];
@@ -163,8 +154,6 @@ export function useRealtimeFonts(): UseRealtimeFontsResult {
   // Handle UPDATE
   const handleUpdate = useCallback((payload: RealtimePostgresChangesPayload<CustomFontRow>) => {
     const updatedRow = payload.new as CustomFontRow;
-    console.log('[RealtimeFonts] UPDATE:', updatedRow.font_family, 'active:', updatedRow.is_active);
-    
     const updatedFont = mapRowToFont(updatedRow);
     setFonts(prev => {
       const existingIndex = prev.findIndex(f => f.id === updatedFont.id);
@@ -181,8 +170,6 @@ export function useRealtimeFonts(): UseRealtimeFontsResult {
   // Handle DELETE
   const handleDelete = useCallback((payload: RealtimePostgresChangesPayload<CustomFontRow>) => {
     const deletedRow = payload.old as CustomFontRow;
-    console.log('[RealtimeFonts] DELETE:', deletedRow.id);
-    
     setFonts(prev => {
       const updated = prev.filter(f => f.id !== deletedRow.id);
       setFontsByFamily(buildFontMap(updated));
@@ -202,11 +189,7 @@ export function useRealtimeFonts(): UseRealtimeFontsResult {
       .on<CustomFontRow>('postgres_changes', { event: 'DELETE', schema: 'public', table: 'custom_fonts' }, handleDelete)
       .subscribe((status, err) => {
         if (!mountedRef.current) return;
-        if (status === 'SUBSCRIBED') {
-          console.log('[RealtimeFonts] ✓ Subscription active for custom_fonts table');
-        }
         if (status === 'CHANNEL_ERROR' && err?.message) {
-          console.error('[RealtimeFonts] Subscription error:', err.message);
           setError(new Error('Real-time fonts subscription failed'));
         }
       });

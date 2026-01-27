@@ -80,18 +80,10 @@ export async function initializeFacebookSDK(isTrackingAuthorized: boolean = fals
     // This ensures we comply with Apple's ATT requirements
     await Settings.setAdvertiserIDCollectionEnabled(isTrackingAuthorized);
     
-    console.log('[MetaAnalytics] Facebook SDK initialized with ATT status:', {
-      isTrackingAuthorized,
-      advertiserTrackingEnabled: isTrackingAuthorized,
-      advertiserIDCollectionEnabled: isTrackingAuthorized,
-    });
-    
     // Flush any pending events
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Facebook SDK initialized successfully');
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to initialize Facebook SDK:', error);
+    // Silent failure - analytics should not crash the app
   }
 }
 
@@ -107,10 +99,8 @@ export async function updateTrackingStatus(isTrackingAuthorized: boolean): Promi
   try {
     await Settings.setAdvertiserTrackingEnabled(isTrackingAuthorized);
     await Settings.setAdvertiserIDCollectionEnabled(isTrackingAuthorized);
-    
-    console.log('[MetaAnalytics] Updated tracking status:', { isTrackingAuthorized });
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to update tracking status:', error);
+    // Silent failure
   }
 }
 
@@ -130,10 +120,8 @@ export function trackCompleteRegistration(
     });
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked complete registration:', method);
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track registration:', error);
+    // Silent failure
   }
 }
 
@@ -172,10 +160,8 @@ export function trackPurchase(
     AppEventsLogger.logPurchase(price, currency, params);
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked purchase:', { price, currency, productId });
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track purchase:', error);
+    // Silent failure
   }
 }
 
@@ -212,10 +198,8 @@ export function trackSubscribe(
     });
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked subscribe:', { productId, price, currency });
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track subscription:', error);
+    // Silent failure
   }
 }
 
@@ -237,10 +221,8 @@ export function trackStartTrial(productId?: string): void {
     });
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked start trial:', productId);
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track trial start:', error);
+    // Silent failure
   }
 }
 
@@ -268,10 +250,8 @@ export function trackContentView(
     });
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked content view:', { contentId, contentType });
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track content view:', error);
+    // Silent failure
   }
 }
 
@@ -307,10 +287,8 @@ export function trackInitiatedCheckout(
     AppEventsLogger.logEvent(FB_EVENTS.INITIATED_CHECKOUT, params);
     
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked initiated checkout:', { productId, price });
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track initiated checkout:', error);
+    // Silent failure
   }
 }
 
@@ -330,10 +308,8 @@ export function trackCustomEvent(
   try {
     AppEventsLogger.logEvent(eventName, params);
     AppEventsLogger.flush();
-    
-    console.log('[MetaAnalytics] Tracked custom event:', eventName, params);
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to track custom event:', error);
+    // Silent failure
   }
 }
 
@@ -346,9 +322,8 @@ export function trackCustomEvent(
 export function setUserId(userId: string): void {
   try {
     AppEventsLogger.setUserID(userId);
-    console.log('[MetaAnalytics] Set user ID');
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to set user ID:', error);
+    // Silent failure
   }
 }
 
@@ -358,9 +333,8 @@ export function setUserId(userId: string): void {
 export function clearUserId(): void {
   try {
     AppEventsLogger.setUserID(null);
-    console.log('[MetaAnalytics] Cleared user ID');
   } catch (error) {
-    console.error('[MetaAnalytics] Failed to clear user ID:', error);
+    // Silent failure
   }
 }
 

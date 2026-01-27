@@ -99,7 +99,6 @@ export function useTemplateFonts(fontFamilies: string[]): boolean {
     // Check if all fonts are already loaded
     const allLoaded = fontsToLoad.every(f => isFontLoaded(f));
     if (allLoaded) {
-      console.log(`[useTemplateFonts] All ${fontsToLoad.length} fonts already loaded`);
       setFontsLoaded(true);
       setFailedFonts([]);
       return;
@@ -108,33 +107,15 @@ export function useTemplateFonts(fontFamilies: string[]): boolean {
     loadingRef.current = true;
     setFontsLoaded(false);
     
-    // Log what we're loading and from where
-    fontsToLoad.forEach(fontFamily => {
-      const fontInfo = fontsByFamily.get(fontFamily.toLowerCase());
-      if (fontInfo) {
-        console.log(`[useTemplateFonts] ${fontFamily} → ${fontInfo.source}${fontInfo.source === 'supabase' ? (fontInfo.isActive ? ' (active)' : ' (inactive - needs upload)') : ''}`);
-      } else {
-        console.log(`[useTemplateFonts] ${fontFamily} → not in registry, will try Google Fonts`);
-      }
-    });
-    
     // Load all fonts using unified service
     loadFonts(fontsToLoad, fontsByFamily)
       .then(results => {
-        const successCount = results.filter(r => r.success).length;
         const failed = results.filter(r => !r.success).map(r => r.fontFamily);
-        
-        console.log(`[useTemplateFonts] Loaded ${successCount}/${fontsToLoad.length} fonts`);
-        
-        if (failed.length > 0) {
-          console.warn(`[useTemplateFonts] Failed to load:`, failed);
-        }
         
         setFailedFonts(failed);
         setFontsLoaded(true);
       })
-      .catch(error => {
-        console.error('[useTemplateFonts] Error loading fonts:', error);
+      .catch(() => {
         setFailedFonts(fontsToLoad);
         setFontsLoaded(true); // Continue rendering even if fonts failed
       })
@@ -202,8 +183,7 @@ export function useTemplateFontsDetailed(fontFamilies: string[]): UseTemplateFon
         setFontsLoaded(true);
         setIsLoading(false);
       })
-      .catch(error => {
-        console.error('[useTemplateFonts] Error:', error);
+      .catch(() => {
         setFailedFonts(fontsToLoad);
         setFontsLoaded(true);
         setIsLoading(false);

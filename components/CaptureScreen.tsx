@@ -312,7 +312,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         setImageSize({ width: processed.width, height: processed.height });
       }
     } catch (error) {
-      console.error('Failed to process image:', error);
+      // Processing error - user will see empty preview
     } finally {
       if (isMountedRef.current) {
         setIsProcessing(false);
@@ -342,7 +342,7 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         await processAndSetImage(photo.uri, photo.width, photo.height);
       }
     } catch (error) {
-      console.error('Failed to take picture:', error);
+      // Capture error - user can retry
     } finally {
       isCapturingRef.current = false;
     }
@@ -384,8 +384,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
       scale: currentScale,
     };
     
-    console.log('[CaptureScreen] Continue with adjustments:', adjustments);
-    
     // Store for potential retry
     pendingUploadRef.current = { uri: previewUri, adjustments };
     
@@ -400,8 +398,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
       
       if (!isMountedRef.current) return;
       
-      console.log('[CaptureScreen] Image uploaded successfully, continuing with Supabase URL');
-      
       // Call onContinue with the Supabase URL instead of local URI
       onContinue({
         uri: supabaseUrl,
@@ -410,7 +406,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         adjustments,
       });
     } catch (error) {
-      console.error('[CaptureScreen] Upload failed:', error);
       if (isMountedRef.current) {
         setUploadError(error instanceof Error ? error.message : 'Upload failed');
       }
@@ -435,8 +430,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
       
       if (!isMountedRef.current) return;
       
-      console.log('[CaptureScreen] Retry upload successful');
-      
       onContinue({
         uri: supabaseUrl,
         width: imageSize.width,
@@ -444,7 +437,6 @@ export function CaptureScreen({ slot, title, onContinue, onBack, initialImage }:
         adjustments,
       });
     } catch (error) {
-      console.error('[CaptureScreen] Retry upload failed:', error);
       if (isMountedRef.current) {
         setUploadError(error instanceof Error ? error.message : 'Upload failed');
       }

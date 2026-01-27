@@ -31,10 +31,8 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
       setIsLoading(true);
       setError(null);
       const data = await fetchTemplates();
-      console.log('[Realtime] Initial fetch complete:', data.length, 'templates');
       setTemplates(data);
     } catch (err) {
-      console.error('[Realtime] Error fetching templates:', err);
       setError(err instanceof Error ? err : new Error('Failed to fetch templates'));
     } finally {
       setIsLoading(false);
@@ -46,7 +44,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
     const newRow = payload.new as TemplateRow;
     if (!newRow.is_active) return;
     
-    console.log('[Realtime] INSERT:', newRow.name);
     const newTemplate = mapRowToTemplate(newRow);
     setTemplates(prev => [...prev, newTemplate]);
   }, []);
@@ -54,7 +51,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
   // Handle UPDATE - MERGE with existing data to preserve fields not in payload
   const handleUpdate = useCallback(async (payload: RealtimePostgresChangesPayload<TemplateRow>) => {
     const updatedRow = payload.new as TemplateRow;
-    console.log('[Realtime] UPDATE:', updatedRow.name, '(has layers_json:', !!updatedRow.layers_json, ')');
     
     // Clear image cache for fresh images
     await clearCacheForTemplate(updatedRow.id);
@@ -62,7 +58,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
     setTemplates(prev => {
       // If template became inactive, remove it
       if (!updatedRow.is_active) {
-        console.log('[Realtime] Removing inactive template:', updatedRow.name);
         return prev.filter(t => t.id !== updatedRow.id);
       }
       
@@ -97,16 +92,11 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
           defaultThemeColor: partialUpdate.defaultThemeColor ?? existingTemplate.defaultThemeColor,
         };
         
-        console.log('[Realtime] Merged template:', mergedTemplate.name, 
-          'layersJson:', mergedTemplate.layersJson?.length ?? 0, 'layers',
-          'themeLayers:', mergedTemplate.themeLayers?.length ?? 0);
-        
         const updated = [...prev];
         updated[existingIndex] = mergedTemplate;
         return updated;
       } else {
         // New template (became active) - use full data from payload
-        console.log('[Realtime] Adding newly active template:', updatedRow.name);
         return [...prev, mapRowToTemplate(updatedRow)];
       }
     });
@@ -115,7 +105,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
   // Handle DELETE
   const handleDelete = useCallback((payload: RealtimePostgresChangesPayload<TemplateRow>) => {
     const deletedRow = payload.old as TemplateRow;
-    console.log('[Realtime] DELETE:', deletedRow.id);
     setTemplates(prev => prev.filter(t => t.id !== deletedRow.id));
   }, []);
 
@@ -131,7 +120,6 @@ export function useRealtimeTemplates(): UseRealtimeTemplatesResult {
       .on<TemplateRow>('postgres_changes', { event: 'DELETE', schema: 'public', table: 'templates' }, handleDelete)
       .subscribe((status, err) => {
         if (!mountedRef.current) return;
-        console.log('[Realtime] Status:', status);
         if (status === 'CHANNEL_ERROR' && err?.message) {
           setError(new Error('Real-time subscription failed'));
         }

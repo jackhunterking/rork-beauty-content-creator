@@ -60,7 +60,6 @@ export function useAuth() {
           
           if (userError || !validUser) {
             // Session is invalid - clear it
-            console.log('[useAuth] Session invalid, clearing');
             setSession(null);
             setUser(null);
             setIsSessionReady(false);
@@ -85,7 +84,6 @@ export function useAuth() {
           setIsSessionReady(false);
         }
       } catch (error) {
-        console.error('[useAuth] Error initializing auth:', error);
         setIsSessionReady(false);
       } finally {
         if (mounted) {
@@ -104,8 +102,6 @@ export function useAuth() {
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        console.log('[useAuth] Auth state changed:', event);
-        
         if (!mounted) return;
 
         // INITIAL_SESSION may have expired token - don't mark as ready yet

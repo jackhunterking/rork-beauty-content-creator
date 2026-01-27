@@ -3,9 +3,12 @@
  * 
  * Shows before/after comparison with draggable slider.
  * Allows user to apply or try another enhancement.
+ * 
+ * REFACTORED: Now uses slot-based sizing and applies image transforms
+ * to show the same cropped/zoomed view as in the editor.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,12 +28,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/colors';
-import type { AIFeatureKey } from '@/types';
+import type { AIFeatureKey, MediaAsset } from '@/types';
 import { getGradientPoints } from '@/constants/gradients';
+import { calculateRenderParams } from '@/utils/transformCalculator';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const COMPARISON_WIDTH = SCREEN_WIDTH - 48;
-const COMPARISON_HEIGHT = COMPARISON_WIDTH * 1.25;
+// Max dimensions for the comparison container (will be adjusted based on slot AR)
+const MAX_COMPARISON_WIDTH = SCREEN_WIDTH - 48;
+const MAX_COMPARISON_HEIGHT = 400;
 
 // Feature-specific labels for the comparison view
 const FEATURE_LABELS: Record<AIFeatureKey, { result: string; original: string }> = {
@@ -60,6 +65,12 @@ interface AISuccessOverlayProps {
   newBackgroundInfo?: BackgroundInfo;
   /** Background info for displaying the PREVIOUS state (what user currently has) */
   previousBackgroundInfo?: BackgroundInfo;
+  /** Slot dimensions for proper container sizing */
+  slotDimensions?: { width: number; height: number };
+  /** Original image dimensions for transform calculations */
+  imageSize?: { width: number; height: number };
+  /** User's zoom/pan/rotation adjustments to apply to the preview */
+  imageAdjustments?: MediaAsset['adjustments'];
 }
 
 export default function AISuccessOverlay({
@@ -70,39 +81,137 @@ export default function AISuccessOverlay({
   onRevert,
   newBackgroundInfo,
   previousBackgroundInfo,
+  slotDimensions,
+  imageSize,
+  imageAdjustments,
 }: AISuccessOverlayProps) {
   const labels = FEATURE_LABELS[featureKey] || FEATURE_LABELS.auto_quality;
-  
+
+  // Calculate container dimensions based on slot aspect ratio
+  const { containerWidth, containerHeight } = useMemo(() => {
+    if (!slotDimensions || slotDimensions.width === 0 || slotDimensions.height === 0) {
+      // Fallback to old behavior if no slot dimensions
+      return { containerWidth: MAX_COMPARISON_WIDTH, containerHeight: MAX_COMPARISON_WIDTH * 1.25 };
+    }
+    
+    const slotAR = slotDimensions.width / slotDimensions.height;
+    
+    // Fit container within MAX bounds while maintaining slot aspect ratio
+    let width = MAX_COMPARISON_WIDTH;
+    let height = width / slotAR;
+    
+    // If too tall, constrain by height
+    if (height > MAX_COMPARISON_HEIGHT) {
+      height = MAX_COMPARISON_HEIGHT;
+      width = height * slotAR;
+    }
+    
+    return { containerWidth: width, containerHeight: height };
+  }, [slotDimensions]);
+
+  // Calculate transform parameters for applying adjustments to images
+  const transformParams = useMemo(() => {
+    if (!imageSize || !slotDimensions || !imageAdjustments) {
+      return null;
+    }
+    
+    return calculateRenderParams(
+      { width: imageSize.width, height: imageSize.height },
+      { width: slotDimensions.width, height: slotDimensions.height },
+      {
+        scale: imageAdjustments.scale ?? 1,
+        translateX: imageAdjustments.translateX ?? 0,
+        translateY: imageAdjustments.translateY ?? 0,
+        rotation: imageAdjustments.rotation ?? 0,
+      }
+    );
+  }, [imageSize, slotDimensions, imageAdjustments]);
+
+  // Calculate the scale ratio from slot dimensions to container dimensions
+  const displayScale = useMemo(() => {
+    if (!slotDimensions || slotDimensions.width === 0) return 1;
+    return containerWidth / slotDimensions.width;
+  }, [containerWidth, slotDimensions]);
+
   // Slider position (0-1, 0.5 = middle)
   const sliderPosition = useSharedValue(0.5);
   const [isDragging, setIsDragging] = useState(false);
   
-  // Pan gesture for slider
+  // Pan gesture for slider - uses containerWidth for calculations
   const panGesture = Gesture.Pan()
     .onBegin(() => {
       runOnJS(setIsDragging)(true);
     })
     .onUpdate((event) => {
-      const newPosition = Math.max(0.05, Math.min(0.95, (event.x) / COMPARISON_WIDTH));
+      const newPosition = Math.max(0.05, Math.min(0.95, (event.x) / containerWidth));
       sliderPosition.value = newPosition;
     })
     .onEnd(() => {
       runOnJS(setIsDragging)(false);
     });
   
-  // Animated styles for the comparison
+  // Animated styles for the comparison - use containerWidth
   const enhancedClipStyle = useAnimatedStyle(() => ({
-    width: sliderPosition.value * COMPARISON_WIDTH,
+    width: sliderPosition.value * containerWidth,
   }));
   
   const sliderLineStyle = useAnimatedStyle(() => ({
-    left: sliderPosition.value * COMPARISON_WIDTH - 2,
+    left: sliderPosition.value * containerWidth - 2,
   }));
   
   const sliderHandleStyle = useAnimatedStyle(() => ({
-    left: sliderPosition.value * COMPARISON_WIDTH - 20,
+    left: sliderPosition.value * containerWidth - 20,
     transform: [{ scale: withSpring(isDragging ? 1.1 : 1) }],
   }));
+
+  // Helper to render an image with transforms applied
+  const renderTransformedImage = (uri: string, isFullWidth: boolean = false) => {
+    // Use fixed width for clipped (enhanced) side
+    const imageContainerWidth = isFullWidth ? containerWidth : containerWidth;
+    
+    // If we have valid transforms, apply them
+    if (transformParams && displayScale) {
+      // Scale from slot coordinates to container coordinates
+      const scaledWidth = transformParams.scaledSize.width * displayScale;
+      const scaledHeight = transformParams.scaledSize.height * displayScale;
+      const scaledLeft = transformParams.offset.x * displayScale;
+      const scaledTop = transformParams.offset.y * displayScale;
+      
+      return (
+        <View style={{ width: imageContainerWidth, height: containerHeight, overflow: 'hidden', position: 'absolute', top: 0, left: 0 }}>
+          <ExpoImage
+            source={{ uri }}
+            style={{
+              width: scaledWidth,
+              height: scaledHeight,
+              position: 'absolute',
+              left: scaledLeft,
+              top: scaledTop,
+              transform: [{ rotate: `${transformParams.rotation}deg` }],
+            }}
+            contentFit="fill"
+            cachePolicy="none"
+          />
+        </View>
+      );
+    }
+    
+    // Fallback: use cover fit (no transforms)
+    return (
+      <ExpoImage
+        source={{ uri }}
+        style={{
+          width: imageContainerWidth,
+          height: containerHeight,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+        }}
+        contentFit="cover"
+        cachePolicy="none"
+      />
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -113,44 +222,38 @@ export default function AISuccessOverlay({
         <Text style={styles.subtitle}>Drag to compare before & after</Text>
       </View>
 
-      {/* Before/After Comparison */}
+      {/* Before/After Comparison - now uses dynamic sizing based on slot dimensions */}
       <GestureDetector gesture={panGesture}>
-        <View style={styles.comparisonContainer}>
+        <View style={[styles.comparisonContainer, { width: containerWidth, height: containerHeight }]}>
           {/* ====== ORIGINAL SIDE (right) - What user currently has ====== */}
           {/* Background for ORIGINAL: use previousBackgroundInfo, or white if transparent/none */}
           {previousBackgroundInfo?.type === 'solid' && previousBackgroundInfo.solidColor ? (
             <View 
-              style={[styles.comparisonImage, { backgroundColor: previousBackgroundInfo.solidColor, position: 'absolute' }]} 
+              style={[{ width: containerWidth, height: containerHeight, position: 'absolute', backgroundColor: previousBackgroundInfo.solidColor }]} 
             />
           ) : previousBackgroundInfo?.type === 'gradient' && previousBackgroundInfo.gradient ? (
             <LinearGradient
               colors={previousBackgroundInfo.gradient.colors}
               {...getGradientPoints(previousBackgroundInfo.gradient.direction)}
-              style={[styles.comparisonImage, { position: 'absolute' }]}
+              style={[{ width: containerWidth, height: containerHeight, position: 'absolute' }]}
             />
           ) : (featureKey === 'background_replace' || featureKey === 'background_remove') ? (
             // For background features with no previous bg: show white (user has transparent PNG)
             <View 
-              style={[styles.comparisonImage, { backgroundColor: '#FFFFFF', position: 'absolute' }]} 
+              style={[{ width: containerWidth, height: containerHeight, position: 'absolute', backgroundColor: '#FFFFFF' }]} 
             />
           ) : null}
-          {/* The original image on top of its background */}
-          <ExpoImage
-            source={{ uri: originalUri }}
-            style={styles.comparisonImage}
-            contentFit="cover"
-            cachePolicy="none"
-          />
+          {/* The original image on top of its background - WITH TRANSFORMS */}
+          {renderTransformedImage(originalUri)}
           
           {/* ====== ENHANCED SIDE (left) - What user will get ====== */}
-          <Animated.View style={[styles.enhancedClip, enhancedClipStyle]}>
+          <Animated.View style={[styles.enhancedClip, enhancedClipStyle, { height: containerHeight }]}>
             {/* Background for ENHANCED: use newBackgroundInfo */}
             {/* For background_remove: always use white (result is transparent PNG on white) */}
             {featureKey === 'background_remove' && (
               <View 
                 style={[
-                  styles.comparisonImage, 
-                  { width: COMPARISON_WIDTH, backgroundColor: '#FFFFFF' }
+                  { width: containerWidth, height: containerHeight, position: 'absolute', backgroundColor: '#FFFFFF' }
                 ]} 
               />
             )}
@@ -158,8 +261,7 @@ export default function AISuccessOverlay({
             {featureKey === 'background_replace' && newBackgroundInfo?.type === 'solid' && newBackgroundInfo.solidColor && (
               <View 
                 style={[
-                  styles.comparisonImage, 
-                  { width: COMPARISON_WIDTH, backgroundColor: newBackgroundInfo.solidColor }
+                  { width: containerWidth, height: containerHeight, position: 'absolute', backgroundColor: newBackgroundInfo.solidColor }
                 ]} 
               />
             )}
@@ -167,16 +269,11 @@ export default function AISuccessOverlay({
               <LinearGradient
                 colors={newBackgroundInfo.gradient.colors}
                 {...getGradientPoints(newBackgroundInfo.gradient.direction)}
-                style={[styles.comparisonImage, { width: COMPARISON_WIDTH }]}
+                style={[{ width: containerWidth, height: containerHeight, position: 'absolute' }]}
               />
             )}
-            {/* The transparent PNG on top */}
-            <ExpoImage
-              source={{ uri: enhancedUri }}
-              style={[styles.comparisonImage, { width: COMPARISON_WIDTH }]}
-              contentFit="cover"
-              cachePolicy="none"
-            />
+            {/* The enhanced image on top - WITH TRANSFORMS */}
+            {renderTransformedImage(enhancedUri, true)}
           </Animated.View>
           
           {/* Slider Line */}
@@ -249,21 +346,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   comparisonContainer: {
-    width: COMPARISON_WIDTH,
-    height: COMPARISON_HEIGHT,
+    // Width and height now set dynamically based on slot dimensions
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,
   },
-  comparisonImage: {
-    width: COMPARISON_WIDTH,
-    height: COMPARISON_HEIGHT,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
   enhancedClip: {
-    height: COMPARISON_HEIGHT,
+    // Height now set dynamically
     overflow: 'hidden',
     position: 'absolute',
     top: 0,

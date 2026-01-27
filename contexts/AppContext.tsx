@@ -333,8 +333,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Generate a new upload session for this project
     // This groups all captured images for cleanup if the project is discarded
-    const sessionId = generateSessionId();
-    console.log('[AppContext] Starting new project with upload session:', sessionId);
+    generateSessionId();
     
     setCurrentProject(prev => ({ 
       ...prev, 
@@ -465,10 +464,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!wasSaved) {
       const sessionId = getCurrentSessionId();
       if (sessionId) {
-        console.log('[AppContext] Cleaning up temp uploads for discarded project, session:', sessionId);
         // Fire and forget - don't block the reset
-        cleanupCapturedImages(sessionId).catch(err => {
-          console.warn('[AppContext] Failed to cleanup temp uploads:', err);
+        cleanupCapturedImages(sessionId).catch(() => {
+          // Silent failure
         });
       }
     } else {

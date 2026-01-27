@@ -312,19 +312,15 @@ export function EditorMainToolbar({
     : TOOLBAR_ITEMS;
 
   const handleToolPress = useCallback((tool: MainToolbarItem) => {
-    console.log('[EditorMainToolbar] Tool pressed:', tool, 'current expandedTool:', expandedTool);
     if (tool === 'background' || tool === 'theme') {
       // Toggle expandable menu for background and theme color pickers
       if (expandedTool === tool) {
-        console.log('[EditorMainToolbar] Closing expanded menu for:', tool);
         onExpandedToolChange?.(null);
       } else {
-        console.log('[EditorMainToolbar] Opening expanded menu for:', tool);
         onExpandedToolChange?.(tool);
       }
     } else if (tool === 'ai') {
       // AI Studio: Close any expanded menu and open the bottom sheet via onToolSelect
-      console.log('[EditorMainToolbar] Opening AI Studio sheet');
       onExpandedToolChange?.(null);
       onToolSelect(tool);
     } else {
@@ -336,7 +332,6 @@ export function EditorMainToolbar({
 
   // Handle background color selection
   const handleBackgroundColorSelect = useCallback((color: string) => {
-    console.log('[EditorMainToolbar] BG color selected:', color, 'hasHandler:', !!onBackgroundColorChange);
     onBackgroundColorChange?.(color);
   }, [onBackgroundColorChange]);
 
@@ -375,7 +370,6 @@ export function EditorMainToolbar({
     return null;
   }
 
-  console.log('[EditorMainToolbar] Rendering with expandedTool:', expandedTool, 'backgroundColor:', backgroundColor);
 
   return (
     <View

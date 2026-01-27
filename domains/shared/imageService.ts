@@ -164,7 +164,6 @@ export function getPortfolioPreviewUri(item: PortfolioItem): string {
 export function generateSessionId(): string {
   currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   sessionUploadedUrls.set(currentSessionId, []);
-  console.log('[ImageService] Generated new session:', currentSessionId);
   return currentSessionId;
 }
 
@@ -225,12 +224,10 @@ export async function uploadTempImage(
 ): Promise<string> {
   // If already a remote URL, return it directly
   if (isCloudStorageUrl(localUri)) {
-    console.log('[ImageService] Already cloud URL, skipping upload:', localUri.substring(0, 60));
     return localUri;
   }
 
   const session = sessionId || getSessionId();
-  console.log('[ImageService] Uploading temp image for slot:', slotId);
 
   // Read file as base64
   const base64 = await FileSystemLegacy.readAsStringAsync(localUri, {
@@ -256,7 +253,6 @@ export async function uploadTempImage(
     });
 
   if (error) {
-    console.error('[ImageService] Upload failed:', error);
     throw error;
   }
 
@@ -266,7 +262,6 @@ export async function uploadTempImage(
     .getPublicUrl(data.path);
 
   const publicUrl = urlData.publicUrl;
-  console.log('[ImageService] Uploaded successfully:', publicUrl.substring(0, 60));
 
   // Track for cleanup
   const urls = sessionUploadedUrls.get(session) || [];
@@ -346,8 +341,6 @@ export async function uploadDraftImage(
     return localUri;
   }
 
-  console.log('[ImageService] Uploading draft image:', { draftId, slotId });
-
   // Read file as base64
   const base64 = await FileSystemLegacy.readAsStringAsync(localUri, {
     encoding: FileSystemLegacy.EncodingType.Base64,
@@ -372,7 +365,6 @@ export async function uploadDraftImage(
     });
 
   if (error) {
-    console.error('[ImageService] Draft upload failed:', error);
     throw error;
   }
 
@@ -381,7 +373,6 @@ export async function uploadDraftImage(
     .from(DRAFTS_BUCKET_NAME)
     .getPublicUrl(data.path);
 
-  console.log('[ImageService] Draft image uploaded:', urlData.publicUrl.substring(0, 60));
   return urlData.publicUrl;
 }
 
@@ -398,9 +389,8 @@ export async function clearAllCache(): Promise<void> {
       ExpoImage.clearDiskCache(),
       ExpoImage.clearMemoryCache(),
     ]);
-    console.log('[ImageService] All caches cleared');
   } catch (error) {
-    console.warn('[ImageService] Failed to clear cache:', error);
+    // Silent failure
   }
 }
 
@@ -421,7 +411,6 @@ export async function clearAllImageCache(): Promise<void> {
  * @param templateId - The template ID that was updated
  */
 export async function clearCacheForTemplate(templateId: string): Promise<void> {
-  console.log(`[ImageService] Clearing cache for template: ${templateId}`);
   await clearAllCache();
 }
 
@@ -431,9 +420,8 @@ export async function clearCacheForTemplate(templateId: string): Promise<void> {
 export async function clearMemoryCache(): Promise<void> {
   try {
     await ExpoImage.clearMemoryCache();
-    console.log('[ImageService] Memory cache cleared');
   } catch (error) {
-    console.warn('[ImageService] Failed to clear memory cache:', error);
+    // Silent failure
   }
 }
 
@@ -451,10 +439,6 @@ export function trackTempFile(uri: string): void {
     uri,
     timestamp: Date.now(),
   });
-
-  if (__DEV__) {
-    console.log(`[ImageService] Tracking file (total: ${trackedFiles.size})`);
-  }
 }
 
 /**
@@ -481,8 +465,6 @@ export async function cleanupTempFiles(): Promise<number> {
   isCleaningUp = true;
   let deletedCount = 0;
 
-  console.log(`[ImageService] Cleaning up ${trackedFiles.size} tracked files`);
-
   const filesToDelete = Array.from(trackedFiles.values());
 
   for (const file of filesToDelete) {
@@ -499,7 +481,6 @@ export async function cleanupTempFiles(): Promise<number> {
   }
 
   isCleaningUp = false;
-  console.log(`[ImageService] Cleanup complete: ${deletedCount} files deleted`);
 
   return deletedCount;
 }
@@ -520,8 +501,6 @@ export async function cleanupOldTempFiles(maxAgeMs: number = 30 * 60 * 1000): Pr
   isCleaningUp = true;
   let deletedCount = 0;
 
-  console.log(`[ImageService] Cleaning up ${oldFiles.length} old files`);
-
   for (const file of oldFiles) {
     try {
       const fileInfo = await FileSystemLegacy.getInfoAsync(file.uri);
@@ -536,7 +515,6 @@ export async function cleanupOldTempFiles(maxAgeMs: number = 30 * 60 * 1000): Pr
   }
 
   isCleaningUp = false;
-  console.log(`[ImageService] Old file cleanup complete: ${deletedCount} files deleted`);
 
   return deletedCount;
 }
@@ -554,21 +532,16 @@ export async function cleanupTempFile(publicUrl: string): Promise<void> {
     // Path format: /storage/v1/object/public/temp-uploads/session_xxx/slotId_xxx.jpg
     const bucketIndex = pathParts.indexOf(TEMP_BUCKET_NAME);
     if (bucketIndex === -1) {
-      console.warn('[ImageService] Invalid temp file URL:', publicUrl);
       return;
     }
     
     const filePath = pathParts.slice(bucketIndex + 1).join('/');
     
-    const { error } = await supabase.storage
+    await supabase.storage
       .from(TEMP_BUCKET_NAME)
       .remove([filePath]);
-
-    if (error) {
-      console.error('[ImageService] Error deleting temp file:', error);
-    }
   } catch (error) {
-    console.error('[ImageService] Cleanup temp file error:', error);
+    // Silent failure
   }
 }
 
@@ -581,19 +554,15 @@ export async function cleanupTempFile(publicUrl: string): Promise<void> {
 export async function cleanupCapturedImages(sessionId?: string): Promise<void> {
   const session = sessionId || currentSessionId;
   if (!session) {
-    console.log('[ImageService] No captured images to clean up (no session)');
     return;
   }
 
   const urls = sessionUploadedUrls.get(session);
   if (!urls || urls.length === 0) {
-    console.log('[ImageService] No captured images tracked for cleanup');
     resetSession();
     return;
   }
 
-  console.log(`[ImageService] Cleaning up ${urls.length} captured images from discarded project`);
-  
   // Clean up the entire session (more efficient than individual file deletion)
   await cleanupSession(session);
 }
@@ -611,17 +580,15 @@ export async function cleanupSession(sessionId?: string): Promise<void> {
       .list(session);
 
     if (error) {
-      console.warn('[ImageService] Failed to list session files:', error);
       return;
     }
 
     if (data && data.length > 0) {
       const filePaths = data.map((file) => `${session}/${file.name}`);
       await supabase.storage.from(TEMP_BUCKET_NAME).remove(filePaths);
-      console.log(`[ImageService] Cleaned up ${filePaths.length} session files`);
     }
   } catch (error) {
-    console.warn('[ImageService] Session cleanup failed:', error);
+    // Silent failure
   }
 
   sessionUploadedUrls.delete(session);
@@ -639,7 +606,6 @@ export function getTrackedFilesCount(): number {
  */
 export function clearTracking(): void {
   trackedFiles.clear();
-  console.log('[ImageService] Tracking cleared');
 }
 
 // ============================================

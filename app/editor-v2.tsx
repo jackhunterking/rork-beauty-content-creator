@@ -1369,10 +1369,29 @@ export default function EditorV2Screen() {
   // Canva-style contextual toolbar actions
   const handlePhotoReplace = useCallback(() => {
     if (selection.id) {
+      // First, save any pending manipulation adjustments before replacing
+      if (pendingManipulationAdjustments) {
+        const currentImage = capturedImages[selection.id];
+        if (currentImage) {
+          const updatedAdjustments = {
+            ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
+            scale: pendingManipulationAdjustments.scale,
+            translateX: pendingManipulationAdjustments.translateX,
+            translateY: pendingManipulationAdjustments.translateY,
+            rotation: pendingManipulationAdjustments.rotation,
+          };
+          setCapturedImage(selection.id, {
+            ...currentImage,
+            adjustments: updatedAdjustments,
+          });
+        }
+        setPendingManipulationAdjustments(null);
+      }
+      
       // Navigate to fullscreen capture screen to replace the image
       router.push(`/capture/${selection.id}`);
     }
-  }, [selection, router]);
+  }, [selection, router, pendingManipulationAdjustments, capturedImages, setCapturedImage]);
 
   const handlePhotoResize = useCallback(() => {
     if (selection.id && capturedImages[selection.id]) {
@@ -1496,12 +1515,31 @@ export default function EditorV2Screen() {
       return;
     }
     
+    // First, save any pending manipulation adjustments before AI processing
+    if (pendingManipulationAdjustments) {
+      const currentImage = capturedImages[selection.id];
+      if (currentImage) {
+        const updatedAdjustments = {
+          ...(currentImage.adjustments || { scale: 1, translateX: 0, translateY: 0, rotation: 0 }),
+          scale: pendingManipulationAdjustments.scale,
+          translateX: pendingManipulationAdjustments.translateX,
+          translateY: pendingManipulationAdjustments.translateY,
+          rotation: pendingManipulationAdjustments.rotation,
+        };
+        setCapturedImage(selection.id, {
+          ...currentImage,
+          adjustments: updatedAdjustments,
+        });
+      }
+      setPendingManipulationAdjustments(null);
+    }
+    
     // Just set the feature view and open immediately - NO image processing here
     // Images are prepared lazily when user actually clicks "Enhance"
     setAiSheetInitialView(featureKey);
     setAiNavTrigger(prev => prev + 1);
     aiStudioRef.current?.present();
-  }, [selection]);
+  }, [selection, pendingManipulationAdjustments, capturedImages, setCapturedImage]);
   
   // Handle tap on already-applied AI feature - shows toast explaining why re-applying is disabled
   const handleAlreadyAppliedTap = useCallback((featureKey: AIFeatureKey) => {
@@ -2435,7 +2473,7 @@ export default function EditorV2Screen() {
           
           
           // Update the captured image with the enhanced version
-          // Reset adjustments to default - enhanced image replaces at full size
+          // PRESERVE adjustments - the AI enhanced the full image, but user's crop/zoom view should stay the same
           const existingImage = capturedImages[slotId];
           if (existingImage) {
             // Track which AI enhancements have been applied to prevent duplicate processing
@@ -2452,10 +2490,14 @@ export default function EditorV2Screen() {
               ? (resultTransparentPng ?? enhancedUri)  // For background features, prefer explicit PNG, fallback to enhancedUri
               : (resultTransparentPng ?? existingImage.transparentPngUrl);  // For other features, preserve existing
             
+            // PRESERVE existing adjustments - user's zoom/pan/rotation should be maintained
+            // The AI enhancement doesn't change the image dimensions, so the same adjustments apply
+            const preservedAdjustments = existingImage.adjustments ?? { scale: 1, translateX: 0, translateY: 0, rotation: 0 };
+            
             setCapturedImage(slotId, {
               ...existingImage,
               uri: enhancedUri,
-              adjustments: { scale: 1, translateX: 0, translateY: 0, rotation: 0 },
+              adjustments: preservedAdjustments,  // KEEP user's adjustments instead of resetting!
               aiEnhancementsApplied: updatedEnhancements,
               originalUri: existingImage.originalUri ?? existingImage.uri,
               // Store background info for transparent PNG display

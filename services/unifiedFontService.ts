@@ -77,19 +77,12 @@ async function loadSupabaseFont(fontInfo: CustomFont): Promise<boolean> {
   const { fontFamily, fileUrl, fileUrlBold, weights = ['400'], googleFontName } = fontInfo;
   
   try {
-    console.log(`[UnifiedFont] Loading from Supabase: ${fontFamily}`);
-    console.log(`[UnifiedFont]   Regular URL: ${fileUrl ? 'yes' : 'no'}`);
-    console.log(`[UnifiedFont]   Bold URL: ${fileUrlBold ? 'yes' : 'no'}`);
-    console.log(`[UnifiedFont]   Google Font fallback: ${googleFontName || 'none'}`);
-    console.log(`[UnifiedFont]   Weights needed: ${weights.join(', ')}`);
-    
     const fontsToLoad: Record<string, string> = {};
     const needsGoogleFallback: string[] = [];
     
     // Load regular weight
     if (fileUrl) {
       fontsToLoad[fontFamily] = fileUrl;
-      console.log(`[UnifiedFont]   → ${fontFamily} (regular) from Supabase`);
     }
     
     // For each non-400 weight, check if we have a specific file
@@ -101,40 +94,29 @@ async function loadSupabaseFont(fontInfo: CustomFont): Promise<boolean> {
       if (weight === '700' && fileUrlBold) {
         // Load bold from Supabase
         fontsToLoad[weightFontName] = fileUrlBold;
-        console.log(`[UnifiedFont]   → ${weightFontName} from Supabase (bold file)`);
       } else {
         // Mark this weight as needing Google Fonts fallback
         needsGoogleFallback.push(weight);
-        console.log(`[UnifiedFont]   → ${weightFontName} needs Google Fonts fallback`);
       }
     }
     
     // Load Supabase fonts
     if (Object.keys(fontsToLoad).length > 0) {
       await Font.loadAsync(fontsToLoad);
-      console.log(`[UnifiedFont] ✓ Loaded ${Object.keys(fontsToLoad).length} variant(s) from Supabase`);
     }
     
     // Try Google Fonts fallback for missing weights (using admin-configured mapping)
     if (needsGoogleFallback.length > 0 && googleFontName) {
-      console.log(`[UnifiedFont] Trying Google Fonts fallback: "${googleFontName}" for weights: ${needsGoogleFallback.join(', ')}`);
-      
       try {
         // Load missing weights from Google Fonts
-        const success = await loadGoogleFontWithMapping(fontFamily, googleFontName, needsGoogleFallback);
-        if (success) {
-          console.log(`[UnifiedFont] ✓ Loaded missing weights from Google Fonts (${googleFontName})`);
-        }
+        await loadGoogleFontWithMapping(fontFamily, googleFontName, needsGoogleFallback);
       } catch (err) {
-        console.warn(`[UnifiedFont] Google Fonts fallback failed for ${googleFontName}:`, err);
+        // Google Fonts fallback failed - font may render with default weight
       }
-    } else if (needsGoogleFallback.length > 0) {
-      console.warn(`[UnifiedFont] No Google Font linked for ${fontFamily}, missing weights: ${needsGoogleFallback.join(', ')}. Use admin panel to link a Google Font.`);
     }
     
     return true;
   } catch (error) {
-    console.error(`[UnifiedFont] Failed to load from Supabase: ${fontFamily}`, error);
     return false;
   }
 }
@@ -154,7 +136,6 @@ async function loadGoogleFontWithMapping(
     
     const info = await getFontInfo(googleFontName);
     if (!info) {
-      console.warn(`[UnifiedFont] Google Font not found: ${googleFontName}`);
       return false;
     }
     
@@ -178,7 +159,6 @@ async function loadGoogleFontWithMapping(
     
     return false;
   } catch (error) {
-    console.error(`[UnifiedFont] Failed to load Google Font mapping:`, error);
     return false;
   }
 }
@@ -186,8 +166,7 @@ async function loadGoogleFontWithMapping(
 /**
  * Load a system font (no-op, just mark as loaded)
  */
-function loadSystemFont(fontFamily: string): boolean {
-  console.log(`[UnifiedFont] System font: ${fontFamily} (no loading needed)`);
+function loadSystemFont(_fontFamily: string): boolean {
   return true;
 }
 
@@ -238,11 +217,7 @@ export async function loadFont(
             if (fontInfo.fileUrl && fontInfo.isActive) {
               // Pass complete font info for proper weight handling
               success = await loadSupabaseFont(fontInfo);
-            } else if (!fontInfo.isActive) {
-              console.warn(`[UnifiedFont] Font ${fontFamily} is not active (file not uploaded yet)`);
-              success = false;
             } else {
-              console.warn(`[UnifiedFont] Font ${fontFamily} has no file URL`);
               success = false;
             }
             break;
@@ -254,7 +229,6 @@ export async function loadFont(
         }
       } else {
         // Font not in registry - try Google Fonts as default
-        console.log(`[UnifiedFont] Font ${fontFamily} not in registry, trying Google Fonts...`);
         success = await loadGoogleFont(fontFamily, ['400', '700']);
         source = success ? 'google' : 'unknown';
       }
@@ -298,15 +272,6 @@ export async function loadFonts(
       return loadFont(fontFamily, fontInfo);
     })
   );
-  
-  // Log summary
-  const successCount = results.filter(r => r.success).length;
-  const failedFonts = results.filter(r => !r.success).map(r => r.fontFamily);
-  
-  console.log(`[UnifiedFont] Loaded ${successCount}/${uniqueFonts.length} fonts`);
-  if (failedFonts.length > 0) {
-    console.warn(`[UnifiedFont] Failed fonts:`, failedFonts);
-  }
   
   return results;
 }

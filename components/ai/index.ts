@@ -27,3 +27,6 @@ export { default as AIAlreadyAppliedToast } from './AIAlreadyAppliedToast';
 
 // Premium prompt
 export { default as PremiumAIPrompt } from './PremiumAIPrompt';
+
+// Transform preview component
+export { TransformedImagePreview } from './TransformedImagePreview';

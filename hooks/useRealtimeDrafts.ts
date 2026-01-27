@@ -81,7 +81,6 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
         setDrafts(data);
       }
     } catch (err) {
-      console.error('[RealtimeDrafts] Error fetching drafts:', err);
       if (mountedRef.current) {
         setError(err instanceof Error ? err : new Error('Failed to fetch drafts'));
       }
@@ -106,8 +105,6 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
     } catch {
       // Ignore - local preview may not exist yet
     }
-    
-    console.log('[RealtimeDrafts] INSERT received:', newDraft.id.substring(0, 8));
     
     setDrafts(prev => {
       // Check if draft already exists (prevent duplicates)
@@ -134,8 +131,6 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
       // Ignore - local preview may not exist
     }
     
-    console.log('[RealtimeDrafts] UPDATE received:', updatedDraft.id.substring(0, 8));
-    
     setDrafts(prev => {
       const existingIndex = prev.findIndex(d => d.id === updatedDraft.id);
       
@@ -158,8 +153,6 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
     if (!mountedRef.current) return;
     
     const deletedRow = payload.old as DraftRow;
-    console.log('[RealtimeDrafts] DELETE received:', deletedRow.id.substring(0, 8));
-    
     setDrafts(prev => prev.filter(d => d.id !== deletedRow.id));
   }, []);
 
@@ -185,7 +178,6 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session || !mountedRef.current) {
-        console.log('[RealtimeDrafts] No session available, skipping realtime subscription');
         return;
       }
 
@@ -221,19 +213,9 @@ export function useRealtimeDrafts(isAuthenticated: boolean): UseRealtimeDraftsRe
             }
           }
         )
-        .subscribe((status, err) => {
+        .subscribe((status) => {
           if (!mountedRef.current) return;
-          
-          if (status === 'SUBSCRIBED') {
-            console.log('[RealtimeDrafts] ✓ Subscription active for drafts table');
-          } else if (status === 'CHANNEL_ERROR') {
-            console.log('[RealtimeDrafts] Channel status:', status, err?.message);
-            // Don't set error state - the initial fetch still works and users won't notice
-          } else if (status === 'TIMED_OUT') {
-            console.log('[RealtimeDrafts] Subscription timed out, using polling');
-          } else {
-            console.log('[RealtimeDrafts] Channel status:', status);
-          }
+          // Subscription status handled silently - initial fetch is the fallback
         });
 
       channelRef.current = channel;

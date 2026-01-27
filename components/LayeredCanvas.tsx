@@ -753,14 +753,6 @@ export function LayeredCanvas({
       const scaledHeight = layer.height * scaleY;
       
       // DEBUG: Log background layer details for shape investigation
-      console.log(`[LayeredCanvas] Background layer: ${layer.layer}`, {
-        type: layer.type,
-        border_radius: layer.border_radius,
-        fill: layer.fill,
-        hasHtml: !!layer.html,
-        svgElementType,
-        htmlPreview: layer.html ? layer.html.substring(0, 200) + '...' : null,
-      });
       
       // Check if user has selected a custom background color
       // (different from the template's default background color)
@@ -771,7 +763,6 @@ export function LayeredCanvas({
       // Determine which color to use: user's custom color or original layer fill
       const fillColorToUse = hasCustomBackgroundColor ? backgroundColor : (layer.fill || '#E5E5E5');
       
-      console.log(`[LayeredCanvas] ${layer.layer} - hasCustomBg: ${hasCustomBackgroundColor}, svgType: ${svgElementType}, fillColor: ${fillColorToUse}`);
       
       // ─────────────────────────────────────────────────────────────────
       // ELLIPSE SHAPES: Render as SVG Ellipse with correct fill color
@@ -779,7 +770,6 @@ export function LayeredCanvas({
       if (svgElementType === 'ellipse' && layer.html) {
         const ellipseAttrs = parseEllipseAttributes(layer.html);
         if (ellipseAttrs) {
-          console.log(`[LayeredCanvas] ${layer.layer} - Rendering as SVG Ellipse`, ellipseAttrs);
           
           // Scale ellipse attributes to canvas size
           const scaledCx = scaledWidth / 2;  // Center in container
@@ -809,7 +799,6 @@ export function LayeredCanvas({
       if (svgElementType === 'circle' && layer.html) {
         const circleAttrs = parseCircleAttributes(layer.html);
         if (circleAttrs) {
-          console.log(`[LayeredCanvas] ${layer.layer} - Rendering as SVG Circle`, circleAttrs);
           
           const scaledCx = scaledWidth / 2;
           const scaledCy = scaledHeight / 2;
@@ -837,7 +826,6 @@ export function LayeredCanvas({
         const rectAttrs = parseRectAttributes(layer.html);
         if (rectAttrs) {
           const hasRoundedCorners = rectAttrs.rx > 0 || rectAttrs.ry > 0;
-          console.log(`[LayeredCanvas] ${layer.layer} - Rect with rx=${rectAttrs.rx}, ry=${rectAttrs.ry}, rounded=${hasRoundedCorners}`);
           
           if (hasRoundedCorners) {
             // Use SVG Rect for proper rounded corners
@@ -875,7 +863,6 @@ export function LayeredCanvas({
       // ─────────────────────────────────────────────────────────────────
       // Try to extract border radius from layer property (for backwards compatibility)
       const borderRadius = parseBorderRadius(layer.border_radius);
-      console.log(`[LayeredCanvas] ${layer.layer} - Fallback: View with borderRadius=${borderRadius}`);
       
       return (
         <View 

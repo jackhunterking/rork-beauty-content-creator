@@ -116,6 +116,16 @@ export default function AIStudioSheet({
     height: selectedImage?.height || 1080,
   };
   
+  // Find the selected slot to get its dimensions
+  const selectedSlot = internalSelectedSlotId 
+    ? slots.find(s => s.layerId === internalSelectedSlotId) 
+    : null;
+  
+  // Slot dimensions for container sizing in feature views
+  const slotDimensions = selectedSlot 
+    ? { width: selectedSlot.width, height: selectedSlot.height }
+    : { width: 1080, height: 1080 }; // Fallback to square if no slot selected
+  
   // Get AI enhancements already applied to this image
   const aiEnhancementsApplied = selectedImage?.aiEnhancementsApplied ?? [];
   
@@ -356,6 +366,8 @@ export default function AIStudioSheet({
             imageUri={imageUri}
             aiImageUri={imageUriForAI}
             imageSize={imageSize}
+            slotDimensions={slotDimensions}
+            imageAdjustments={selectedImage?.adjustments}
             isAlreadyEnhanced={aiEnhancementsApplied.includes('auto_quality')}
             backgroundInfo={selectedImage?.backgroundInfo}
             onBack={handleBack}
@@ -370,6 +382,8 @@ export default function AIStudioSheet({
           <RemoveBackgroundView
             imageUri={imageUriForAI}
             imageSize={imageSize}
+            slotDimensions={slotDimensions}
+            imageAdjustments={selectedImage?.adjustments}
             isAlreadyEnhanced={aiEnhancementsApplied.includes('background_remove')}
             onBack={handleBack}
             onStartProcessing={handleStartProcessing}
@@ -383,6 +397,8 @@ export default function AIStudioSheet({
           <ReplaceBackgroundView
             imageUri={imageUri}
             imageSize={imageSize}
+            slotDimensions={slotDimensions}
+            imageAdjustments={selectedImage?.adjustments}
             isAlreadyEnhanced={aiEnhancementsApplied.includes('background_replace')}
             transparentPngUrl={selectedImage?.transparentPngUrl}
             currentBackgroundInfo={selectedImage?.backgroundInfo}
@@ -421,6 +437,9 @@ export default function AIStudioSheet({
             onRevert={handleTryAnother}
             previousBackgroundInfo={previousBackgroundInfo}
             newBackgroundInfo={newBackgroundInfo}
+            slotDimensions={slotDimensions}
+            imageSize={imageSize}
+            imageAdjustments={selectedImage?.adjustments}
           />
         );
         

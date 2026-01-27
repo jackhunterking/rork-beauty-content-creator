@@ -46,9 +46,7 @@ export function useForceUpdate(shouldCheck: boolean = false): UseForceUpdateResu
       const result = await checkForceUpdate();
       setStatus(result);
       setHasChecked(true);
-      console.log('[useForceUpdate] Check complete:', result);
     } catch (error) {
-      console.error('[useForceUpdate] Check failed:', error);
       // On error, don't block the user
       setHasChecked(true);
     } finally {

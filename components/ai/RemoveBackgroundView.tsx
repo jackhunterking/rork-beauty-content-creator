@@ -26,6 +26,8 @@ import { removeBackground, AIProcessingProgress } from '@/services/aiService';
 import { uploadTempImage } from '@/domains/shared';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
+import { TransformedImagePreview } from './TransformedImagePreview';
+import type { ImageAdjustments } from '@/utils/transformCalculator';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -35,6 +37,10 @@ const MAX_AI_DIMENSION = 1024;
 interface RemoveBackgroundViewProps {
   imageUri: string;
   imageSize: { width: number; height: number };
+  /** Slot dimensions for container sizing (ensures preview matches slot shape) */
+  slotDimensions: { width: number; height: number };
+  /** Image adjustments (scale, translate, rotate) from editor */
+  imageAdjustments?: ImageAdjustments;
   /** Whether this image has already had background removed */
   isAlreadyEnhanced?: boolean;
   onBack: () => void;
@@ -99,6 +105,8 @@ async function prepareImageForAI(
 export default function RemoveBackgroundView({
   imageUri,
   imageSize,
+  slotDimensions,
+  imageAdjustments,
   isAlreadyEnhanced = false,
   onBack,
   onStartProcessing,
@@ -110,17 +118,21 @@ export default function RemoveBackgroundView({
   // Tiered subscription for Studio-only AI features
   const { canUseAIStudio, requestBGRemove, tier } = useTieredSubscription();
   
+  // Calculate preview size based on SLOT aspect ratio (not image AR)
   const maxPreviewWidth = SCREEN_WIDTH - 48;
   const maxPreviewHeight = SCREEN_HEIGHT * 0.45;
-  const aspectRatio = imageSize.width / imageSize.height;
+  const slotAspectRatio = slotDimensions.width / slotDimensions.height;
   
   let previewWidth = maxPreviewWidth;
-  let previewHeight = previewWidth / aspectRatio;
+  let previewHeight = previewWidth / slotAspectRatio;
   
   if (previewHeight > maxPreviewHeight) {
     previewHeight = maxPreviewHeight;
-    previewWidth = previewHeight * aspectRatio;
+    previewWidth = previewHeight * slotAspectRatio;
   }
+
+  // Store preview size for use in render
+  const previewSize = { width: previewWidth, height: previewHeight };
 
   // Actual removal logic (called after tier check passes)
   const performRemoval = useCallback(async () => {
@@ -180,24 +192,21 @@ export default function RemoveBackgroundView({
         </View>
 
         <View style={styles.previewContainer}>
-          <View style={[
-            styles.previewWrapper, 
-            { width: previewWidth, height: previewHeight },
-            isAlreadyEnhanced && styles.previewWrapperEnhanced
-          ]}>
-            <ExpoImage
-              source={{ uri: imageUri }}
-              style={styles.preview}
-              contentFit="cover"
-              transition={200}
-            />
-            {isAlreadyEnhanced && (
-              <View style={styles.enhancedBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                <Text style={styles.enhancedBadgeText}>Processed</Text>
-              </View>
-            )}
-          </View>
+          <TransformedImagePreview
+            imageUri={imageUri}
+            imageSize={imageSize}
+            containerSize={previewSize}
+            adjustments={imageAdjustments}
+            borderRadius={14}
+            borderWidth={2}
+            borderColor={isAlreadyEnhanced ? '#34C759' : Colors.light.accent}
+          />
+          {isAlreadyEnhanced && (
+            <View style={[styles.enhancedBadge, { position: 'absolute', top: 36, right: 36 }]}>
+              <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+              <Text style={styles.enhancedBadgeText}>Processed</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.infoContainer}>

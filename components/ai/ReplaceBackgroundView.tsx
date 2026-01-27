@@ -46,6 +46,8 @@ import {
   createGradient,
 } from '@/constants/gradients';
 import { ColorPickerModal } from '@/components/editor-v2/ColorPickerModal';
+import { TransformedImagePreview } from './TransformedImagePreview';
+import type { ImageAdjustments } from '@/utils/transformCalculator';
 import type { 
   BackgroundMode, 
   GradientConfig, 
@@ -149,6 +151,10 @@ async function prepareImageForAI(
 interface ReplaceBackgroundViewProps {
   imageUri: string;
   imageSize: { width: number; height: number };
+  /** Slot dimensions for container sizing (ensures preview matches slot shape) */
+  slotDimensions: { width: number; height: number };
+  /** Image adjustments (scale, translate, rotate) from editor */
+  imageAdjustments?: ImageAdjustments;
   isAlreadyEnhanced?: boolean;
   /** Cached transparent PNG URL from previous birefnet run - skip birefnet if available */
   transparentPngUrl?: string;
@@ -167,6 +173,8 @@ interface ReplaceBackgroundViewProps {
 export default function ReplaceBackgroundView({
   imageUri,
   imageSize,
+  slotDimensions,
+  imageAdjustments,
   isAlreadyEnhanced = false,
   transparentPngUrl: cachedTransparentPngUrl,
   currentBackgroundInfo,
@@ -203,18 +211,21 @@ export default function ReplaceBackgroundView({
   // Processing state
   const [isPreparing, setIsPreparing] = useState(false);
   
-  // Calculate preview dimensions
+  // Calculate preview dimensions based on SLOT aspect ratio (not image AR)
   const maxPreviewWidth = SCREEN_WIDTH - 48;
-  const maxPreviewHeight = 120;
-  const aspectRatio = imageSize.width / imageSize.height;
+  const maxPreviewHeight = 160; // Increased from 120 for better slot AR handling
+  const slotAspectRatio = slotDimensions.width / slotDimensions.height;
   
   let previewWidth = maxPreviewWidth;
-  let previewHeight = previewWidth / aspectRatio;
+  let previewHeight = previewWidth / slotAspectRatio;
   
   if (previewHeight > maxPreviewHeight) {
     previewHeight = maxPreviewHeight;
-    previewWidth = previewHeight * aspectRatio;
+    previewWidth = previewHeight * slotAspectRatio;
   }
+
+  // Store preview size for use in render
+  const previewSize = { width: previewWidth, height: previewHeight };
 
   // Check if apply button should be enabled
   const canApply = useMemo(() => {
@@ -708,22 +719,18 @@ export default function ReplaceBackgroundView({
           <View style={styles.placeholder} />
         </View>
 
-        {/* Image Preview - shows current image with background color if available */}
+        {/* Image Preview - shows current image with transforms and background color if available */}
         <View style={styles.imagePreviewContainer}>
-          <View style={[styles.imagePreviewWrapper, { width: previewWidth, height: previewHeight }]}>
-            {/* Background color/gradient for transparent PNG */}
-            {currentBackgroundInfo?.type === 'solid' && currentBackgroundInfo.solidColor && (
-              <View style={[styles.imagePreview, { backgroundColor: currentBackgroundInfo.solidColor, position: 'absolute' }]} />
-            )}
-            {currentBackgroundInfo?.type === 'gradient' && currentBackgroundInfo.gradient && (
-              <LinearGradient
-                colors={currentBackgroundInfo.gradient.colors}
-                {...getGradientPoints(currentBackgroundInfo.gradient.direction)}
-                style={[styles.imagePreview, { position: 'absolute' }]}
-              />
-            )}
-            <ExpoImage source={{ uri: imageUri }} style={styles.imagePreview} contentFit="cover" transition={200} />
-          </View>
+          <TransformedImagePreview
+            imageUri={imageUri}
+            imageSize={imageSize}
+            containerSize={previewSize}
+            adjustments={imageAdjustments}
+            backgroundInfo={currentBackgroundInfo}
+            borderRadius={14}
+            borderWidth={2}
+            borderColor={Colors.light.accent}
+          />
         </View>
 
         {/* Tab Selector */}

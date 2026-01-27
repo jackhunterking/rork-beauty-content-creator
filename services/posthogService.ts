@@ -176,17 +176,13 @@ export async function initializePostHog(
   apiKey: string,
   host: string = 'https://us.i.posthog.com'
 ): Promise<PostHog | null> {
-  console.warn('[PostHog] initializePostHog is deprecated. Use PostHogProvider instead for session replay.');
-  
   // If already set from provider, use that instance
   if (isInitialized && posthogClient) {
-    console.log('[PostHog] Already initialized via PostHogProvider');
     return posthogClient;
   }
   
   // Fallback initialization (without session replay working properly)
   if (!apiKey) {
-    console.warn('[PostHog] No API key provided, analytics disabled');
     return null;
   }
 
@@ -196,10 +192,8 @@ export async function initializePostHog(
       debug: __DEV__,
     });
     isInitialized = true;
-    console.log('[PostHog] Initialized (fallback mode - no session replay)');
     return posthogClient;
   } catch (error) {
-    console.error('[PostHog] Failed to initialize:', error);
     return null;
   }
 }
@@ -231,15 +225,13 @@ export function captureEvent(
   properties?: Record<string, any>
 ): void {
   if (!posthogClient) {
-    console.warn('[PostHog] Not initialized, skipping event:', eventName);
     return;
   }
 
   try {
     posthogClient.capture(eventName, properties);
-    console.log('[PostHog] Event captured:', eventName, properties);
   } catch (error) {
-    console.error('[PostHog] Failed to capture event:', eventName, error);
+    // Silent failure
   }
 }
 
@@ -256,9 +248,8 @@ export function captureScreen(
 
   try {
     posthogClient.screen(screenName, properties);
-    console.log('[PostHog] Screen captured:', screenName);
   } catch (error) {
-    console.error('[PostHog] Failed to capture screen:', screenName, error);
+    // Silent failure
   }
 }
 
@@ -275,15 +266,13 @@ export function identifyUser(
   userProperties?: Record<string, any>
 ): void {
   if (!posthogClient) {
-    console.warn('[PostHog] Not initialized, skipping identify');
     return;
   }
 
   try {
     posthogClient.identify(userId, userProperties);
-    console.log('[PostHog] User identified:', userId);
   } catch (error) {
-    console.error('[PostHog] Failed to identify user:', error);
+    // Silent failure
   }
 }
 
@@ -300,9 +289,8 @@ export function setUserProperties(properties: Record<string, any>): void {
     posthogClient.capture('$set', {
       $set: properties,
     });
-    console.log('[PostHog] User properties updated:', properties);
   } catch (error) {
-    console.error('[PostHog] Failed to set user properties:', error);
+    // Silent failure
   }
 }
 
@@ -318,9 +306,8 @@ export function setUserPropertiesOnce(properties: Record<string, any>): void {
     posthogClient.capture('$set', {
       $set_once: properties,
     });
-    console.log('[PostHog] User properties set once:', properties);
   } catch (error) {
-    console.error('[PostHog] Failed to set user properties once:', error);
+    // Silent failure
   }
 }
 
@@ -335,9 +322,8 @@ export function resetUser(): void {
 
   try {
     posthogClient.reset();
-    console.log('[PostHog] User reset (logged out)');
   } catch (error) {
-    console.error('[PostHog] Failed to reset user:', error);
+    // Silent failure
   }
 }
 
@@ -352,9 +338,8 @@ export function aliasUser(alias: string): void {
 
   try {
     posthogClient.alias(alias);
-    console.log('[PostHog] User aliased:', alias);
   } catch (error) {
-    console.error('[PostHog] Failed to alias user:', error);
+    // Silent failure
   }
 }
 
@@ -372,9 +357,8 @@ export function registerSuperProperties(properties: Record<string, any>): void {
 
   try {
     posthogClient.register(properties);
-    console.log('[PostHog] Super properties registered:', properties);
   } catch (error) {
-    console.error('[PostHog] Failed to register super properties:', error);
+    // Silent failure
   }
 }
 
@@ -388,9 +372,8 @@ export function unregisterSuperProperty(propertyName: string): void {
 
   try {
     posthogClient.unregister(propertyName);
-    console.log('[PostHog] Super property unregistered:', propertyName);
   } catch (error) {
-    console.error('[PostHog] Failed to unregister super property:', error);
+    // Silent failure
   }
 }
 
@@ -410,7 +393,6 @@ export async function isFeatureEnabled(flagKey: string): Promise<boolean> {
     const enabled = await posthogClient.isFeatureEnabled(flagKey);
     return enabled ?? false;
   } catch (error) {
-    console.error('[PostHog] Failed to check feature flag:', flagKey, error);
     return false;
   }
 }
@@ -428,7 +410,6 @@ export async function getFeatureFlagValue(
   try {
     return await posthogClient.getFeatureFlag(flagKey);
   } catch (error) {
-    console.error('[PostHog] Failed to get feature flag:', flagKey, error);
     return undefined;
   }
 }
@@ -446,7 +427,6 @@ export async function getFeatureFlagPayload(
   try {
     return await posthogClient.getFeatureFlagPayload(flagKey);
   } catch (error) {
-    console.error('[PostHog] Failed to get feature flag payload:', flagKey, error);
     return undefined;
   }
 }
@@ -461,9 +441,8 @@ export function reloadFeatureFlags(): void {
 
   try {
     posthogClient.reloadFeatureFlags();
-    console.log('[PostHog] Feature flags reloaded');
   } catch (error) {
-    console.error('[PostHog] Failed to reload feature flags:', error);
+    // Silent failure
   }
 }
 
@@ -479,13 +458,8 @@ export function startSessionRecording(): void {
     return;
   }
 
-  try {
-    // Session replay is controlled by the enableSessionReplay config
-    // This is here for future manual control if needed
-    console.log('[PostHog] Session recording controlled by config');
-  } catch (error) {
-    console.error('[PostHog] Failed to start session recording:', error);
-  }
+  // Session replay is controlled by the enableSessionReplay config
+  // This is here for future manual control if needed
 }
 
 // ============================================
@@ -567,9 +541,8 @@ export function flushEvents(): void {
 
   try {
     posthogClient.flush();
-    console.log('[PostHog] Events flushed');
   } catch (error) {
-    console.error('[PostHog] Failed to flush events:', error);
+    // Silent failure
   }
 }
 
@@ -585,9 +558,8 @@ export async function shutdownPostHog(): Promise<void> {
     await posthogClient.shutdown();
     posthogClient = null;
     isInitialized = false;
-    console.log('[PostHog] Shutdown complete');
   } catch (error) {
-    console.error('[PostHog] Failed to shutdown:', error);
+    // Silent failure
   }
 }
 
@@ -821,9 +793,8 @@ export function optOut(): void {
 
   try {
     posthogClient.optOut();
-    console.log('[PostHog] User opted out of tracking');
   } catch (error) {
-    console.error('[PostHog] Failed to opt out:', error);
+    // Silent failure
   }
 }
 
@@ -837,9 +808,8 @@ export function optIn(): void {
 
   try {
     posthogClient.optIn();
-    console.log('[PostHog] User opted in to tracking');
   } catch (error) {
-    console.error('[PostHog] Failed to opt in:', error);
+    // Silent failure
   }
 }
 

@@ -77,18 +77,15 @@ export async function fetchAppConfig(): Promise<AppConfig | null> {
       .single();
     
     if (error) {
-      console.error('[AppConfig] Error fetching config:', error.message);
       return null;
     }
     
     if (!data) {
-      console.warn('[AppConfig] No config found');
       return null;
     }
     
     return transformAppConfigRow(data as AppConfigRow);
   } catch (error) {
-    console.error('[AppConfig] Unexpected error:', error);
     return null;
   }
 }
@@ -137,13 +134,11 @@ export async function checkForceUpdate(): Promise<ForceUpdateStatus> {
     
     // If config fetch fails, don't block the user
     if (!config) {
-      console.log('[AppConfig] No config available, skipping update check');
       return defaultStatus;
     }
     
     // If force update is disabled globally, no update required
     if (!config.forceUpdateEnabled) {
-      console.log('[AppConfig] Force update is disabled');
       return defaultStatus;
     }
     
@@ -153,8 +148,6 @@ export async function checkForceUpdate(): Promise<ForceUpdateStatus> {
     // Check if current version is below minimum
     const isRequired = isVersionBelowMinimum(currentVersion, minimumVersion);
     
-    console.log(`[AppConfig] Version check: current=${currentVersion}, min=${minimumVersion}, required=${isRequired}`);
-    
     return {
       isRequired,
       message: config.updateMessage,
@@ -163,7 +156,6 @@ export async function checkForceUpdate(): Promise<ForceUpdateStatus> {
       minimumVersion,
     };
   } catch (error) {
-    console.error('[AppConfig] Error checking force update:', error);
     return defaultStatus;
   }
 }

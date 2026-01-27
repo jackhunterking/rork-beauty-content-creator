@@ -140,8 +140,6 @@ export function useScreenTracking(options: ScreenTrackingOptions = {}) {
 
     // Update previous pathname
     previousPathname.current = pathname;
-
-    console.log('[ScreenTracking] Screen viewed:', screenName, pathname);
   }, [pathname, segments, enabled, mapScreenName, additionalProperties]);
 
   return {
@@ -164,7 +162,6 @@ export function trackCustomScreen(
     custom_screen: true,
     ...properties,
   });
-  console.log('[ScreenTracking] Custom screen tracked:', screenName);
 }
 
 export default useScreenTracking;

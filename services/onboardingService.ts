@@ -36,7 +36,6 @@ export async function hasCompletedOnboarding(userId?: string): Promise<boolean> 
       if (!error && data?.onboarding_completed_at) {
         // User has completed onboarding - sync local storage
         await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_COMPLETE, 'true');
-        console.log('[Onboarding] User has completed onboarding (verified from Supabase)');
         return true;
       }
     }
@@ -44,10 +43,8 @@ export async function hasCompletedOnboarding(userId?: string): Promise<boolean> 
     // Not authenticated or no completion in Supabase = not complete
     // Clear any stale local state to ensure fresh onboarding
     await AsyncStorage.removeItem(STORAGE_KEYS.ONBOARDING_COMPLETE);
-    console.log('[Onboarding] User has not completed onboarding');
     return false;
   } catch (error) {
-    console.error('[Onboarding] Error checking completion status:', error);
     return false;
   }
 }
@@ -71,9 +68,7 @@ export async function storePendingSurveyData(data: OnboardingSurveyData): Promis
       STORAGE_KEYS.PENDING_SURVEY_DATA,
       JSON.stringify(data)
     );
-    console.log('[Onboarding] Stored pending survey data:', data);
   } catch (error) {
-    console.error('[Onboarding] Error storing survey data:', error);
     throw error;
   }
 }
@@ -89,7 +84,6 @@ export async function getPendingSurveyData(): Promise<OnboardingSurveyData | nul
     }
     return null;
   } catch (error) {
-    console.error('[Onboarding] Error getting pending survey data:', error);
     return null;
   }
 }
@@ -101,7 +95,7 @@ export async function clearPendingSurveyData(): Promise<void> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEYS.PENDING_SURVEY_DATA);
   } catch (error) {
-    console.error('[Onboarding] Error clearing pending survey data:', error);
+    // Silent failure
   }
 }
 
@@ -139,7 +133,6 @@ export async function saveOnboardingDataToProfile(
       .eq('id', userId);
 
     if (error) {
-      console.error('[Onboarding] Error saving to profile:', error);
       return { success: false, error: error.message };
     }
 
@@ -149,10 +142,8 @@ export async function saveOnboardingDataToProfile(
     // Clear pending data
     await clearPendingSurveyData();
 
-    console.log('[Onboarding] Successfully saved onboarding data for user:', userId);
     return { success: true };
   } catch (error: any) {
-    console.error('[Onboarding] Error saving onboarding data:', error);
     return { success: false, error: error.message || 'Failed to save onboarding data' };
   }
 }
@@ -174,12 +165,10 @@ export async function markOnboardingComplete(userId?: string): Promise<void> {
           onboarding_completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
-        .eq('id', userId);
+          .eq('id', userId);
     }
-    
-    console.log('[Onboarding] Marked onboarding as complete');
   } catch (error) {
-    console.error('[Onboarding] Error marking complete:', error);
+    // Silent failure
   }
 }
 
@@ -192,9 +181,8 @@ export async function resetOnboarding(): Promise<void> {
       STORAGE_KEYS.ONBOARDING_COMPLETE,
       STORAGE_KEYS.PENDING_SURVEY_DATA,
     ]);
-    console.log('[Onboarding] Reset onboarding state');
   } catch (error) {
-    console.error('[Onboarding] Error resetting:', error);
+    // Silent failure
   }
 }
 

@@ -28,15 +28,34 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import Colors from '@/constants/colors';
 import { getGradientPoints } from '@/constants/gradients';
+import { TransformedImagePreview } from './TransformedImagePreview';
 import type { Slot, MediaAsset } from '@/types';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Constants for carousel sizing - Larger images that maximize screen
-const CAROUSEL_HEIGHT = SCREEN_HEIGHT * 0.48; // ~48% of screen height
-const ITEM_WIDTH = SCREEN_WIDTH * 0.75;
+// Max bounds for carousel items - actual size determined by slot AR
+const MAX_ITEM_HEIGHT = SCREEN_HEIGHT * 0.48; // ~48% of screen height
+const MAX_ITEM_WIDTH = SCREEN_WIDTH * 0.75;
 const ITEM_SPACING = 16;
-const SIDE_PADDING = (SCREEN_WIDTH - ITEM_WIDTH) / 2;
+const SIDE_PADDING = (SCREEN_WIDTH - MAX_ITEM_WIDTH) / 2;
+
+/**
+ * Calculate display dimensions for a slot based on its aspect ratio.
+ * Ensures the slot fits within max bounds while preserving its AR.
+ */
+function calculateSlotDisplaySize(slot: Slot): { width: number; height: number } {
+  const slotAR = slot.width / slot.height;
+  let width = MAX_ITEM_WIDTH;
+  let height = width / slotAR;
+  
+  // If too tall, constrain by height instead
+  if (height > MAX_ITEM_HEIGHT) {
+    height = MAX_ITEM_HEIGHT;
+    width = height * slotAR;
+  }
+  
+  return { width, height };
+}
 
 export interface ImageSlotCarouselProps {
   /** All available slots from the template */
@@ -59,40 +78,20 @@ interface SlotItemProps {
   onAddImage?: () => void;
   index: number;
   totalCount: number;
+  displaySize: { width: number; height: number };
 }
 
-function SlotItem({ slot, image, isSelected, onPress, onAddImage, index, totalCount }: SlotItemProps) {
+function SlotItem({ slot, image, isSelected, onPress, onAddImage, index, totalCount, displaySize }: SlotItemProps) {
   const hasImage = !!image?.uri;
   
-  // Render background for transparent PNGs (AI background replacement)
-  const renderBackground = () => {
-    if (!image?.backgroundInfo) return null;
-    
-    if (image.backgroundInfo.type === 'solid' && image.backgroundInfo.solidColor) {
-      return (
-        <View 
-          style={[styles.slotImage, { backgroundColor: image.backgroundInfo.solidColor, position: 'absolute' }]} 
-        />
-      );
-    }
-    
-    if (image.backgroundInfo.type === 'gradient' && image.backgroundInfo.gradient) {
-      return (
-        <LinearGradient
-          colors={image.backgroundInfo.gradient.colors}
-          {...getGradientPoints(image.backgroundInfo.gradient.direction)}
-          style={[styles.slotImage, { position: 'absolute' }]}
-        />
-      );
-    }
-    
-    return null;
-  };
+  // Get image dimensions (fallback to display size for aspect ratio)
+  const imageSize = image ? { width: image.width || displaySize.width, height: image.height || displaySize.height } : displaySize;
   
   return (
     <TouchableOpacity
       style={[
         styles.slotItem,
+        { width: displaySize.width, height: displaySize.height },
         isSelected && hasImage && styles.slotItemSelected,
         !hasImage && styles.slotItemEmpty,
       ]}
@@ -101,13 +100,15 @@ function SlotItem({ slot, image, isSelected, onPress, onAddImage, index, totalCo
     >
       {hasImage ? (
         <>
-          {/* Background color/gradient for transparent PNGs */}
-          {renderBackground()}
-          <ExpoImage
-            source={{ uri: image.uri }}
-            style={styles.slotImage}
-            contentFit="cover"
-            transition={200}
+          <TransformedImagePreview
+            imageUri={image.uri!}
+            imageSize={imageSize}
+            containerSize={displaySize}
+            adjustments={image.adjustments}
+            backgroundInfo={image.backgroundInfo}
+            borderRadius={18}
+            borderWidth={0}
+            borderColor="transparent"
           />
           {/* Selection indicator */}
           {isSelected && (
@@ -149,6 +150,16 @@ export default function ImageSlotCarousel({
   // Find index of selected slot in all slots
   const selectedSlotIndex = slots.findIndex(slot => slot.layerId === selectedSlotId);
   
+  // Calculate display sizes for all slots
+  const slotDisplaySizes = useMemo(() => {
+    return slots.map(slot => calculateSlotDisplaySize(slot));
+  }, [slots]);
+  
+  // Calculate max height across all slots for container sizing
+  const maxSlotHeight = useMemo(() => {
+    return Math.max(...slotDisplaySizes.map(s => s.height));
+  }, [slotDisplaySizes]);
+  
   // Auto-select first filled slot if none selected
   useEffect(() => {
     if (!selectedSlotId && filledSlots.length > 0) {
@@ -158,19 +169,29 @@ export default function ImageSlotCarousel({
   
   // Scroll to selected slot when it changes
   useEffect(() => {
-    if (selectedSlotIndex >= 0 && scrollViewRef.current) {
-      const scrollX = selectedSlotIndex * (ITEM_WIDTH + ITEM_SPACING);
+    if (selectedSlotIndex >= 0 && scrollViewRef.current && snapOffsets[selectedSlotIndex] !== undefined) {
+      const scrollX = snapOffsets[selectedSlotIndex];
       scrollViewRef.current.scrollTo({ x: scrollX, animated: true });
       setCurrentIndex(selectedSlotIndex);
     }
-  }, [selectedSlotIndex]);
+  }, [selectedSlotIndex, snapOffsets]);
   
   // Handle scroll end to snap and select slot
   const handleScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / (ITEM_WIDTH + ITEM_SPACING));
-    const clampedIndex = Math.max(0, Math.min(index, slots.length - 1));
     
+    // Find closest snap offset
+    let closestIndex = 0;
+    let minDiff = Math.abs(offsetX - snapOffsets[0]);
+    for (let i = 1; i < snapOffsets.length; i++) {
+      const diff = Math.abs(offsetX - snapOffsets[i]);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+    
+    const clampedIndex = Math.max(0, Math.min(closestIndex, slots.length - 1));
     setCurrentIndex(clampedIndex);
     
     // Only select if the slot has an image
@@ -178,12 +199,12 @@ export default function ImageSlotCarousel({
     if (slot && capturedImages[slot.layerId]?.uri) {
       onSelectSlot(slot.layerId);
     }
-  }, [slots, capturedImages, onSelectSlot]);
+  }, [slots, capturedImages, onSelectSlot, snapOffsets]);
   
   // No images state
   if (!hasAnyImages) {
     return (
-      <View style={styles.noImagesContainer}>
+      <View style={[styles.noImagesContainer, { height: MAX_ITEM_HEIGHT + 48 }]}>
         <View style={styles.noImagesContent}>
           <View style={styles.noImagesIconContainer}>
             <Ionicons name="images-outline" size={48} color={Colors.light.textTertiary} />
@@ -207,10 +228,17 @@ export default function ImageSlotCarousel({
     );
   }
   
-  // Calculate snap offsets for ALL slots (both filled and empty)
+  // Calculate snap offsets for ALL slots - based on actual widths
   const snapOffsets = useMemo(() => {
-    return slots.map((_, index) => index * (ITEM_WIDTH + ITEM_SPACING));
-  }, [slots]);
+    let offset = 0;
+    return slots.map((_, index) => {
+      const currentOffset = offset;
+      if (index < slots.length - 1) {
+        offset += slotDisplaySizes[index].width + ITEM_SPACING;
+      }
+      return currentOffset;
+    });
+  }, [slots, slotDisplaySizes]);
   
   // Render carousel with all slots at equal sizes - swipeable
   return (
@@ -230,17 +258,19 @@ export default function ImageSlotCarousel({
         onMomentumScrollEnd={handleScrollEnd}
         scrollEventThrottle={16}
       >
-        {/* Render all slots at equal sizes */}
+        {/* Render all slots with their own dimensions based on slot AR */}
         {slots.map((slot, index) => {
           const image = capturedImages[slot.layerId];
           const hasImage = !!image?.uri;
           const isSelected = slot.layerId === selectedSlotId;
+          const displaySize = slotDisplaySizes[index];
           
           return (
             <View
               key={slot.layerId}
               style={[
                 styles.slotItemWrapper,
+                { width: displaySize.width, height: maxSlotHeight },
                 index < slots.length - 1 && { marginRight: ITEM_SPACING },
               ]}
             >
@@ -252,6 +282,7 @@ export default function ImageSlotCarousel({
                 onAddImage={onAddImage}
                 index={index}
                 totalCount={slots.length}
+                displaySize={displaySize}
               />
             </View>
           );
@@ -286,13 +317,15 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingVertical: 8,
+    alignItems: 'center', // Center items vertically when heights differ
   },
   slotItemWrapper: {
-    width: ITEM_WIDTH,
+    // Width and height set dynamically based on slot AR
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   slotItem: {
-    width: ITEM_WIDTH,
-    height: CAROUSEL_HEIGHT,
+    // Width and height set dynamically based on slot AR
     borderRadius: 20,
     backgroundColor: Colors.light.surfaceSecondary,
     overflow: 'hidden',
@@ -357,7 +390,7 @@ const styles = StyleSheet.create({
   
   // No images state
   noImagesContainer: {
-    height: CAROUSEL_HEIGHT + 48,
+    // Height set dynamically based on max slot height
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,

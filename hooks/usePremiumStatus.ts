@@ -315,37 +315,20 @@ export function useTieredSubscription(): TieredSubscription {
             const now = new Date();
             let isExpired = false;
             
-            console.log('[Subscription] Loaded from Supabase:', {
-              tier: subscription.tier,
-              source: subscription.source,
-              status: subscription.status,
-              admin_expires_at: subscription.admin_expires_at,
-              superwall_expires_at: subscription.superwall_expires_at,
-            });
-            
             if (subscription.source === 'admin') {
               // Admin grants: only check admin_expires_at (null = never expires)
               isExpired = subscription.admin_expires_at 
                 ? new Date(subscription.admin_expires_at) < now 
                 : false;
-              console.log('[Subscription] Admin source - isExpired:', isExpired, 
-                'admin_expires_at:', subscription.admin_expires_at);
             } else if (subscription.source === 'superwall') {
               // Superwall subscriptions: only check superwall_expires_at
               isExpired = subscription.superwall_expires_at 
                 ? new Date(subscription.superwall_expires_at) < now 
                 : false;
-              console.log('[Subscription] Superwall source - isExpired:', isExpired);
             }
             
             // Check if subscription is active
             const isActive = subscription.status === 'active' && !isExpired;
-            
-            console.log('[Subscription] Final decision:', {
-              isActive,
-              isExpired,
-              willSetTier: isActive && subscription.tier !== 'free' ? subscription.tier : 'free',
-            });
             
             if (isActive && subscription.tier !== 'free') {
               setSupabaseTier(subscription.tier as SubscriptionTier);
@@ -402,18 +385,8 @@ export function useTieredSubscription(): TieredSubscription {
     ? (subscriptionStatus as { status: 'ACTIVE'; entitlements: Entitlement[] }).entitlements || []
     : [];
 
-  // Debug: Log what we're working with
-  console.log('[Subscription] Resolving tier:', {
-    superwallStatus: subscriptionStatus?.status,
-    superwallEntitlements: activeEntitlements.map(e => e.id),
-    supabaseTier: supabaseTier,
-    isCheckingSupabase: isCheckingSupabase,
-  });
-
   // Resolve final tier
   const { tier, source } = resolveTier(activeEntitlements, supabaseTier);
-  
-  console.log('[Subscription] Final resolved:', { tier, source });
 
   // Calculate loading state
   // Use OR (||) so isLoading is true while EITHER source is still checking

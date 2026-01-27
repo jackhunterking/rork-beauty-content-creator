@@ -67,7 +67,6 @@ let cachedStatus: ATTAuthorizationStatus | null = null;
 export async function requestATTPermission(): Promise<ATTResult> {
   // ATT is only relevant on iOS
   if (Platform.OS !== 'ios') {
-    console.log('[ATT] Not iOS, tracking allowed by default');
     return {
       status: 'authorized',
       canTrack: true,
@@ -75,8 +74,6 @@ export async function requestATTPermission(): Promise<ATTResult> {
   }
 
   try {
-    console.log('[ATT] Requesting tracking permission...');
-    
     const { status } = await requestTrackingPermissionsAsync();
     const attStatus = mapExpoStatusToATT(status);
     
@@ -85,14 +82,11 @@ export async function requestATTPermission(): Promise<ATTResult> {
     
     const canTrack = attStatus === 'authorized';
     
-    console.log('[ATT] Permission result:', { status: attStatus, canTrack });
-    
     return {
       status: attStatus,
       canTrack,
     };
   } catch (error) {
-    console.error('[ATT] Error requesting permission:', error);
     // On error, assume tracking is not allowed (privacy-first approach)
     return {
       status: 'denied',
@@ -139,7 +133,6 @@ export async function getATTStatus(): Promise<ATTResult> {
       canTrack: attStatus === 'authorized',
     };
   } catch (error) {
-    console.error('[ATT] Error getting status:', error);
     return {
       status: 'denied',
       canTrack: false,

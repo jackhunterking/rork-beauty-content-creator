@@ -29,11 +29,14 @@ import { enhanceQuality, AIProcessingProgress } from '@/services/aiService';
 import { uploadTempImage } from '@/domains/shared';
 import { useTieredSubscription } from '@/hooks/usePremiumStatus';
 import { captureEvent, POSTHOG_EVENTS } from '@/services/posthogService';
+import { TransformedImagePreview } from './TransformedImagePreview';
+import type { ImageAdjustments } from '@/utils/transformCalculator';
 import type { MediaAsset } from '@/types';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const IMAGE_HEIGHT = 380;
-const IMAGE_WIDTH = SCREEN_WIDTH * 0.8;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Max bounds for preview container (slot AR will determine actual size within these bounds)
+const MAX_PREVIEW_WIDTH = SCREEN_WIDTH * 0.85;
+const MAX_PREVIEW_HEIGHT = SCREEN_HEIGHT * 0.5;
 
 // Max dimension for AI processing - 768px keeps processing fast (under 20s)
 // Note: fal.ai creative-upscaler has a max of 4,194,304 pixels (2048×2048)
@@ -46,6 +49,10 @@ interface AutoQualityViewProps {
   /** Image URI for AI PROCESSING (full original image) - falls back to imageUri if not provided */
   aiImageUri?: string;
   imageSize: { width: number; height: number };
+  /** Slot dimensions for container sizing (ensures preview matches slot shape) */
+  slotDimensions: { width: number; height: number };
+  /** Image adjustments (scale, translate, rotate) from editor */
+  imageAdjustments?: ImageAdjustments;
   /** Whether this image has already been enhanced with auto_quality */
   isAlreadyEnhanced?: boolean;
   /** Background info for transparent PNGs (from AI background replacement) */
@@ -120,6 +127,8 @@ export default function AutoQualityView({
   imageUri,
   aiImageUri,
   imageSize,
+  slotDimensions,
+  imageAdjustments,
   isAlreadyEnhanced = false,
   backgroundInfo,
   onBack,
@@ -137,6 +146,22 @@ export default function AutoQualityView({
   
   // Use aiImageUri for AI processing (full original), fallback to imageUri
   const imageUriForAI = aiImageUri || imageUri;
+  
+  // Calculate preview container dimensions based on SLOT aspect ratio
+  // This ensures the preview matches the slot shape, not the image shape
+  const previewSize = React.useMemo(() => {
+    const slotAR = slotDimensions.width / slotDimensions.height;
+    let width = MAX_PREVIEW_WIDTH;
+    let height = width / slotAR;
+    
+    // If too tall, constrain by height instead
+    if (height > MAX_PREVIEW_HEIGHT) {
+      height = MAX_PREVIEW_HEIGHT;
+      width = height * slotAR;
+    }
+    
+    return { width, height };
+  }, [slotDimensions]);
   
   // Dimensions for the compositing view (matches AI processing max dimension)
   const compositingSize = (() => {
@@ -285,22 +310,22 @@ export default function AutoQualityView({
         </View>
 
         <View style={styles.imageContainer}>
-          <View style={[styles.imageWrapper, isAlreadyEnhanced && styles.imageWrapperEnhanced]}>
-            {/* Background color/gradient for transparent PNGs */}
-            {renderBackground()}
-            <ExpoImage
-              source={{ uri: imageUri }}
-              style={styles.image}
-              contentFit="cover"
-              transition={200}
-            />
-            {isAlreadyEnhanced && (
-              <View style={styles.enhancedBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                <Text style={styles.enhancedBadgeText}>Enhanced</Text>
-              </View>
-            )}
-          </View>
+          <TransformedImagePreview
+            imageUri={imageUri}
+            imageSize={imageSize}
+            containerSize={previewSize}
+            adjustments={imageAdjustments}
+            backgroundInfo={backgroundInfo}
+            borderRadius={16}
+            borderWidth={2}
+            borderColor={isAlreadyEnhanced ? '#34C759' : Colors.light.accent}
+          />
+          {isAlreadyEnhanced && (
+            <View style={[styles.enhancedBadge, { position: 'absolute', top: 28, right: 28 }]}>
+              <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+              <Text style={styles.enhancedBadgeText}>Enhanced</Text>
+            </View>
+          )}
           <Text style={styles.description}>
             {isAlreadyEnhanced
               ? 'AI enhancement already applied. Re-applying may reduce image quality. Capture a new photo to enhance again.'
@@ -435,8 +460,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   imageWrapper: {
-    width: IMAGE_WIDTH,
-    height: IMAGE_HEIGHT,
+    // width and height are now set dynamically based on slot dimensions
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: Colors.light.surfaceSecondary,

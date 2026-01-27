@@ -114,7 +114,6 @@ export async function fetchFontCatalog(): Promise<FontCatalog> {
         url += `&key=${GOOGLE_FONTS_API_KEY}`;
       }
       
-      console.log('[GoogleFonts] Fetching font catalog...');
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -131,11 +130,9 @@ export async function fetchFontCatalog(): Promise<FontCatalog> {
       }
       
       fontCatalog = { items, byFamily };
-      console.log(`[GoogleFonts] Loaded catalog with ${items.length} fonts`);
       
       return fontCatalog;
     } catch (error) {
-      console.warn('[GoogleFonts] Failed to fetch catalog:', error);
       // Return empty catalog on error
       fontCatalog = { items: [], byFamily: new Map() };
       return fontCatalog;
@@ -172,7 +169,6 @@ export async function getFontUrl(
 ): Promise<string | null> {
   const info = await getFontInfo(fontFamily);
   if (!info) {
-    console.warn(`[GoogleFonts] Font not found: ${fontFamily}`);
     return null;
   }
   
@@ -186,7 +182,6 @@ export async function getFontUrl(
   const url = info.files[variantName] || info.files['regular'];
   
   if (!url) {
-    console.warn(`[GoogleFonts] No URL for ${fontFamily} weight ${weight}`);
     return null;
   }
   
@@ -222,7 +217,6 @@ export async function loadGoogleFont(
       const info = await getFontInfo(fontFamily);
       
       if (!info) {
-        console.warn(`[GoogleFonts] Unknown font: ${fontFamily}`);
         return false;
       }
       
@@ -246,20 +240,16 @@ export async function loadGoogleFont(
       }
       
       if (Object.keys(fontsToLoad).length === 0) {
-        console.warn(`[GoogleFonts] No loadable variants for ${fontFamily}`);
         return false;
       }
       
       // Load all fonts
-      console.log(`[GoogleFonts] Loading ${fontFamily} (${Object.keys(fontsToLoad).length} variants)...`);
       await Font.loadAsync(fontsToLoad);
       
       loadedFonts.add(cacheKey);
-      console.log(`[GoogleFonts] ✓ Loaded ${fontFamily}`);
       
       return true;
     } catch (error) {
-      console.warn(`[GoogleFonts] Failed to load ${fontFamily}:`, error);
       return false;
     } finally {
       loadingPromises.delete(cacheKey);

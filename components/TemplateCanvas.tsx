@@ -1258,9 +1258,7 @@ export function TemplateCanvas({
 
         {/* Slot tap targets with placeholder - hidden during manipulation or crop mode */}
         {!manipulationMode && !cropMode && (() => {
-          console.log(`[TemplateCanvas] Rendering ${scaledSlots.length} slot regions`);
-          scaledSlots.forEach(s => console.log(`[TemplateCanvas] Slot ${s.layerId}: x=${s.x.toFixed(0)}, y=${s.y.toFixed(0)}, w=${s.width.toFixed(0)}, h=${s.height.toFixed(0)}`));
-          return scaledSlots.map(slot => (
+return scaledSlots.map(slot => (
             <SlotRegion
               key={slot.layerId}
               slot={slot}
